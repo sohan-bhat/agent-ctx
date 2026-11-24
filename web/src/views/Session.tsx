@@ -1,48 +1,44 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
-import { Skeleton } from '@/components/ui/skeleton';
-import { events, session, type Dropped, type SessionData } from '@/lib/api';
-import { rel, tokens } from '@/lib/format';
-import { ContextChart, scaled, type Layer } from './ContextChart';
-import { ActionBar, CompactionBlock } from './Dropped';
+import { events, send, session, type SessionData, type Top } from '@/lib/api';
+import { survival, tree, windowOf } from '@/lib/context';
+import { ago, exact, tokens } from '@/lib/format';
+import { ContextStrip, cutNumbers } from './ContextStrip';
+import { DroppedList } from './Dropped';
+import { Breakdown, Icicle, type PinState } from './Icicle';
 import { rowTitle } from './Sessions';
-
-const ORDER = ['system', 'memory', 'skills', 'summary', 'prompts', 'replies'];
-const MAX_TOOL_LAYERS = 4;
-
-function buildLayers(d: SessionData): Layer[] {
-  const label = new Map(d.categories.map((c) => [c.key, c.label]));
-  const totals = new Map<string, number>();
-  for (const p of d.points) for (const [k, v] of Object.entries(p.est)) totals.set(k, (totals.get(k) ?? 0) + v);
-  const layers: Layer[] = [];
-  for (const k of ORDER) if (totals.get(k)) layers.push({ key: `c${layers.length}`, label: label.get(k) ?? k, cats: [k] });
-  const tools = [...totals.entries()].filter(([k]) => k.startsWith('tool:')).sort((a, b) => b[1] - a[1]);
-  for (const [k] of tools.slice(0, MAX_TOOL_LAYERS)) layers.push({ key: `c${layers.length}`, label: label.get(k) ?? k, cats: [k] });
-  const rest = tools.slice(MAX_TOOL_LAYERS).map(([k]) => k);
-  if (rest.length) layers.push({ key: `c${layers.length}`, label: `Tool results, ${rest.length} other tools`, cats: rest });
-  return layers;
-}
 
 function merge(prev: SessionData | null, next: SessionData): SessionData {
   if (!prev || next.from === 0) return next;
   return { ...next, points: [...prev.points.slice(0, next.from), ...next.points] };
 }
 
+function useNarrow(): boolean {
+  const q = '(max-width: 639px)';
+  const [narrow, setNarrow] = useState(() => window.matchMedia?.(q).matches ?? false);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const on = () => setNarrow(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return narrow;
+}
+
+const LINK = 'font-semibold underline decoration-foreground/35 underline-offset-4 transition-colors duration-150 hover:decoration-foreground';
+
 export function Session({ id }: { id: string }) {
   const [data, setData] = useState<SessionData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [pinned, setPinned] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const [hoverCut, setHoverCut] = useState<number | null>(null);
+  const [cut, setCut] = useState<number | null>(null);
+  const [focus, setFocus] = useState('used');
   const [live, setLive] = useState(false);
   const count = useRef(0);
-  const [picked, setPicked] = useState<Map<string, Dropped>>(new Map());
-  const toggle = useCallback((key: string, d: Dropped, on: boolean) => {
-    setPicked((m) => {
-      const n = new Map(m);
-      if (on) n.set(key, d);
-      else n.delete(key);
-      return n;
-    });
-  }, []);
+  const narrow = useNarrow();
+  const top = useRef<HTMLElement>(null);
 
   const load = useCallback(
     (since: number) =>
@@ -57,9 +53,10 @@ export function Session({ id }: { id: string }) {
 
   useEffect(() => {
     setData(null);
-    setSelected(null);
+    setPinned(null);
+    setCut(null);
+    setFocus('used');
     setLive(false);
-    setPicked(new Map());
     void load(0);
   }, [id, load]);
 
@@ -90,13 +87,36 @@ export function Session({ id }: { id: string }) {
     };
   }, [id, load]);
 
-  const layers = useMemo(() => (data ? buildLayers(data) : []), [data]);
   const points = data?.points ?? [];
-  const at = selected != null && selected < points.length ? selected : points.length - 1;
-  const point = points[at];
-  const split = point ? scaled(point, layers) : {};
-  const compactions = useMemo(() => [...(data?.compactions ?? [])].reverse(), [data]);
-  const peak = points.reduce((m, p) => Math.max(m, p.total), 0);
+  const last = points.length - 1;
+  const peak = useMemo(() => points.reduce((m, p) => Math.max(m, p.total), 0), [points]);
+  const win = windowOf(data?.model, peak);
+  const compactions = data?.compactions ?? [];
+  const chosen = cut != null && compactions[cut] ? compactions[cut] : null;
+  const call = Math.min(last, Math.max(0, hover ?? pinned ?? last));
+  const point = points[call];
+
+  const items = useMemo((): Top[] => {
+    if (!data) return [];
+    if (call === last) return data.largest;
+    return data.compactions.find((c) => c.n - 1 === call)?.before ?? [];
+  }, [data, call, last]);
+  const root = useMemo(() => (point ? tree(point, items) : null), [point, items]);
+
+  const before = chosen ? points[chosen.n - 1] : undefined;
+  const after = chosen ? points[chosen.n] : undefined;
+  const pair = useMemo(() => {
+    if (!before) return null;
+    return { before: tree(before, [], survival(before, after)), after: after ? tree(after) : null };
+  }, [before, after]);
+
+  const pins: PinState = {
+    pinned: (label) => !!data?.pins.some((p) => p.kind === 'file' && p.label === label),
+    pin: async (label) => {
+      await send('pin', { session: id, kind: 'file', label, text: '' });
+      await load(count.current);
+    },
+  };
 
   if (error && !data)
     return (
@@ -106,115 +126,167 @@ export function Session({ id }: { id: string }) {
       </div>
     );
 
-  if (!data)
-    return (
-      <div aria-busy="true" aria-label="Reading the transcript">
-        <Back />
-        <Skeleton className="mt-6 h-9 w-2/3" />
-        <Skeleton className="mt-3 h-4 w-1/3" />
-        <Skeleton className="mt-8 h-[300px] w-full md:h-[360px]" />
-      </div>
-    );
+  if (!data) return <div aria-busy="true" aria-label="Reading the transcript" className="min-h-60" />;
+
+  const choose = (i: number) => {
+    setCut(i);
+    setHover(null);
+    setHoverCut(null);
+    top.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  };
 
   return (
     <div>
       <Back />
-      <h1 className="mt-5 font-heading text-[1.9rem] font-bold leading-[1.15] tracking-[-0.025em] text-balance md:text-[2.3rem]">{rowTitle({ title: data.title, prompt: data.prompt, placeLabel: data.cwd })}</h1>
-      <p className="num mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-muted-foreground">
+      <h1 className="mt-5 text-[1.0625rem] font-bold leading-snug text-balance">{rowTitle({ title: data.title, prompt: data.prompt, placeLabel: data.cwd })}</h1>
+      <p className="num mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
         {data.cwd && <span>{data.cwd}</span>}
         {data.model && <span>{data.model}</span>}
-        <span>{points.length} calls</span>
-        <span>peak {tokens(peak)}</span>
-        {live && <span className="font-sans text-[0.85rem] font-semibold text-foreground">Following live</span>}
+        <span>{points.length === 1 ? '1 call' : `${points.length} calls`}</span>
+        {live && <span className="font-sans font-semibold text-live">running</span>}
       </p>
 
-      <section className="mt-9" aria-labelledby="ctx-title">
-        <h2 id="ctx-title" className="font-heading text-[1.35rem] font-bold tracking-[-0.015em]">
-          What fills the context
-        </h2>
-        {points.length === 0 ? (
-          <p className="mt-6 text-[0.95rem]">No model calls in this transcript yet.</p>
+      <section ref={top} className="mt-9 scroll-mt-6" aria-labelledby="ctx-title">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <h2 id="ctx-title" className="text-[0.9375rem] font-bold">
+            Context
+          </h2>
+          {point && (
+            <p className="flex flex-wrap items-baseline gap-x-3 text-[0.8125rem]">
+              {chosen ? (
+                <>
+                  <span className="text-muted-foreground">
+                    Compaction {cut! + 1} at call {chosen.n}
+                  </span>
+                  <span className="num font-semibold">{cutNumbers(chosen, points).map(exact).join(' to ')}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">
+                    Call {call + 1} of {points.length}
+                  </span>
+                  <span className="num font-semibold">{exact(point.total)}</span>
+                </>
+              )}
+              {(chosen || (pinned != null && pinned !== last)) && (
+                <button
+                  type="button"
+                  className={LINK}
+                  onClick={() => {
+                    setCut(null);
+                    setPinned(null);
+                  }}
+                >
+                  Latest call
+                </button>
+              )}
+            </p>
+          )}
+        </div>
+
+        {points.length === 0 || !point || !root ? (
+          <p className="mt-4">No model calls in this transcript yet.</p>
         ) : (
-          <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
-            <div className="rounded-lg border bg-card px-2 pb-2 pt-1">
-              <ContextChart points={points} layers={layers} compactions={data.compactions} selected={selected} onSelect={setSelected} />
-            </div>
-            <div>
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-[0.95rem] font-semibold">Call {at + 1}</h3>
-                <span className="num text-[0.95rem] font-semibold">{tokens(point.total)}</span>
+          <div className="mt-3 grid gap-6">
+            {points.length > 1 && <ContextStrip
+              points={points}
+              compactions={compactions}
+              window={win}
+              call={pinned ?? last}
+              hover={hover}
+              chosen={cut}
+              hoverCut={hoverCut}
+              onHover={(c, h) => {
+                setHover(chosen ? null : c);
+                setHoverCut(h);
+              }}
+              onPick={(c) => {
+                setCut(null);
+                setPinned(c === last ? null : c);
+              }}
+              onPickCut={choose}
+            />}
+
+            {chosen && pair ? (
+              <div className="grid gap-5">
+                <div className="grid gap-1.5">
+                  <p className="flex items-baseline gap-3 text-[0.8125rem]">
+                    <span className="font-semibold">Before, call {chosen.n}</span>
+                    <span className="num text-muted-foreground">{exact(before!.total)}</span>
+                  </p>
+                  <Icicle root={pair.before} total={before!.total} scaleMax={Math.max(before!.total, after?.total ?? 0)} depth={narrow ? 1 : 2} label="Context before the compaction" />
+                </div>
+                {after && pair.after && (
+                  <div className="grid gap-1.5">
+                    <p className="flex items-baseline gap-3 text-[0.8125rem]">
+                      <span className="font-semibold">After, call {chosen.n + 1}</span>
+                      <span className="num text-muted-foreground">{exact(after.total)}</span>
+                    </p>
+                    <Icicle root={pair.after} total={after.total} scaleMax={Math.max(before!.total, after.total)} depth={narrow ? 1 : 2} label="Context after the compaction" />
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
+                <DroppedList session={id} root={data.root} c={chosen} queued={data.queued} pins={data.pins} onDone={() => void load(count.current)} />
               </div>
-              <ul className="mt-3 grid gap-1.5">
-                {layers
-                  .map((l, i) => ({ l, i, v: split[l.key] ?? 0 }))
-                  .reverse()
-                  .map(({ l, i, v }) => (
-                    <li key={l.key} className="flex items-center gap-2.5 text-[0.86rem]">
-                      <span aria-hidden className="size-3 shrink-0 rounded-[3px]" style={{ background: `var(--kind-${['tools', 'system', 'memory', 'prompts', 'replies', 'summary'][i % 6]})` }} />
-                      <span className="truncate">{l.label}</span>
-                      <span className="num ml-auto text-[0.8rem] text-muted-foreground">{v ? tokens(v) : ''}</span>
-                      <span className="num w-10 text-right text-[0.8rem]">{point.total ? `${Math.round((v / point.total) * 100)}%` : ''}</span>
-                    </li>
-                  ))}
-              </ul>
-              <p className="mt-3 text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
-            </div>
+            ) : (
+              <div className="grid gap-5">
+                <Icicle
+                  root={root}
+                  total={point.total}
+                  window={win}
+                  depth={narrow ? Math.max(1, focusDepth(focus)) : 3}
+                  cwdRoot={data.root}
+                  focusId={focus}
+                  onFocus={setFocus}
+                  pins={pins}
+                  label={`Context at call ${call + 1}`}
+                />
+                <Breakdown root={root} total={point.total} window={win} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} />
+                <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
+              </div>
+            )}
           </div>
         )}
       </section>
 
-      {data.largest.length > 0 && (
-        <section className="mt-12" aria-labelledby="big-title">
-          <h2 id="big-title" className="font-heading text-[1.35rem] font-bold tracking-[-0.015em]">
-            Largest items in context now
+      {compactions.length > 0 && (
+        <section className="mt-12" aria-labelledby="cmp-title">
+          <h2 id="cmp-title" className="text-[0.9375rem] font-bold">
+            Compactions
           </h2>
-          <ol className="mt-4 grid grid-cols-1 gap-x-10 md:grid-cols-2">
-            {data.largest.map((t, i) => (
-              <li key={`${t.label}-${i}`} className="flex min-w-0 items-baseline gap-3 border-b py-2.5">
-                <span className="num w-14 shrink-0 text-right text-[0.85rem] font-semibold">{tokens(t.tok)}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="num block truncate text-[0.82rem]" title={t.label}>
-                    {t.label.startsWith('/') ? rel(t.label, data.root) : t.label}
-                    {t.count && t.count > 1 ? <span className="text-muted-foreground"> ×{t.count}</span> : null}
+          <ul className="mt-2 grid">
+            {compactions.map((c, i) => (
+              <li key={`${c.n}-${i}`}>
+                <button
+                  type="button"
+                  data-compaction={i}
+                  aria-pressed={cut === i}
+                  onClick={() => choose(i)}
+                  className="group -mx-2 flex w-[calc(100%+1rem)] flex-wrap items-baseline gap-x-4 gap-y-0.5 rounded-sm px-2 py-1.5 text-left transition-colors duration-150 hover:bg-accent"
+                >
+                  <span className={`font-medium ${cut === i ? 'underline decoration-foreground/40 underline-offset-4' : ''}`}>Compaction {i + 1}</span>
+                  <span className="num text-xs text-muted-foreground">
+                    call {c.n}, {cutNumbers(c, points).map(tokens).join(' to ')}, {c.trigger}, {ago(c.t)}
                   </span>
-                  <span className="block text-xs text-muted-foreground">{data.categories.find((c) => c.key === t.cat)?.label ?? (t.cat === 'system' ? 'System and tools' : t.cat)}</span>
-                </span>
+                </button>
               </li>
             ))}
-          </ol>
-          <p className="mt-3 text-xs text-muted-foreground">Token counts here are estimates.</p>
+          </ul>
         </section>
       )}
-
-      <section className="mt-14" aria-labelledby="cmp-title">
-        <h2 id="cmp-title" className="font-heading text-[1.35rem] font-bold tracking-[-0.015em]">
-          Compactions
-        </h2>
-        {compactions.length === 0 ? (
-          <p className="mt-2 text-[0.95rem] text-muted-foreground">No compactions in this session yet.</p>
-        ) : (
-          <div className="mt-6 grid gap-12">
-            {compactions.map((c, i) => (
-              <CompactionBlock key={`${c.n}-${i}`} root={data.root} index={i} total={compactions.length} c={c} queued={data.queued} pins={data.pins} picked={picked} onToggle={toggle} />
-            ))}
-          </div>
-        )}
-      </section>
-      <ActionBar
-        session={id}
-        picked={picked}
-        onDone={() => {
-          setPicked(new Map());
-          void load(count.current);
-        }}
-      />
     </div>
   );
 }
 
+function focusDepth(id: string): number {
+  if (id === 'used') return 1;
+  if (id.startsWith('tool:')) return 3;
+  return 2;
+}
+
 function Back() {
   return (
-    <a href="#/" className="inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline">
+    <a href="#/" className="inline-flex items-center gap-1.5 text-sm font-semibold no-underline transition-colors duration-150 hover:underline hover:decoration-foreground/40 hover:underline-offset-4">
       <ArrowLeft aria-hidden className="size-4" />
       All sessions
     </a>
