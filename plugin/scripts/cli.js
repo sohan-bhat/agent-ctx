@@ -797,6 +797,11 @@ function shortFile(f, place) {
 function askedQuote(p) {
   return cut(stripMarkup(p).replace(/\s+/g, " ").trim(), 100);
 }
+function promptTitle(p) {
+  const s = p ? stripMarkup(p).replace(/\s+/g, " ").trim() : "";
+  if (!s || s.startsWith("/")) return void 0;
+  return cut(s, 80);
+}
 function cardSummary(c) {
   for (let i = c.summaries.length - 1; i >= 0; i--) {
     const line = summaryLine(c.summaries[i]);
@@ -1408,6 +1413,170 @@ var init_items = __esm({
   }
 });
 
+// src/core/budget.ts
+import fs10 from "node:fs";
+import path9 from "node:path";
+function storeSize(home3) {
+  let total = 0;
+  const walk = (dir) => {
+    let ents;
+    try {
+      ents = fs10.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of ents) {
+      const p = path9.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else {
+        try {
+          total += fs10.statSync(p).size;
+        } catch {
+        }
+      }
+    }
+  };
+  walk(home3);
+  return total;
+}
+function entries(dir) {
+  const out2 = [];
+  let names;
+  try {
+    names = fs10.readdirSync(dir);
+  } catch {
+    return out2;
+  }
+  for (const name of names) {
+    const p = path9.join(dir, name);
+    try {
+      const s = fs10.statSync(p);
+      out2.push({ path: p, name, size: s.size, mtime: s.mtimeMs, dir: s.isDirectory() });
+    } catch {
+    }
+  }
+  return out2;
+}
+function remove(p) {
+  try {
+    fs10.rmSync(p, { recursive: true, force: true });
+  } catch {
+  }
+}
+function sweepLeftovers(st, now = Date.now()) {
+  let n = 0;
+  const pendingBase = path9.basename(st.pending);
+  const index = readJson(st.index);
+  for (const dir of [st.home, st.sessions, st.seen]) {
+    for (const e of entries(dir)) {
+      if (!e.dir && e.name.endsWith(".tmp") && now - e.mtime > LEFTOVER_MS) {
+        remove(e.path);
+        n++;
+      } else if (dir === st.home && !e.dir && e.name.startsWith(pendingBase + ".") && e.name.endsWith(".claim")) {
+        const pid = Number(e.name.slice(pendingBase.length + 1, -".claim".length));
+        if (pid === process.pid || alive(pid) && now - e.mtime < LEFTOVER_MS) continue;
+        try {
+          const text = fs10.readFileSync(e.path, "utf8");
+          if (text.trim()) fs10.appendFileSync(st.pending, text.endsWith("\n") ? text : text + "\n");
+        } catch {
+        }
+        remove(e.path);
+        n++;
+      } else if (dir === st.home && e.dir && e.name.endsWith(".lock") && now - e.mtime > QUICK_LOCK_MS) {
+        remove(e.path);
+        n++;
+      } else if (dir === st.home && !e.dir && /^terms-.*\.jsonl$/.test(e.name) && index && e.name !== index.terms && now - e.mtime > LEFTOVER_MS) {
+        remove(e.path);
+        n++;
+      }
+    }
+  }
+  return n;
+}
+function sweepSeen(st, now) {
+  for (const e of entries(st.seen)) if (now - e.mtime > SEEN_DAYS * DAY2) remove(e.path);
+}
+function sessionAges(st) {
+  const ages = /* @__PURE__ */ new Map();
+  const ix = readJson(st.index);
+  for (const d of ix?.docs ?? []) ages.set(d.s, Math.max(ages.get(d.s) ?? 0, d.t));
+  return ages;
+}
+function pruneSessions(st, max, ages) {
+  const files = entries(st.sessions).filter((e) => !e.dir && e.name.endsWith(".json"));
+  let total = files.reduce((a, e) => a + e.size, 0);
+  if (total <= max) return 0;
+  const key2 = (e) => ages.get(e.name.slice(0, -5)) ?? 0;
+  files.sort((a, b) => key2(a) - key2(b) || a.mtime - b.mtime);
+  let n = 0;
+  for (const e of files) {
+    if (total <= max) break;
+    remove(e.path);
+    total -= e.size;
+    n++;
+  }
+  return n;
+}
+function enforce(st, opts = {}) {
+  const budget = opts.budget ?? budgetBytes();
+  const now = opts.now ?? Date.now();
+  const share = shares(budget);
+  const before = storeSize(st.home);
+  const leftovers = sweepLeftovers(st, now);
+  for (const f of [st.log, st.trace]) {
+    try {
+      cutFile(f, share.log);
+    } catch {
+    }
+  }
+  sweepSeen(st, now);
+  const ages = sessionAges(st);
+  const items = pruneItems(st, (it) => {
+    if (it.session === "*") return true;
+    const seen = Math.max(ages.get(it.session) ?? 0, Date.parse(it.at) || 0);
+    return now - seen <= ITEM_DAYS * DAY2;
+  });
+  let sessions = pruneSessions(st, share.sessions, ages);
+  let cards = 0;
+  let cardBytes = 0;
+  try {
+    cardBytes = fs10.statSync(st.cards).size;
+  } catch {
+  }
+  if (cardBytes > share.cards) {
+    const all = loadCards(st);
+    cards = all.length - writeCardsAndIndex(st, all, share.cards).docs.length;
+  }
+  let after = storeSize(st.home);
+  if (after > budget) {
+    sessions += pruneSessions(st, Math.max(0, share.sessions - (after - budget)), sessionAges(st));
+    after = storeSize(st.home);
+  }
+  if (after > budget) {
+    const all = loadCards(st);
+    const room = Math.max(0, Math.floor(share.cards - (after - budget) * 0.8));
+    cards += all.length - writeCardsAndIndex(st, all, room).docs.length;
+    after = storeSize(st.home);
+  }
+  return { before, after, budget, leftovers, items, sessions, cards };
+}
+var SEEN_DAYS, ITEM_DAYS, DAY2, LEFTOVER_MS, QUICK_LOCK_MS;
+var init_budget = __esm({
+  "src/core/budget.ts"() {
+    "use strict";
+    init_fsx();
+    init_lock();
+    init_items();
+    init_store();
+    init_limits();
+    SEEN_DAYS = 7;
+    ITEM_DAYS = 30;
+    DAY2 = 864e5;
+    LEFTOVER_MS = 10 * 6e4;
+    QUICK_LOCK_MS = 6e4;
+  }
+});
+
 // src/core/context.ts
 import path10 from "node:path";
 function catLabel(cat) {
@@ -1885,6 +2054,7 @@ function sessionRows(st) {
     rows.push({
       session,
       title: main2.title,
+      prompt: promptTitle(cs.find((c) => c.firstPrompt)?.firstPrompt),
       place: main2.place,
       placeLabel: tilde(main2.place),
       project: main2.project,
@@ -2072,7 +2242,7 @@ data: ${JSON.stringify(data)}
         return send(res, 200, fs11.readFileSync(f), MIME[path11.extname(f)] ?? "application/octet-stream");
       }
       if (req.method === "GET" && rest === "api/sessions") {
-        return send(res, 200, { sessions: sessionRows(st), indexing: !!indexing, home: tilde(st.home) });
+        return send(res, 200, { sessions: sessionRows(st), indexing: !!indexing, home: tilde(st.home), store: { bytes: storeSize(st.home), cap: budgetBytes() } });
       }
       if (req.method === "GET" && rest.startsWith("api/session/")) {
         const id = decodeURIComponent(rest.slice("api/session/".length));
@@ -2085,6 +2255,7 @@ data: ${JSON.stringify(data)}
         return send(res, 200, {
           session: id,
           title: a.ctx.title,
+          prompt: promptTitle(loadCards(st).find((c) => c.session === id && c.firstPrompt)?.firstPrompt),
           cwd: a.ctx.cwd ? tilde(a.ctx.cwd) : void 0,
           root: a.ctx.cwd,
           model: a.ctx.model,
@@ -2204,6 +2375,7 @@ var init_server = __esm({
     init_context();
     init_items();
     init_format();
+    init_budget();
     MIME = {
       ".html": "text/html; charset=utf-8",
       ".js": "text/javascript; charset=utf-8",
@@ -2499,166 +2671,7 @@ async function doctor(claude, onFile) {
 init_bm25();
 init_text();
 init_limits();
-
-// src/core/budget.ts
-init_fsx();
-init_lock();
-init_items();
-init_store();
-init_limits();
-import fs10 from "node:fs";
-import path9 from "node:path";
-var SEEN_DAYS = 7;
-var ITEM_DAYS = 30;
-var DAY2 = 864e5;
-var LEFTOVER_MS = 10 * 6e4;
-var QUICK_LOCK_MS = 6e4;
-function storeSize(home3) {
-  let total = 0;
-  const walk = (dir) => {
-    let ents;
-    try {
-      ents = fs10.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of ents) {
-      const p = path9.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else {
-        try {
-          total += fs10.statSync(p).size;
-        } catch {
-        }
-      }
-    }
-  };
-  walk(home3);
-  return total;
-}
-function entries(dir) {
-  const out2 = [];
-  let names;
-  try {
-    names = fs10.readdirSync(dir);
-  } catch {
-    return out2;
-  }
-  for (const name of names) {
-    const p = path9.join(dir, name);
-    try {
-      const s = fs10.statSync(p);
-      out2.push({ path: p, name, size: s.size, mtime: s.mtimeMs, dir: s.isDirectory() });
-    } catch {
-    }
-  }
-  return out2;
-}
-function remove(p) {
-  try {
-    fs10.rmSync(p, { recursive: true, force: true });
-  } catch {
-  }
-}
-function sweepLeftovers(st, now = Date.now()) {
-  let n = 0;
-  const pendingBase = path9.basename(st.pending);
-  const index = readJson(st.index);
-  for (const dir of [st.home, st.sessions, st.seen]) {
-    for (const e of entries(dir)) {
-      if (!e.dir && e.name.endsWith(".tmp") && now - e.mtime > LEFTOVER_MS) {
-        remove(e.path);
-        n++;
-      } else if (dir === st.home && !e.dir && e.name.startsWith(pendingBase + ".") && e.name.endsWith(".claim")) {
-        const pid = Number(e.name.slice(pendingBase.length + 1, -".claim".length));
-        if (pid === process.pid || alive(pid) && now - e.mtime < LEFTOVER_MS) continue;
-        try {
-          const text = fs10.readFileSync(e.path, "utf8");
-          if (text.trim()) fs10.appendFileSync(st.pending, text.endsWith("\n") ? text : text + "\n");
-        } catch {
-        }
-        remove(e.path);
-        n++;
-      } else if (dir === st.home && e.dir && e.name.endsWith(".lock") && now - e.mtime > QUICK_LOCK_MS) {
-        remove(e.path);
-        n++;
-      } else if (dir === st.home && !e.dir && /^terms-.*\.jsonl$/.test(e.name) && index && e.name !== index.terms && now - e.mtime > LEFTOVER_MS) {
-        remove(e.path);
-        n++;
-      }
-    }
-  }
-  return n;
-}
-function sweepSeen(st, now) {
-  for (const e of entries(st.seen)) if (now - e.mtime > SEEN_DAYS * DAY2) remove(e.path);
-}
-function sessionAges(st) {
-  const ages = /* @__PURE__ */ new Map();
-  const ix = readJson(st.index);
-  for (const d of ix?.docs ?? []) ages.set(d.s, Math.max(ages.get(d.s) ?? 0, d.t));
-  return ages;
-}
-function pruneSessions(st, max, ages) {
-  const files = entries(st.sessions).filter((e) => !e.dir && e.name.endsWith(".json"));
-  let total = files.reduce((a, e) => a + e.size, 0);
-  if (total <= max) return 0;
-  const key2 = (e) => ages.get(e.name.slice(0, -5)) ?? 0;
-  files.sort((a, b) => key2(a) - key2(b) || a.mtime - b.mtime);
-  let n = 0;
-  for (const e of files) {
-    if (total <= max) break;
-    remove(e.path);
-    total -= e.size;
-    n++;
-  }
-  return n;
-}
-function enforce(st, opts = {}) {
-  const budget = opts.budget ?? budgetBytes();
-  const now = opts.now ?? Date.now();
-  const share = shares(budget);
-  const before = storeSize(st.home);
-  const leftovers = sweepLeftovers(st, now);
-  for (const f of [st.log, st.trace]) {
-    try {
-      cutFile(f, share.log);
-    } catch {
-    }
-  }
-  sweepSeen(st, now);
-  const ages = sessionAges(st);
-  const items = pruneItems(st, (it) => {
-    if (it.session === "*") return true;
-    const seen = Math.max(ages.get(it.session) ?? 0, Date.parse(it.at) || 0);
-    return now - seen <= ITEM_DAYS * DAY2;
-  });
-  let sessions = pruneSessions(st, share.sessions, ages);
-  let cards = 0;
-  let cardBytes = 0;
-  try {
-    cardBytes = fs10.statSync(st.cards).size;
-  } catch {
-  }
-  if (cardBytes > share.cards) {
-    const all = loadCards(st);
-    cards = all.length - writeCardsAndIndex(st, all, share.cards).docs.length;
-  }
-  let after = storeSize(st.home);
-  if (after > budget) {
-    sessions += pruneSessions(st, Math.max(0, share.sessions - (after - budget)), sessionAges(st));
-    after = storeSize(st.home);
-  }
-  if (after > budget) {
-    const all = loadCards(st);
-    const room = Math.max(0, Math.floor(share.cards - (after - budget) * 0.8));
-    cards += all.length - writeCardsAndIndex(st, all, room).docs.length;
-    after = storeSize(st.home);
-  }
-  return { before, after, budget, leftovers, items, sessions, cards };
-}
-
-// src/cli.ts
+init_budget();
 var VERSION = "0.1.0";
 var here = path12.dirname(fileURLToPath2(import.meta.url));
 var ext = path12.extname(fileURLToPath2(import.meta.url));
