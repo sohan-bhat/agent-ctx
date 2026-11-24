@@ -6,5 +6,11 @@
     "name": "Sohan Bhat"
   },
   "license": "MIT",
-  "keywords": ["memory", "recall", "context", "compaction"]
+  "keywords": ["memory", "recall", "context", "compaction"],
+  "mcpServers": {
+    "claude-ctx": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/cli.js", "mcp"]
+    }
+  }
 }

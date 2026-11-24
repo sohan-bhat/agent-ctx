@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { ROOT, world, repo, Transcript, waitFor, workerIdle } from './helpers.ts';
 import { EVENTS } from '../src/core/install.ts';
 
@@ -29,7 +31,8 @@ test('the plugin folder follows the documented layout', () => {
     const cmd: string = hooks.hooks[event]?.[0]?.hooks?.[0]?.command;
     assert.equal(cmd, `node "\${CLAUDE_PLUGIN_ROOT}/scripts/hook.js" ${arg}`, event);
   }
-  for (const f of ['hook.js', 'worker.js', 'cli.js']) assert.ok(fs.existsSync(path.join(plugin, 'scripts', f)), f);
+  for (const f of ['hook.js', 'worker.js', 'cli.js', 'mcp.js']) assert.ok(fs.existsSync(path.join(plugin, 'scripts', f)), f);
+  assert.deepEqual(manifest.mcpServers, { 'claude-ctx': { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/scripts/cli.js', 'mcp'] } });
   const skill = fs.readFileSync(path.join(plugin, 'skills', 'recall', 'SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: recall\ndescription: .+\n---\n/);
   const dist = path.join(ROOT, 'dist', 'hook.js');
@@ -60,4 +63,17 @@ test('the plugin hooks run the way Claude Code runs them', async () => {
   assert.ok(start.stdout.includes('Glaze UMF calculator'));
   const search = spawnSync(process.execPath, [path.join(plugin, 'scripts', 'cli.js'), 'search', 'glaze', 'formula'], { env: w.env, encoding: 'utf8' });
   assert.ok(search.stdout.includes('Glaze UMF calculator'));
+  const server = read(path.join(plugin, '.claude-plugin', 'plugin.json')).mcpServers['claude-ctx'];
+  const env = Object.fromEntries(Object.entries(w.env).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
+  const args = server.args.map((a: string) => a.replace('${CLAUDE_PLUGIN_ROOT}', plugin));
+  const client = new Client({ name: 'plugin-test', version: '1.0.0' });
+  await client.connect(new StdioClientTransport({ command: server.command, args, env, cwd: b }));
+  try {
+    const { tools } = await client.listTools();
+    assert.deepEqual(tools.map((t) => t.name).sort(), ['recent', 'search', 'session']);
+    const r = await client.callTool({ name: 'search', arguments: { words: 'glaze molecular formula' } });
+    assert.ok(JSON.stringify(r.content).includes('Glaze UMF calculator'));
+  } finally {
+    await client.close();
+  }
 });

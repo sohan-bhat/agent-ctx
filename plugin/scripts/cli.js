@@ -396,7 +396,15 @@ function attach(st, file) {
       return Object.prototype.hasOwnProperty.call(g, t) ? g[t] : void 0;
     }
   };
-  return { ...file, bm25 };
+  const close = () => {
+    if (fd == null) return;
+    try {
+      fs2.closeSync(fd);
+    } catch {
+    }
+    fd = null;
+  };
+  return { ...file, bm25, close };
 }
 function loadIndex(st) {
   const ix = readJson(st.index);
@@ -794,8 +802,11 @@ function shortFile(f, place) {
   if (f.startsWith(place + "/")) return f.slice(place.length + 1);
   return tilde(f);
 }
+function cleanPrompt(p, n) {
+  return cut(stripMarkup(p).replace(/\s+/g, " ").trim(), n);
+}
 function askedQuote(p) {
-  return cut(stripMarkup(p).replace(/\s+/g, " ").trim(), 100);
+  return cleanPrompt(p, 100);
 }
 function promptTitle(p) {
   const s = p ? stripMarkup(p).replace(/\s+/g, " ").trim() : "";
@@ -2396,7 +2407,8 @@ init_store();
 import fs12 from "node:fs";
 import path12 from "node:path";
 import readline from "node:readline";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { spawn as spawn2 } from "node:child_process";
+import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 // src/core/rank.ts
 init_bm25();
@@ -2429,6 +2441,14 @@ var REMOTE_BOOST = 1.3;
 function recency(lastMs, now) {
   const age = Math.max(0, (now - lastMs) / DAY);
   return 0.4 + 0.6 * Math.exp(-age / 21);
+}
+function findDocs(ix, q, ranked, plain, keep = () => true) {
+  const hits = rankPrompt(ix, q, Date.now(), /* @__PURE__ */ new Set(), null).map((h) => h.doc).filter((i) => keep(ix.docs[i])).slice(0, ranked);
+  if (hits.length) return hits;
+  return search(ix.bm25, tokens(q)).map((h) => h.doc).filter((i) => keep(ix.docs[i])).slice(0, plain);
+}
+function newestDocs(ix, n, keep = () => true) {
+  return ix.docs.map((_, i) => i).filter((i) => keep(ix.docs[i])).sort((a, b) => ix.docs[b].t - ix.docs[a].t).slice(0, n);
 }
 function rankPrompt(ix, prompt, now = Date.now(), exclude = /* @__PURE__ */ new Set(), remote = null) {
   const { weight, total } = promptTerms(ix, prompt);
@@ -2668,14 +2688,13 @@ async function doctor(claude, onFile) {
 }
 
 // src/cli.ts
-init_bm25();
-init_text();
 init_limits();
 init_budget();
 var VERSION = "0.1.0";
 var here = path12.dirname(fileURLToPath2(import.meta.url));
 var ext = path12.extname(fileURLToPath2(import.meta.url));
 var hookJs = path12.join(here, "hook" + ext);
+var mcpJs = path12.join(here, "mcp" + ext);
 var tty = !!process.stdout.isTTY && !!process.stdin.isTTY;
 var interactive = tty || !!process.env.CLAUDE_CTX_TTY;
 var bold = (s) => process.stdout.isTTY ? `\x1B[1m${s}\x1B[22m` : s;
@@ -2691,7 +2710,8 @@ var COMMANDS = [
   ["claude-ctx install", "add the hooks to Claude Code"],
   ["claude-ctx uninstall", "take the hooks out again"],
   ["claude-ctx status", "show whether the hooks run"],
-  ["claude-ctx doctor", "count each record type it understood"]
+  ["claude-ctx doctor", "count each record type it understood"],
+  ["claude-ctx mcp", "recall for any MCP client, setup lines with --help"]
 ];
 function commandList() {
   const w = Math.max(...COMMANDS.map(([c]) => c.length));
@@ -2715,12 +2735,10 @@ async function cmdSearch(st, words) {
   }
   let docs;
   if (!q) {
-    docs = ix.docs.map((_, i) => i).sort((a, b) => ix.docs[b].t - ix.docs[a].t).slice(0, 5);
+    docs = newestDocs(ix, 5);
     out(dim("Newest sessions first, and words narrow the list, like claude-ctx search heat map."));
   } else {
-    const hits = rankPrompt(ix, q, Date.now(), /* @__PURE__ */ new Set(), null);
-    docs = hits.slice(0, 8).map((h) => h.doc);
-    if (!docs.length) docs = search(ix.bm25, tokens(q)).slice(0, 5).map((h) => h.doc);
+    docs = findDocs(ix, q, 8, 5);
     if (!docs.length) {
       out(`Nothing matches "${q}". Try fewer or different words.`);
       return;
@@ -2919,6 +2937,27 @@ async function cmdDoctor(st) {
   const ix = loadIndex(st);
   out();
   out(ix ? `Store ${tilde(st.home)} holds ${num(ix.docs.length)} cards, indexed ${day(ix.built)}` : `Store ${tilde(st.home)} is empty, so run claude-ctx index.`);
+  out(await mcpCheck());
+}
+function mcpCheck() {
+  if (!fs12.existsSync(mcpJs)) return Promise.resolve(`The mcp command is missing ${tilde(mcpJs)}, so run npm run build.`);
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    const child = spawn2(process.execPath, [fileURLToPath2(import.meta.url), "mcp"], { stdio: ["pipe", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (d) => err += d);
+    const guard = setTimeout(() => child.kill("SIGKILL"), 1e4);
+    child.on("error", (e) => {
+      clearTimeout(guard);
+      resolve(`The mcp command failed with ${e.message}`);
+    });
+    child.on("exit", (code) => {
+      clearTimeout(guard);
+      const why = err.trim().split("\n")[0];
+      resolve(code === 0 ? `The mcp command loads and exits on a closed pipe in ${Date.now() - t0} ms.` : `The mcp command failed${why ? ` with ${why.slice(0, 200)}` : ""}`);
+    });
+    child.stdin.end();
+  });
 }
 function ago(ms) {
   const s = Math.max(0, (Date.now() - ms) / 1e3);
@@ -2969,6 +3008,38 @@ async function cmdOpen(st, args) {
   const { serve: serve2 } = await Promise.resolve().then(() => (init_server(), server_exports));
   await serve2(st, { open: !args.includes("--no-open") && !process.env.CLAUDE_CTX_NO_OPEN, port: Number(process.env.CLAUDE_CTX_PORT) || 0 });
 }
+function shellWord(s) {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+function desktopConfig() {
+  if (process.platform === "win32") return "%APPDATA%\\Claude\\claude_desktop_config.json";
+  if (process.platform === "darwin") return "~/Library/Application Support/Claude/claude_desktop_config.json";
+  return "~/.config/Claude/claude_desktop_config.json";
+}
+function mcpHelp() {
+  const self = fileURLToPath2(import.meta.url);
+  const cmd = [process.execPath, self, "mcp"];
+  const json = JSON.stringify({ mcpServers: { "claude-ctx": { command: cmd[0], args: cmd.slice(1) } } });
+  return [
+    "claude-ctx mcp gives search, recent and session to any MCP client over stdio.",
+    "",
+    bold("Claude Code"),
+    `  claude mcp add --scope user claude-ctx -- ${cmd.map(shellWord).join(" ")}`,
+    "",
+    bold(`Claude desktop app, in ${desktopConfig()}`),
+    `  ${json}`,
+    "",
+    "The ctx plugin brings the server with no extra step."
+  ].join("\n");
+}
+async function cmdMcp(st, args) {
+  if (args.includes("--help") || args.includes("-h") || process.stdin.isTTY) {
+    out(mcpHelp());
+    return;
+  }
+  const { serveMcp } = await import(pathToFileURL(mcpJs).href);
+  serveMcp(st, VERSION);
+}
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const st = store(ctxHome());
@@ -2991,6 +3062,8 @@ async function main() {
       return cmdDoctor(st);
     case "status":
       return cmdStatus(st);
+    case "mcp":
+      return cmdMcp(st, rest);
     case "help":
     case "--help":
     case "-h":
