@@ -60,7 +60,7 @@ export function App() {
         >
           Skip to the content
         </a>
-        <header className="flex h-8 items-center justify-between">
+        <header className="flex h-8 max-w-[58rem] items-center justify-between">
           <a href="#/" translate="no" className="text-[0.9375rem] font-bold tracking-[-0.01em] no-underline" aria-label="claude-ctx, all sessions">
             claude-ctx
           </a>

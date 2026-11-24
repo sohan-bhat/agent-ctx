@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { events, sessions, type SessionList, type SessionRow } from '@/lib/api';
 import { ago, base, count, mb } from '@/lib/format';
@@ -108,7 +109,7 @@ export function Sessions() {
           </p>
 
           <div className="mt-6 flex flex-col gap-x-8 gap-y-3 sm:flex-row sm:items-end">
-            <input
+            <Input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -116,7 +117,7 @@ export function Sessions() {
               aria-label="Search sessions"
               autoComplete="off"
               spellCheck={false}
-              className="h-8 w-full border-0 border-b border-input bg-transparent px-0 text-sm outline-none transition-colors duration-150 placeholder:text-muted-foreground hover:border-muted-foreground focus-visible:border-foreground focus-visible:outline-none sm:w-64"
+              className="h-8 w-full rounded-none border-0 border-b border-input bg-transparent px-0 text-sm outline-none transition-colors duration-150 placeholder:text-muted-foreground hover:border-muted-foreground focus-visible:border-foreground focus-visible:outline-none md:text-sm sm:w-64 dark:bg-transparent"
             />
             {folders.length > 1 && folders.length <= INLINE_FOLDERS ? (
               <div role="group" aria-label="Folder" className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -200,7 +201,7 @@ function Line({ r }: { r: SessionRow }) {
         href={`#/s/${encodeURIComponent(r.session)}`}
         className="group -mx-2 grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 rounded-sm px-2 py-[0.3125rem] no-underline transition-colors duration-150 hover:bg-accent sm:flex"
       >
-        <span className="col-span-2 min-w-0 truncate font-semibold group-hover:underline group-hover:decoration-foreground/40 group-hover:underline-offset-4 sm:max-w-[60%] sm:flex-initial">
+        <span className="col-span-2 min-w-0 truncate font-medium group-hover:underline group-hover:decoration-foreground/40 group-hover:underline-offset-4 sm:max-w-[60%] sm:flex-initial">
           {rowTitle(r)}
         </span>
         <span className="num col-start-1 row-start-2 min-w-0 truncate text-xs text-muted-foreground sm:flex-1" title={r.placeLabel}>
