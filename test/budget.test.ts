@@ -1,0 +1,117 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { world, repo, runCli, runHook, waitFor, workerIdle, Transcript } from './helpers.ts';
+import { store } from '../src/core/paths.ts';
+import { enforce, storeSize } from '../src/core/budget.ts';
+import { logError } from '../src/core/fsx.ts';
+import { makeItem, pin, enqueue, queued } from '../src/core/items.ts';
+import { loadCards } from '../src/core/store.ts';
+import { LOG_MAX } from '../src/core/limits.ts';
+
+const DAY = 86_400_000;
+
+test('thousands of sessions end under the budget and the newest are the ones kept', async () => {
+  const budgetMb = 1;
+  const w = world('budget', { CLAUDE_CTX_BUDGET_MB: String(budgetMb) });
+  const n = 2000;
+  const base = Date.parse('2026-01-01T00:00:00Z');
+  const order: string[] = [];
+  const dirs = Array.from({ length: 40 }, (_, i) => repo(w, `bench-${i}`));
+  for (let i = 0; i < n; i++) {
+    const t = new Transcript(w.claude, dirs[i % dirs.length], { start: base + i * 3_600_000 });
+    t.prompt(`Tune the gear ratio table number ${i} for the winch drum and log torque readings`);
+    t.edit(path.join(dirs[i % dirs.length], `gear${i}.ts`));
+    t.reply(`Updated gear table ${i} with the new ratios and noted the torque limits for later checks.`);
+    t.title(`Gear table ${i}`);
+    t.save();
+    order.push(t.id);
+  }
+  const r = runCli(w, ['index']);
+  assert.equal(r.status, 0, r.stderr);
+  const st = store(w.ctxHome);
+  const size = storeSize(st.home);
+  assert.ok(size <= budgetMb * 1e6, `store is ${size} bytes`);
+  const kept = new Set(loadCards(st).map((c) => c.session));
+  assert.ok(kept.size > 100 && kept.size < n, `kept ${kept.size} sessions`);
+  assert.deepEqual([...kept].sort(), order.slice(n - kept.size).sort(), 'the newest sessions keep their cards');
+  const files = fs.readdirSync(st.sessions).map((f) => f.slice(0, -5));
+  assert.ok(files.length > 0 && files.length < n);
+  assert.deepEqual(files.sort(), order.slice(n - files.length).sort(), 'the newest sessions keep their analysis files');
+
+  const fresh = new Transcript(w.claude, dirs[0], { start: base + (n + 5) * 3_600_000 });
+  fresh.prompt('Check the brake caliper clearance on the newest winch');
+  fresh.title('Brake caliper clearance');
+  fresh.save();
+  runHook(w, 'session-end', { session_id: fresh.id, transcript_path: fresh.file, cwd: dirs[0] });
+  assert.ok(await waitFor(() => workerIdle(w) && loadCards(st).some((c) => c.session === fresh.id), 20000));
+  assert.ok(storeSize(st.home) <= budgetMb * 1e6);
+  const status = runCli(w, ['status']).stdout;
+  assert.match(status, /Store\s+[\d.]+ MB of 1\.0 MB/);
+});
+
+test('an oversized log and trace are cut to their newest part', () => {
+  const w = world('budget-log');
+  const st = store(w.ctxHome);
+  fs.mkdirSync(st.home, { recursive: true });
+  const line = (i: number) => `2026-11-01T00:00:00.000Z hook prompt Error: line ${i} ${'x'.repeat(80)}\n`;
+  let body = '';
+  for (let i = 0; i < 8000; i++) body += line(i);
+  fs.writeFileSync(st.log, body);
+  fs.writeFileSync(st.trace, body);
+  assert.ok(body.length > 2 * LOG_MAX);
+  logError(st.log, 'hook prompt', new Error('the newest line'));
+  const log = fs.readFileSync(st.log, 'utf8');
+  assert.ok(log.length <= LOG_MAX, `log is ${log.length}`);
+  assert.ok(log.endsWith('the newest line\n'));
+  assert.ok(!log.includes('line 0 '));
+  assert.ok(log.startsWith('2026-11-01'), 'cut on a line boundary');
+  enforce(st);
+  assert.ok(fs.statSync(st.trace).size <= LOG_MAX);
+  assert.ok(fs.readFileSync(st.trace, 'utf8').includes('line 7999 '));
+});
+
+test('the worker sweeps crash leftovers and old put back and pin rows', () => {
+  const w = world('budget-sweep');
+  const a = repo(w, 'sail-plan');
+  const t = new Transcript(w.claude, a);
+  t.prompt('Plan the sail area');
+  t.save();
+  runCli(w, ['index']);
+  const st = store(w.ctxHome);
+  const old = (Date.now() - 3600_000) / 1000;
+  const tmp = path.join(st.home, 'cards.jsonl.999999.abcdef.tmp');
+  const tmp2 = path.join(st.sessions, 'x.json.999999.abcdef.tmp');
+  fs.writeFileSync(tmp, 'half');
+  fs.writeFileSync(tmp2, 'half');
+  fs.utimesSync(tmp, old, old);
+  fs.utimesSync(tmp2, old, old);
+  const fresh = path.join(st.home, 'index.json.999998.abcdef.tmp');
+  fs.writeFileSync(fresh, 'in flight');
+  const claim = `${st.pending}.999999.claim`;
+  fs.writeFileSync(claim, JSON.stringify({ session: t.id, transcript: t.file }) + '\n');
+  const lockDir = `${st.queue}.lock`;
+  fs.mkdirSync(lockDir);
+  fs.utimesSync(lockDir, old, old);
+  const gone = makeItem('long-gone', 'note', 'Old', 'from a session long gone');
+  gone.at = new Date(Date.now() - 40 * DAY).toISOString();
+  const recent = makeItem('recent', 'note', 'New', 'from a recent session');
+  const always = makeItem('*', 'note', 'Always', 'kept for every session');
+  always.at = gone.at;
+  enqueue(st, gone);
+  enqueue(st, recent);
+  pin(st, gone);
+  pin(st, always);
+  const kept = enforce(st);
+  assert.ok(!fs.existsSync(tmp) && !fs.existsSync(tmp2), 'old temp files swept');
+  assert.ok(fs.existsSync(fresh), 'a temp file in flight stays');
+  assert.ok(!fs.existsSync(claim), 'dead claim swept');
+  assert.ok(fs.readFileSync(st.pending, 'utf8').includes(t.id), 'its job goes back to pending');
+  assert.ok(!fs.existsSync(lockDir), 'stale quick lock swept');
+  assert.deepEqual(queued(st).map((i) => i.session), ['recent']);
+  const pins = fs.readFileSync(st.pins, 'utf8');
+  assert.ok(pins.includes('Always') && !pins.includes('long gone'));
+  assert.equal(kept.items, 2);
+  fs.rmSync(fresh);
+});
