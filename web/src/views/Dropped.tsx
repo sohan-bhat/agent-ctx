@@ -193,7 +193,7 @@ export function ActionBar({ session, picked, onDone }: BarProps) {
       <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-[1.4rem] border bg-popover py-2 pl-2 pr-4 text-popover-foreground shadow-[0_10px_30px_-12px_oklch(0.2_0.04_220/0.45)]">
         {count > 0 ? (
           <>
-            <Button className="h-10 rounded-full bg-kelp px-5 text-[0.92rem] font-semibold text-kelp-ink hover:bg-kelp/85" disabled={!!busy} onClick={() => act('putback')}>
+            <Button className="h-10 px-5" disabled={!!busy} onClick={() => act('putback')}>
               <ArrowUUpLeft weight="bold" aria-hidden />
               {busy === 'putback' ? 'Putting back…' : `Put back ${count}`}
             </Button>

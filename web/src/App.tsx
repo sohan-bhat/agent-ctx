@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Moon, Sun } from '@phosphor-icons/react';
-import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sessions } from '@/views/Sessions';
 import { Session } from '@/views/Session';
@@ -49,27 +48,34 @@ export function App() {
   }, [id]);
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="min-h-dvh">
-        <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-30 focus:rounded-md focus:bg-kelp focus:px-3 focus:py-1.5 focus:text-kelp-ink" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }}>
-          Skip to content
+    <TooltipProvider delayDuration={150}>
+      <div className="min-h-dvh px-4 pb-24 pt-4 sm:px-8 md:px-12 md:pt-7">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-30 focus:rounded-sm focus:bg-primary focus:px-3 focus:py-1.5 focus:text-primary-foreground"
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById('main')?.focus();
+          }}
+        >
+          Skip to the content
         </a>
-        <header className="border-b bg-shelf">
-          <div className="mx-auto flex h-14 max-w-[1240px] items-center justify-between px-4 md:px-8">
-            <a href="#/" className="font-heading text-[1.35rem] font-extrabold tracking-[-0.03em] no-underline" aria-label="claude-ctx, all sessions">
-              claude-ctx
-            </a>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={theme === 'dark' ? 'Use the light theme' : 'Use the dark theme'}
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            >
-              {theme === 'dark' ? <Sun weight="bold" /> : <Moon weight="bold" />}
-            </Button>
-          </div>
+        <header className="flex h-8 items-center justify-between">
+          <a href="#/" translate="no" className="text-[0.9375rem] font-bold tracking-[-0.01em] no-underline" aria-label="claude-ctx, all sessions">
+            claude-ctx
+          </a>
+          <button
+            type="button"
+            className="-mr-2 inline-flex size-8 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:text-foreground"
+            aria-label={theme === 'dark' ? 'Light theme' : 'Dark theme'}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            {theme === 'dark' ? <Sun className="size-[1.05rem]" /> : <Moon className="size-[1.05rem]" />}
+          </button>
         </header>
-        <main id="main" tabIndex={-1} className="mx-auto max-w-[1240px] px-4 pb-28 pt-8 outline-none md:px-8 md:pt-10">{id ? <Session id={id} /> : <Sessions />}</main>
+        <main id="main" tabIndex={-1} className="max-w-[58rem] pt-7 outline-none md:pt-10">
+          {id ? <Session id={id} /> : <Sessions />}
+        </main>
       </div>
     </TooltipProvider>
   );

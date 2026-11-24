@@ -58,7 +58,7 @@ function TipBody({ point, layers }: { point: Point; layers: Layer[] }) {
       <div className="mt-2 grid gap-1 border-t pt-2">
         {items.map(({ l, i, v }) => (
           <div key={l.key} className="flex items-center gap-2 text-[0.78rem]">
-            <span aria-hidden className="size-2.5 shrink-0 rounded-[2px]" style={{ background: `var(--strata-${i})` }} />
+            <span aria-hidden className="size-2.5 shrink-0 rounded-[2px]" style={{ background: `var(--kind-${['tools', 'system', 'memory', 'prompts', 'replies', 'summary'][i % 6]})` }} />
             <span className="truncate">{l.label}</span>
             <span className="num ml-auto text-muted-foreground">{tokens(v)}</span>
           </div>
@@ -82,8 +82,8 @@ export function ContextChart({ points, layers, compactions, selected, onSelect }
 
   const data = useMemo(() => sample(points, keep).map((p) => ({ x: p.n + 1, total: p.total, ...scaled(p, layers) })), [points, layers, keep]);
   const config = useMemo(() => {
-    const c: ChartConfig = { total: { label: 'Exact total', color: 'var(--total-line)' } };
-    layers.forEach((l, i) => (c[l.key] = { label: l.label, color: `var(--strata-${i})` }));
+    const c: ChartConfig = { total: { label: 'Exact total', color: 'var(--foreground)' } };
+    layers.forEach((l, i) => (c[l.key] = { label: l.label, color: `var(--kind-${['tools', 'system', 'memory', 'prompts', 'replies', 'summary'][i % 6]})` }));
     return c;
   }, [layers]);
   const byN = useMemo(() => new Map(points.map((p) => [p.n + 1, p])), [points]);
@@ -117,7 +117,7 @@ export function ContextChart({ points, layers, compactions, selected, onSelect }
           <ReferenceLine
             key={`${c.n}-${i}`}
             x={c.n + 0.5}
-            stroke="var(--kelp)"
+            stroke="var(--live)"
             strokeWidth={2}
             label={{ value: `${tokens(c.pre)} to ${tokens(c.post)}`, position: 'top', fill: 'var(--foreground)', fontSize: 11, className: 'num' }}
           />
