@@ -36,3 +36,12 @@ export function rel(p: string, root?: string): string {
   if (home && p.startsWith(home + '/')) return '~' + p.slice(home.length);
   return p;
 }
+
+export function mb(bytes: number): string {
+  const v = bytes / 1_000_000;
+  return `${v >= 10 ? Math.round(v) : v.toFixed(1)} MB`;
+}
+
+export function count(n: number, one: string, many: string): string {
+  return `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+}

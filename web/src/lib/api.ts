@@ -1,6 +1,7 @@
 export interface SessionRow {
   session: string;
   title?: string;
+  prompt?: string;
   place: string;
   placeLabel: string;
   project: string;
@@ -73,6 +74,7 @@ export interface Item {
 export interface SessionData {
   session: string;
   title?: string;
+  prompt?: string;
   cwd?: string;
   root?: string;
   model?: string;
@@ -95,7 +97,14 @@ async function get<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-export function sessions(): Promise<{ sessions: SessionRow[]; indexing: boolean; home: string }> {
+export interface SessionList {
+  sessions: SessionRow[];
+  indexing: boolean;
+  home: string;
+  store?: { bytes: number; cap: number };
+}
+
+export function sessions(): Promise<SessionList> {
   return get('api/sessions');
 }
 

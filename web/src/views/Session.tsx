@@ -5,6 +5,7 @@ import { events, session, type Dropped, type SessionData } from '@/lib/api';
 import { rel, tokens } from '@/lib/format';
 import { ContextChart, scaled, type Layer } from './ContextChart';
 import { ActionBar, CompactionBlock } from './Dropped';
+import { rowTitle } from './Sessions';
 
 const ORDER = ['system', 'memory', 'skills', 'summary', 'prompts', 'replies'];
 const MAX_TOOL_LAYERS = 4;
@@ -118,7 +119,7 @@ export function Session({ id }: { id: string }) {
   return (
     <div>
       <Back />
-      <h1 className="mt-5 font-heading text-[1.9rem] font-bold leading-[1.15] tracking-[-0.025em] text-balance md:text-[2.3rem]">{data.title || 'Untitled session'}</h1>
+      <h1 className="mt-5 font-heading text-[1.9rem] font-bold leading-[1.15] tracking-[-0.025em] text-balance md:text-[2.3rem]">{rowTitle({ title: data.title, prompt: data.prompt, placeLabel: data.cwd })}</h1>
       <p className="num mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-muted-foreground">
         {data.cwd && <span>{data.cwd}</span>}
         {data.model && <span>{data.model}</span>}
@@ -149,7 +150,7 @@ export function Session({ id }: { id: string }) {
                   .reverse()
                   .map(({ l, i, v }) => (
                     <li key={l.key} className="flex items-center gap-2.5 text-[0.86rem]">
-                      <span aria-hidden className="size-3 shrink-0 rounded-[3px]" style={{ background: `var(--strata-${i})` }} />
+                      <span aria-hidden className="size-3 shrink-0 rounded-[3px]" style={{ background: `var(--kind-${['tools', 'system', 'memory', 'prompts', 'replies', 'summary'][i % 6]})` }} />
                       <span className="truncate">{l.label}</span>
                       <span className="num ml-auto text-[0.8rem] text-muted-foreground">{v ? tokens(v) : ''}</span>
                       <span className="num w-10 text-right text-[0.8rem]">{point.total ? `${Math.round((v / point.total) * 100)}%` : ''}</span>
