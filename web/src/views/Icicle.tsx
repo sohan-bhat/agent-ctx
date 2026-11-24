@@ -96,7 +96,7 @@ export function Icicle({ root, total, window, scaleMax, depth = 3, cwdRoot, focu
             const leaf = !c.children?.length;
             const isFocus = c === focus;
             const name = display(c.data, cwdRoot);
-            const ink = c.depth === 1 && (c.data.kept === undefined || c.data.kept >= 0.5) ? `var(--ink-${c.data.kind})` : 'var(--foreground)';
+            const ink = c.depth === 1 && (c.data.kept === undefined || c.data.kept >= 0.5) ? 'var(--kind-ink)' : 'var(--foreground)';
             const share = total > 0 ? `${Math.max(c.value! / total < 0.005 ? 0 : 1, Math.round((c.value! / total) * 100))}% of used` : undefined;
             const style = { ...place(c), background: background(c, sib), color: ink };
             const press = onFocus && !leaf ? () => onFocus(isFocus ? c.parent?.data.id ?? 'used' : c.data.id) : undefined;

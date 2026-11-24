@@ -59,18 +59,13 @@
   --field: #f0f0f0;
   --ring: #1b7a3c;
   --live: #1b7a3c;
-  --kind-system: #6250d6;
-  --kind-memory: #eb6834;
-  --kind-prompts: #009e73;
-  --kind-replies: #eda100;
-  --kind-tools: #256abf;
-  --kind-summary: #e87ba4;
-  --ink-system: #ffffff;
-  --ink-memory: #141414;
-  --ink-prompts: #141414;
-  --ink-replies: #141414;
-  --ink-tools: #ffffff;
-  --ink-summary: #141414;
+  --kind-system: #8b80ca;
+  --kind-memory: #c37552;
+  --kind-prompts: #66c7a0;
+  --kind-replies: #af8433;
+  --kind-tools: #7cb5f5;
+  --kind-summary: #d481a2;
+  --kind-ink: #141414;
   --free: #ededed;
 }
 
@@ -96,18 +91,13 @@
   --field: #1c1c1c;
   --ring: #7ccf93;
   --live: #7ccf93;
-  --kind-system: #9085e9;
-  --kind-memory: #d95926;
-  --kind-prompts: #009e73;
-  --kind-replies: #c98500;
-  --kind-tools: #3987e5;
-  --kind-summary: #d55181;
-  --ink-system: #141414;
-  --ink-memory: #141414;
-  --ink-prompts: #141414;
-  --ink-replies: #141414;
-  --ink-tools: #141414;
-  --ink-summary: #141414;
+  --kind-system: #8377c0;
+  --kind-memory: #b96c49;
+  --kind-prompts: #47aa84;
+  --kind-replies: #a67b28;
+  --kind-tools: #558dca;
+  --kind-summary: #c37292;
+  --kind-ink: #141414;
   --free: #1f1f1f;
 }
 
