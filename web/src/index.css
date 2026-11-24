@@ -66,7 +66,6 @@
   --kind-tools: #7cb5f5;
   --kind-summary: #d481a2;
   --kind-ink: #141414;
-  --free: #ededed;
 }
 
 .dark {
@@ -98,7 +97,6 @@
   --kind-tools: #558dca;
   --kind-summary: #c37292;
   --kind-ink: #141414;
-  --free: #1f1f1f;
 }
 
 @layer base {

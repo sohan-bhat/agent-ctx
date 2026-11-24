@@ -165,7 +165,10 @@ export function Session({ id }: { id: string }) {
                   <span className="text-muted-foreground">
                     Call {call + 1} of {points.length}
                   </span>
-                  <span className="num font-semibold">{exact(point.total)}</span>
+                  <span className="num font-semibold">
+                    {exact(point.total)}
+                    {win ? <span className="font-normal text-muted-foreground"> of {tokens(win)}</span> : null}
+                  </span>
                 </>
               )}
               {(chosen || (pinned != null && pinned !== last)) && (
@@ -214,7 +217,7 @@ export function Session({ id }: { id: string }) {
                     <span className="font-semibold">Before, call {chosen.n}</span>
                     <span className="num text-muted-foreground">{exact(before!.total)}</span>
                   </p>
-                  <Icicle root={pair.before} total={before!.total} scaleMax={Math.max(before!.total, after?.total ?? 0)} depth={narrow ? 1 : 2} label="Context before the compaction" />
+                  <Icicle root={pair.before} total={before!.total} scaleMax={Math.max(before!.total, after?.total ?? 0)} from={1} depth={narrow ? 1 : 2} label="Context before the compaction" />
                 </div>
                 {after && pair.after && (
                   <div className="grid gap-1.5">
@@ -222,7 +225,7 @@ export function Session({ id }: { id: string }) {
                       <span className="font-semibold">After, call {chosen.n + 1}</span>
                       <span className="num text-muted-foreground">{exact(after.total)}</span>
                     </p>
-                    <Icicle root={pair.after} total={after.total} scaleMax={Math.max(before!.total, after.total)} depth={narrow ? 1 : 2} label="Context after the compaction" />
+                    <Icicle root={pair.after} total={after.total} scaleMax={Math.max(before!.total, after.total)} from={1} depth={narrow ? 1 : 2} label="Context after the compaction" />
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
@@ -233,7 +236,6 @@ export function Session({ id }: { id: string }) {
                 <Icicle
                   root={root}
                   total={point.total}
-                  window={win}
                   depth={narrow ? Math.max(1, focusDepth(focus)) : 3}
                   cwdRoot={data.root}
                   focusId={focus}
@@ -241,7 +243,7 @@ export function Session({ id }: { id: string }) {
                   pins={pins}
                   label={`Context at call ${call + 1}`}
                 />
-                <Breakdown root={root} total={point.total} window={win} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} />
+                <Breakdown root={root} total={point.total} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} />
                 <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
               </div>
             )}
