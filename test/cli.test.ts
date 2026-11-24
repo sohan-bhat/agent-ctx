@@ -205,6 +205,8 @@ test('doctor counts what it understood and what it skipped', () => {
   assert.match(r, /compactions\s+1, 1 with token counts/);
   assert.match(r, /AI titles\s+1/);
   assert.match(r, /prompts\s+1/);
+  assert.match(r, /\nThe mcp command loads and exits on a closed pipe in \d+ ms\.\n$/);
+  assert.ok(!fs.existsSync(path.join(w.ctxHome, 'claude-ctx.log')));
 });
 
 test('status says whether the hooks run, how many cards exist, the last hook and the last error', async () => {

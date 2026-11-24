@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeDir, ctxHome, store, type Store } from './core/paths.ts';
 import { loadIndex, readCards } from './core/store.ts';
@@ -275,6 +276,28 @@ async function cmdDoctor(st: Store): Promise<void> {
   const ix = loadIndex(st);
   out();
   out(ix ? `Store ${tilde(st.home)} holds ${num(ix.docs.length)} cards, indexed ${day(ix.built)}` : `Store ${tilde(st.home)} is empty, so run claude-ctx index.`);
+  out(await mcpCheck());
+}
+
+function mcpCheck(): Promise<string> {
+  if (!fs.existsSync(mcpJs)) return Promise.resolve(`The mcp command is missing ${tilde(mcpJs)}, so run npm run build.`);
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'mcp'], { stdio: ['pipe', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (d) => (err += d));
+    const guard = setTimeout(() => child.kill('SIGKILL'), 10000);
+    child.on('error', (e) => {
+      clearTimeout(guard);
+      resolve(`The mcp command failed with ${e.message}`);
+    });
+    child.on('exit', (code) => {
+      clearTimeout(guard);
+      const why = err.trim().split('\n')[0];
+      resolve(code === 0 ? `The mcp command loads and exits on a closed pipe in ${Date.now() - t0} ms.` : `The mcp command failed${why ? ` with ${why.slice(0, 200)}` : ''}`);
+    });
+    child.stdin.end();
+  });
 }
 
 function ago(ms: number): string {
