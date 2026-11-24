@@ -11,7 +11,7 @@ const want = (k) => !only.length || only.includes(k);
 
 if (want('node')) {
   fs.mkdirSync(dist, { recursive: true });
-  for (const name of ['cli', 'hook', 'worker']) {
+  for (const name of ['cli', 'hook', 'worker', 'mcp']) {
     await build({
       entryPoints: [path.join(root, 'src', `${name}.ts`)],
       outfile: path.join(dist, `${name}.js`),
@@ -43,6 +43,6 @@ if (want('plugin')) {
   const pdir = path.join(root, 'plugin', 'scripts');
   if (fs.existsSync(path.join(root, 'plugin'))) {
     fs.mkdirSync(pdir, { recursive: true });
-    for (const name of ['hook', 'worker', 'cli']) fs.copyFileSync(path.join(dist, `${name}.js`), path.join(pdir, `${name}.js`));
+    for (const name of ['hook', 'worker', 'cli', 'mcp']) fs.copyFileSync(path.join(dist, `${name}.js`), path.join(pdir, `${name}.js`));
   }
 }

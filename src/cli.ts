@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeDir, ctxHome, store, type Store } from './core/paths.ts';
 import { loadIndex, readCards } from './core/store.ts';
 import { findDocs, newestDocs } from './core/rank.ts';
@@ -19,6 +19,7 @@ const VERSION = '0.1.0';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ext = path.extname(fileURLToPath(import.meta.url));
 const hookJs = path.join(here, 'hook' + ext);
+const mcpJs = path.join(here, 'mcp' + ext);
 const tty = !!process.stdout.isTTY && !!process.stdin.isTTY;
 const interactive = tty || !!process.env.CLAUDE_CTX_TTY;
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[22m` : s);
@@ -36,6 +37,7 @@ const COMMANDS: [string, string][] = [
   ['claude-ctx uninstall', 'take the hooks out again'],
   ['claude-ctx status', 'show whether the hooks run'],
   ['claude-ctx doctor', 'count each record type it understood'],
+  ['claude-ctx mcp', 'recall for any MCP client, setup lines with --help'],
 ];
 
 function commandList(): string {
@@ -324,6 +326,42 @@ async function cmdOpen(st: Store, args: string[]): Promise<void> {
   await serve(st, { open: !args.includes('--no-open') && !process.env.CLAUDE_CTX_NO_OPEN, port: Number(process.env.CLAUDE_CTX_PORT) || 0 });
 }
 
+function shellWord(s: string): string {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+function desktopConfig(): string {
+  if (process.platform === 'win32') return '%APPDATA%\\Claude\\claude_desktop_config.json';
+  if (process.platform === 'darwin') return '~/Library/Application Support/Claude/claude_desktop_config.json';
+  return '~/.config/Claude/claude_desktop_config.json';
+}
+
+function mcpHelp(): string {
+  const self = fileURLToPath(import.meta.url);
+  const cmd = [process.execPath, self, 'mcp'];
+  const json = JSON.stringify({ mcpServers: { 'claude-ctx': { command: cmd[0], args: cmd.slice(1) } } });
+  return [
+    'claude-ctx mcp gives search, recent and session to any MCP client over stdio.',
+    '',
+    bold('Claude Code'),
+    `  claude mcp add --scope user claude-ctx -- ${cmd.map(shellWord).join(' ')}`,
+    '',
+    bold(`Claude desktop app, in ${desktopConfig()}`),
+    `  ${json}`,
+    '',
+    'The ctx plugin brings the server with no extra step.',
+  ].join('\n');
+}
+
+async function cmdMcp(st: Store, args: string[]): Promise<void> {
+  if (args.includes('--help') || args.includes('-h') || process.stdin.isTTY) {
+    out(mcpHelp());
+    return;
+  }
+  const { serveMcp } = (await import(pathToFileURL(mcpJs).href)) as typeof import('./mcp.ts');
+  serveMcp(st, VERSION);
+}
+
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   const st = store(ctxHome());
@@ -346,6 +384,8 @@ async function main(): Promise<void> {
       return cmdDoctor(st);
     case 'status':
       return cmdStatus(st);
+    case 'mcp':
+      return cmdMcp(st, rest);
     case 'help':
     case '--help':
     case '-h':
