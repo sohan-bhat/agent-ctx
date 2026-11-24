@@ -8,10 +8,11 @@ import { claudeDir, type Store } from './core/paths.ts';
 import { loadCards } from './core/store.ts';
 import { applyJobs, listTranscripts } from './core/update.ts';
 import { releaseLock, tryLock } from './core/lock.ts';
-import { WORKER_LIMIT_MS } from './core/limits.ts';
+import { budgetBytes, WORKER_LIMIT_MS } from './core/limits.ts';
 import { advance, categories, catLabel, CHARS_PER_TOKEN, largest, newAnalyzer, type Analyzer } from './core/context.ts';
 import { enqueue, makeItem, pin, pinsFor, queued, unpin, type ItemKind } from './core/items.ts';
-import { tilde } from './core/format.ts';
+import { promptTitle, tilde } from './core/format.ts';
+import { storeSize } from './core/budget.ts';
 import type { Card } from './core/session.ts';
 
 export interface ServeOptions {
@@ -48,6 +49,7 @@ function webDir(): string {
 interface SessionRow {
   session: string;
   title?: string;
+  prompt?: string;
   place: string;
   placeLabel: string;
   project: string;
@@ -93,6 +95,7 @@ function sessionRows(st: Store): SessionRow[] {
     rows.push({
       session,
       title: main.title,
+      prompt: promptTitle(cs.find((c) => c.firstPrompt)?.firstPrompt),
       place: main.place,
       placeLabel: tilde(main.place),
       project: main.project,
@@ -289,7 +292,7 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
         return send(res, 200, fs.readFileSync(f), MIME[path.extname(f)] ?? 'application/octet-stream');
       }
       if (req.method === 'GET' && rest === 'api/sessions') {
-        return send(res, 200, { sessions: sessionRows(st), indexing: !!indexing, home: tilde(st.home) });
+        return send(res, 200, { sessions: sessionRows(st), indexing: !!indexing, home: tilde(st.home), store: { bytes: storeSize(st.home), cap: budgetBytes() } });
       }
       if (req.method === 'GET' && rest.startsWith('api/session/')) {
         const id = decodeURIComponent(rest.slice('api/session/'.length));
@@ -302,6 +305,7 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
         return send(res, 200, {
           session: id,
           title: a.ctx.title,
+          prompt: promptTitle(loadCards(st).find((c) => c.session === id && c.firstPrompt)?.firstPrompt),
           cwd: a.ctx.cwd ? tilde(a.ctx.cwd) : undefined,
           root: a.ctx.cwd,
           model: a.ctx.model,

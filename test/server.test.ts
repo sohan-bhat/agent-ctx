@@ -46,14 +46,22 @@ function seed(w: World) {
   t.reply('Adding undo.', { input: 5, read: 2000, write: 300, out: 60 });
   t.title('Loom editor');
   t.save();
-  return t;
+  const u = new Transcript(w.claude, a);
+  u.prompt('Sketch the weave preview <system-reminder>harness note</system-reminder> for the loom so that a long first prompt runs well past eighty characters');
+  u.reply('Sketching.', { input: 10, read: 3000, write: 500, out: 120 });
+  u.save();
+  const v = new Transcript(w.claude, a);
+  v.prompt('/compact keep the loom notes');
+  v.reply('Compacted.', { input: 10, read: 3000, write: 500, out: 120 });
+  v.save();
+  return Object.assign(t, { untitled: u.id, slash: v.id });
 }
 
 test('the page server checks token and host, serves analysis, writes put back and pins, follows a live session, and stays offline', async () => {
   const w = world('server');
   const t = seed(w);
   const log = path.join(w.root, 'net.log');
-  const { child, url, port } = await boot(w, { NODE_OPTIONS: `--import ${GUARD}`, CLAUDE_CTX_NET_LOG: log });
+  const { child, url, port } = await boot(w, { NODE_OPTIONS: `--import ${GUARD}`, CLAUDE_CTX_NET_LOG: log, CLAUDE_CTX_BUDGET_MB: '20' });
   const base = new URL(url).pathname;
   try {
     assert.notEqual(port, 4000);
@@ -69,6 +77,18 @@ test('the page server checks token and host, serves analysis, writes put back an
     const row = list.sessions.find((s: any) => s.session === t.id);
     assert.ok(row);
     assert.equal(row.title, 'Loom editor');
+    assert.equal(row.prompt, 'Build the loom editor. Never open port 4000 for the dev server.');
+    const later: any = await (await fetch(`${url}api/sessions`)).json();
+    const bare = later.sessions.find((s: any) => s.session === t.untitled);
+    assert.equal(bare.title, undefined);
+    assert.ok(bare.prompt.startsWith('Sketch the weave preview'));
+    assert.ok(bare.prompt.length <= 81 && bare.prompt.endsWith('…'));
+    assert.ok(!bare.prompt.includes('<') && !bare.prompt.includes('harness note'));
+    assert.equal(later.sessions.find((s: any) => s.session === t.slash).prompt, undefined);
+    assert.equal(later.store.cap, 20_000_000);
+    assert.ok(later.store.bytes > 0 && later.store.bytes < later.store.cap);
+    const s0: any = await (await fetch(`${url}api/session/${t.untitled}`)).json();
+    assert.equal(s0.prompt, bare.prompt);
     const s1: any = await (await fetch(`${url}api/session/${t.id}`)).json();
     assert.equal(s1.points.length, 5);
     assert.equal(s1.compactions.length, 1);

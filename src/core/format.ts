@@ -24,6 +24,12 @@ function askedQuote(p: string): string {
   return cut(stripMarkup(p).replace(/\s+/g, ' ').trim(), 100);
 }
 
+export function promptTitle(p?: string): string | undefined {
+  const s = p ? stripMarkup(p).replace(/\s+/g, ' ').trim() : '';
+  if (!s || s.startsWith('/')) return undefined;
+  return cut(s, 80);
+}
+
 export function cardSummary(c: Card): string {
   for (let i = c.summaries.length - 1; i >= 0; i--) {
     const line = summaryLine(c.summaries[i]);
