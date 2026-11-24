@@ -20,8 +20,12 @@ export function shortFile(f: string, place: string): string {
 
 const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
+export function cleanPrompt(p: string, n: number): string {
+  return cut(stripMarkup(p).replace(/\s+/g, ' ').trim(), n);
+}
+
 function askedQuote(p: string): string {
-  return cut(stripMarkup(p).replace(/\s+/g, ' ').trim(), 100);
+  return cleanPrompt(p, 100);
 }
 
 export function promptTitle(p?: string): string | undefined {

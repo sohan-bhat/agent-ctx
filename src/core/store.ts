@@ -34,6 +34,7 @@ export interface IndexFile {
 
 export interface Index extends IndexFile {
   bm25: Bm25View;
+  close(): void;
 }
 
 export function termsFile(st: Store, name: string): string {
@@ -140,7 +141,14 @@ function attach(st: Store, file: IndexFile): Index {
       return Object.prototype.hasOwnProperty.call(g, t) ? g[t] : undefined;
     },
   };
-  return { ...file, bm25 };
+  const close = () => {
+    if (fd == null) return;
+    try {
+      fs.closeSync(fd);
+    } catch {}
+    fd = null;
+  };
+  return { ...file, bm25, close };
 }
 
 export function loadIndex(st: Store): Index | null {
