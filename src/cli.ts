@@ -5,15 +5,13 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { claudeDir, ctxHome, store, type Store } from './core/paths.ts';
 import { loadIndex, readCards } from './core/store.ts';
-import { rankPrompt } from './core/rank.ts';
+import { findDocs, newestDocs } from './core/rank.ts';
 import { renderCard, tilde, day } from './core/format.ts';
 import { applyJobs, listTranscripts } from './core/update.ts';
 import { releaseLock, waitLock } from './core/lock.ts';
 import { apply, backupPath, HOOKS, hookName, isOurs, planInstall, planUninstall, type HookInfo, type Plan } from './core/install.ts';
 import { logError } from './core/fsx.ts';
 import { doctor } from './core/doctor.ts';
-import { search } from './core/bm25.ts';
-import { tokens } from './core/text.ts';
 import { budgetBytes, MB, WORKER_LIMIT_MS } from './core/limits.ts';
 import { enforce, storeSize } from './core/budget.ts';
 
@@ -64,12 +62,10 @@ async function cmdSearch(st: Store, words: string[]): Promise<void> {
   }
   let docs: number[];
   if (!q) {
-    docs = ix.docs.map((_, i) => i).sort((a, b) => ix.docs[b].t - ix.docs[a].t).slice(0, 5);
+    docs = newestDocs(ix, 5);
     out(dim('Newest sessions first, and words narrow the list, like claude-ctx search heat map.'));
   } else {
-    const hits = rankPrompt(ix, q, Date.now(), new Set(), null);
-    docs = hits.slice(0, 8).map((h) => h.doc);
-    if (!docs.length) docs = search(ix.bm25, tokens(q)).slice(0, 5).map((h) => h.doc);
+    docs = findDocs(ix, q, 8, 5);
     if (!docs.length) {
       out(`Nothing matches "${q}". Try fewer or different words.`);
       return;

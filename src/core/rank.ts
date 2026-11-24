@@ -2,7 +2,7 @@ import path from 'node:path';
 import { idf, search, type Scored } from './bm25.ts';
 import { fileTokens, stem, tokens } from './text.ts';
 import { placeOfDir, recentFiles, remoteOf } from './place.ts';
-import type { Index } from './store.ts';
+import type { Index, IndexDoc } from './store.ts';
 
 export const DAY = 86400000;
 export const START_BAR = 0.1;
@@ -107,6 +107,26 @@ export function newestElsewhere(ix: Index, h: Here, n: number, exclude = new Set
     if (out.length >= n) break;
   }
   return out;
+}
+
+export function findDocs(ix: Index, q: string, ranked: number, plain: number, keep: (d: IndexDoc) => boolean = () => true): number[] {
+  const hits = rankPrompt(ix, q, Date.now(), new Set(), null)
+    .map((h) => h.doc)
+    .filter((i) => keep(ix.docs[i]))
+    .slice(0, ranked);
+  if (hits.length) return hits;
+  return search(ix.bm25, tokens(q))
+    .map((h) => h.doc)
+    .filter((i) => keep(ix.docs[i]))
+    .slice(0, plain);
+}
+
+export function newestDocs(ix: Index, n: number, keep: (d: IndexDoc) => boolean = () => true): number[] {
+  return ix.docs
+    .map((_, i) => i)
+    .filter((i) => keep(ix.docs[i]))
+    .sort((a, b) => ix.docs[b].t - ix.docs[a].t)
+    .slice(0, n);
 }
 
 export function rankPrompt(ix: Index, prompt: string, now = Date.now(), exclude = new Set<string>(), remote: string | null = null): Hit[] {
