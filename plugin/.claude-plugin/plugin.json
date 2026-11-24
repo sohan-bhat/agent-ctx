@@ -1,0 +1,10 @@
+{
+  "name": "ctx",
+  "version": "0.1.0",
+  "description": "Memory across folders for Claude Code sessions",
+  "author": {
+    "name": "Sohan Bhat"
+  },
+  "license": "MIT",
+  "keywords": ["memory", "recall", "context", "compaction"]
+}

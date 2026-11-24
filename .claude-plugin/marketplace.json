@@ -1,0 +1,14 @@
+{
+  "name": "claude-ctx",
+  "description": "Memory across folders for Claude Code sessions",
+  "owner": {
+    "name": "Sohan Bhat"
+  },
+  "plugins": [
+    {
+      "name": "ctx",
+      "source": "./plugin",
+      "description": "Memory across folders for Claude Code sessions"
+    }
+  ]
+}
