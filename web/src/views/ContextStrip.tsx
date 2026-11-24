@@ -25,9 +25,7 @@ interface Props {
 }
 
 export function cutNumbers(c: Compaction, points: Point[]): [number, number] {
-  const pre = c.pre || points[c.n - 1]?.total || 0;
-  const post = c.post || points[c.n]?.total || 0;
-  return [pre, post];
+  return [points[c.n - 1]?.total ?? c.pre, points[c.n]?.total ?? c.post];
 }
 
 export function ContextStrip({ points, compactions, window, call, hover, chosen, hoverCut, onHover, onPick, onPickCut }: Props) {
@@ -93,6 +91,11 @@ export function ContextStrip({ points, compactions, window, call, hover, chosen,
           }
         }}
       >
+        {window && window === top && width > 0 && (
+          <span className="num pointer-events-none absolute right-0 top-0.5 bg-background pl-1.5 text-[0.6875rem] leading-none text-muted-foreground" aria-hidden>
+            {tokens(window)} window
+          </span>
+        )}
         {width > 0 && (
           <svg width={width} height={PLOT} className="absolute inset-0 overflow-visible" aria-hidden>
             <Group>
@@ -132,7 +135,7 @@ export function ContextStrip({ points, compactions, window, call, hover, chosen,
       </div>
       <div className="num pointer-events-none flex h-[18px] items-end justify-between text-[0.6875rem] text-muted-foreground" aria-hidden>
         <span>1</span>
-        <span>{shown ? `call ${(hover ?? 0) + 1}, ${exact(shown.total)}` : window && window === top ? `${tokens(window)} window` : ''}</span>
+        <span>{shown ? `call ${(hover ?? 0) + 1}, ${exact(shown.total)}` : ''}</span>
         <span>{n}</span>
       </div>
     </div>
