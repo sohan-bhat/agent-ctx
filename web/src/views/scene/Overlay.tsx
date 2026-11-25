@@ -26,6 +26,9 @@ const OFFSETS: [number, number][] = [
   [0, -36],
   [-30, -24],
   [30, -24],
+  [0, -54],
+  [-56, -40],
+  [56, -40],
 ];
 
 const CHAR = 6.7;
@@ -39,9 +42,12 @@ export interface OverlayProps {
   controls: RefObject<CameraControlsImpl | null>;
   portal: RefObject<HTMLDivElement | null>;
   homeZoom: RefObject<number>;
+  force?: Set<string>;
 }
 
-export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom }: OverlayProps) {
+const NONE = new Set<string>();
+
+export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom, force = NONE }: OverlayProps) {
   const camera = useThree((st) => st.camera) as OrthographicCamera;
   const size = useThree((st) => st.size);
   const narrow = size.width < 520;
@@ -72,18 +78,22 @@ export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom }: O
     }
     const share = camera.zoom / Math.max(1, homeZoom.current ?? 1);
     const cap = Math.round(Math.min(22, Math.max(narrow ? 3 : 6, (narrow ? 3 : 6) * share * share)));
-    const order = placed.filter((p) => p.piece.state === 'stand').sort((a, b) => b.w * b.d - a.w * a.d);
+    const seen = placed
+      .filter((p) => p.piece.state === 'stand')
+      .map((p) => ({ p, a: screen(p.cx, p.h, p.cz) }))
+      .filter(({ a }) => a[0] >= 0 && a[0] <= size.width && a[1] >= 0 && a[1] <= size.height)
+      .sort((x, y) => Number(force.has(y.p.id)) - Number(force.has(x.p.id)) || y.p.w * y.p.d - x.p.w * x.p.d);
     const texts = new Set<string>();
     const next: Tag[] = [];
-    for (const p of order.slice(0, 90)) {
-      if (next.length >= cap) break;
+    for (const { p, a } of seen.slice(0, 140)) {
+      const forced = force.has(p.id);
+      if (next.length >= cap && !forced) break;
       const text = shortOf(p.piece.block);
       if (texts.has(text)) continue;
-      const [ax, ay] = screen(p.cx, p.h, p.cz);
-      if (ax < 0 || ax > size.width || ay < 0 || ay > size.height) continue;
+      const [ax, ay] = a;
       const [ex] = screen(p.cx - p.w / 2, p.h, p.cz + p.d / 2);
       const [fx] = screen(p.cx + p.w / 2, p.h, p.cz - p.d / 2);
-      if (Math.abs(fx - ex) < 22) continue;
+      if (Math.abs(fx - ex) < 22 && !forced) continue;
       const tw = text.length * CHAR + 8;
       for (const [dx, dy] of OFFSETS) {
         const box = { x0: ax + dx - tw / 2, x1: ax + dx + tw / 2, y0: ay + dy - 19, y1: ay + dy - 4 };
@@ -97,7 +107,7 @@ export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom }: O
     }
     setTicks((prev) => (prev.join() === shownTicks.join() ? prev : shownTicks));
     setTags((prev) => (prev.length === next.length && prev.every((t, i) => t.p === next[i].p && t.dx === next[i].dx && t.dy === next[i].dy) ? prev : next));
-  }, [camera, size, placed, narrow, rx, rz, plateLabel, homeZoom]);
+  }, [camera, size, placed, narrow, rx, rz, plateLabel, homeZoom, force]);
   useEffect(() => {
     pick();
     const c = controls.current;
