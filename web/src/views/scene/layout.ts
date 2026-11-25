@@ -30,10 +30,15 @@ export function heightAt(age: number): number {
   return H_MIN + heightShare(age) * (H_MAX - H_MIN);
 }
 
-export function heightOf(p: Piece): number {
-  if (p.state === 'gone') return FLAT;
+export const FIXED_KINDS = new Set(['system', 'memory']);
+
+export function standHeight(p: Piece): number {
   if (p.block.members) return H_MIN;
-  return heightAt(p.age);
+  return FIXED_KINDS.has(p.block.kind) ? Math.min(heightAt(p.age), heightAt(1)) : heightAt(p.age);
+}
+
+export function heightOf(p: Piece): number {
+  return p.state === 'gone' ? FLAT : standHeight(p);
 }
 
 function span(a0: number, a1: number, inset0: number, inset1: number): [number, number] {
