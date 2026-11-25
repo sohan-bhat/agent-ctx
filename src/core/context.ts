@@ -9,6 +9,8 @@ export const IMAGE_TOKENS = 1600;
 export const OUTPUT_CAP = 1500;
 export const MAX_DROPPED = 80;
 export const LARGE_READ = 2000;
+export const SMALL_ITEM = 250;
+export const MAX_STEPS = 32;
 
 export const CAT_LABEL: Record<string, string> = {
   system: 'System and tools',
@@ -26,7 +28,7 @@ export function catLabel(cat: string): string {
 
 type Kind = 'file' | 'edit' | 'command' | 'prompt' | 'other';
 
-interface Live {
+interface Item {
   id: string;
   cat: string;
   tok: number;
@@ -34,6 +36,31 @@ interface Live {
   label: string;
   text?: string;
   error?: boolean;
+}
+
+interface Live extends Item {
+  birth: number;
+  turn: number;
+  serial: number;
+}
+
+export interface Span {
+  b: number;
+  e?: number;
+  c: number;
+  t: number;
+  l?: number;
+  i?: number;
+  u?: number;
+  n?: number;
+  s?: number[];
+}
+
+export interface Timeline {
+  cats: string[];
+  labels: string[];
+  closed: Span[];
+  live: Span[];
 }
 
 export interface Point {
@@ -105,6 +132,11 @@ export interface Analyzer {
   out: Map<string, number>;
   lastMsg: string | null;
   pending: { n: number; t: string; trigger: string; pre: number; post: number; preserved: Set<string>; before: Live[] } | null;
+  serial: number;
+  systemFrom: number;
+  cats: Map<string, number>;
+  labels: Map<string, number>;
+  closed: Span[];
 }
 
 const tok = (chars: number) => Math.round(chars / CHARS_PER_TOKEN);
@@ -118,10 +150,15 @@ export function newAnalyzer(session: string, transcript: string): Analyzer {
     out: new Map(),
     lastMsg: null,
     pending: null,
+    serial: 0,
+    systemFrom: 0,
+    cats: new Map(),
+    labels: new Map(),
+    closed: [],
   };
 }
 
-function add(a: Analyzer, item: Live): void {
+function add(a: Analyzer, item: Item): void {
   const key = item.id + '#' + item.cat + '#' + item.label;
   a.sums.set(item.cat, (a.sums.get(item.cat) || 0) + item.tok);
   const prev = a.live.get(key);
@@ -130,7 +167,72 @@ function add(a: Analyzer, item: Live): void {
     if (item.text) prev.text = item.text;
     return;
   }
-  a.live.set(key, { ...item });
+  a.live.set(key, { ...item, birth: a.ctx.points.length, turn: a.ctx.prompts, serial: a.serial++ });
+}
+
+function intern(map: Map<string, number>, s: string): number {
+  let n = map.get(s);
+  if (n === undefined) {
+    n = map.size;
+    map.set(s, n);
+  }
+  return n;
+}
+
+function single(it: Live): boolean {
+  return it.kind === 'prompt' || it.cat === 'summary' || (it.cat !== 'replies' && it.tok >= SMALL_ITEM);
+}
+
+function squeeze(steps: number[]): number[] {
+  let s = steps;
+  while (s.length > MAX_STEPS * 2) {
+    const next: number[] = [];
+    for (let i = 0; i < s.length; i += 4) {
+      if (i + 2 < s.length) next.push(s[i], s[i + 1] + s[i + 3]);
+      else next.push(s[i], s[i + 1]);
+    }
+    s = next;
+  }
+  return s;
+}
+
+function spansOf(a: Analyzer, items: Iterable<Live>, end?: number): Span[] {
+  const out: Span[] = [];
+  const groups = new Map<string, { span: Span; steps: Map<number, number> }>();
+  for (const it of items) {
+    if (it.tok <= 0) continue;
+    const c = intern(a.cats, it.cat);
+    if (single(it)) {
+      const span: Span = { b: it.birth, c, l: intern(a.labels, it.label), t: it.tok };
+      if (end === undefined) span.i = it.serial;
+      else span.e = end;
+      out.push(span);
+      continue;
+    }
+    const key = `${c}@${it.turn}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { span: { b: it.birth, c, t: 0, u: it.turn, n: 0 }, steps: new Map() };
+      if (end !== undefined) g.span.e = end;
+      groups.set(key, g);
+      out.push(g.span);
+    }
+    g.span.t += it.tok;
+    g.span.n = (g.span.n ?? 0) + 1;
+    g.span.b = Math.min(g.span.b, it.birth);
+    g.steps.set(it.birth, (g.steps.get(it.birth) ?? 0) + it.tok);
+  }
+  for (const g of groups.values()) g.span.s = squeeze([...g.steps].sort((x, y) => x[0] - y[0]).flat());
+  return out;
+}
+
+export function timeline(a: Analyzer): Timeline {
+  const live = spansOf(a, a.live.values());
+  if (a.ctx.system.tok > 0) {
+    const label = a.ctx.system.measured ? 'System prompt and tool definitions' : 'System prompt';
+    live.unshift({ b: a.systemFrom, c: intern(a.cats, 'system'), l: intern(a.labels, label), t: a.ctx.system.tok, i: -1 });
+  }
+  return { cats: [...a.cats.keys()], labels: [...a.labels.keys()], closed: a.closed, live };
 }
 
 function remove(a: Analyzer, key: string): void {
@@ -138,6 +240,11 @@ function remove(a: Analyzer, key: string): void {
   if (!it) return;
   a.live.delete(key);
   a.sums.set(it.cat, (a.sums.get(it.cat) || 0) - it.tok);
+}
+
+function setSystem(a: Analyzer, t: number): void {
+  if (!a.ctx.system.tok) a.systemFrom = a.ctx.points.length;
+  a.ctx.system = { tok: t, measured: true };
 }
 
 function renderedChars(r: Rec): number {
@@ -156,7 +263,7 @@ function attachment(a: Analyzer, r: Rec): void {
   const type = String(at.type ?? '');
   if (type === 'prompt_snapshot' && !a.ctx.system.measured) {
     const chars = JSON.stringify(at.systemPrompt ?? '').length + JSON.stringify(at.tools ?? '').length;
-    if (chars > 2) a.ctx.system = { tok: tok(chars), measured: true };
+    if (chars > 2) setSystem(a, tok(chars));
     return;
   }
   const chars = renderedChars(r);
@@ -451,7 +558,9 @@ function finishCompaction(a: Analyzer, rawSummary: string, r: Rec): void {
     named,
     before: top(p.before, 10),
   });
-  for (const [k, v] of [...a.live]) if (!p.preserved.has(v.id)) remove(a, k);
+  const gone = [...a.live].filter(([, v]) => !p.preserved.has(v.id));
+  a.closed.push(...spansOf(a, gone.map(([, v]) => v), p.n));
+  for (const [k] of gone) remove(a, k);
 }
 
 function boundary(a: Analyzer, r: Rec): void {
@@ -489,7 +598,7 @@ export function step(a: Analyzer, r: Rec): void {
     case 'api-request-shape': {
       const sh = r.shape ?? {};
       const chars = JSON.stringify(sh.system ?? '').length + JSON.stringify(sh.tools ?? '').length;
-      if (chars > 2) a.ctx.system = { tok: tok(chars), measured: true };
+      if (chars > 2) setSystem(a, tok(chars));
       return;
     }
     case 'ai-title':
@@ -520,7 +629,7 @@ export async function advance(a: Analyzer, to?: number): Promise<number> {
 }
 
 export function largest(a: Analyzer, n = 12): Top[] {
-  const groups = new Map<string, Live & { count: number }>();
+  const groups = new Map<string, Item & { count: number }>();
   for (const it of a.live.values()) {
     if (it.tok <= 0) continue;
     const key = it.cat + '\u0000' + it.label;
@@ -530,7 +639,7 @@ export function largest(a: Analyzer, n = 12): Top[] {
       g.count++;
     } else groups.set(key, { ...it, count: 1 });
   }
-  const items: (Live & { count: number })[] = [...groups.values()];
+  const items: (Item & { count: number })[] = [...groups.values()];
   if (a.ctx.system.tok) items.push({ id: 'system', cat: 'system', tok: a.ctx.system.tok, kind: 'other', label: a.ctx.system.measured ? 'System prompt and tool definitions' : 'System prompt', count: 1 });
   return items
     .sort((x, y) => y.tok - x.tok)

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { world, repo, Transcript } from './helpers.ts';
-import { advance, newAnalyzer, largest, decisions, fileNamed, commandNamed, normalizeCommand } from '../src/core/context.ts';
+import { advance, newAnalyzer, largest, decisions, fileNamed, commandNamed, normalizeCommand, timeline, MAX_STEPS, type Span, type Timeline } from '../src/core/context.ts';
 
 function build() {
   const w = world('ctx');
@@ -155,4 +155,96 @@ test('naming in the summary needs a path or a whole command, not two words', () 
   assert.equal(commandNamed('npm test -- queue', s), false);
   assert.equal(commandNamed('cd /r && npm test 2>&1 | tail -20', s), true);
   assert.equal(normalizeCommand('cd /a && cd b && npm run lint 2>&1 | head -50'), 'npm run lint');
+});
+
+function aliveAt(tl: Timeline, n: number): number {
+  let sum = 0;
+  for (const s of [...tl.closed, ...tl.live]) {
+    if (s.b > n || (s.e !== undefined && n >= s.e)) continue;
+    if (!s.s) sum += s.t;
+    else for (let i = 0; i < s.s.length; i += 2) if (s.s[i] <= n) sum += s.s[i + 1];
+  }
+  return sum;
+}
+
+test('each item carries the call it entered and the compaction that removed it', async () => {
+  const { t, a } = build();
+  const an = newAnalyzer(t.id, t.file);
+  await advance(an);
+  const tl = timeline(an);
+  const all = [...tl.closed, ...tl.live];
+  const named = (label: string): Span => all.find((s) => s.l !== undefined && tl.labels[s.l] === label)!;
+  assert.deepEqual([named(path.join(a, 'src/named.ts')).b, named(path.join(a, 'src/named.ts')).e, named(path.join(a, 'src/named.ts')).t], [2, 7, 2000]);
+  assert.deepEqual([named(path.join(a, 'src/forgotten.ts')).b, named(path.join(a, 'src/forgotten.ts')).e], [3, 7]);
+  const kept = named(path.join(a, 'src/kept.ts'));
+  assert.deepEqual([kept.b, kept.e, kept.t], [4, undefined, 1000]);
+  assert.ok(tl.live.includes(kept));
+  assert.equal(named('Compaction summary').b, 7);
+  assert.equal(named('Compaction summary').e, undefined);
+  const sys = tl.live.find((s) => s.i === -1)!;
+  assert.deepEqual([sys.b, sys.e, tl.cats[sys.c]], [0, undefined, 'system']);
+  const bash = tl.closed.filter((s) => tl.cats[s.c] === 'tool:Bash');
+  assert.equal(bash.length, 1);
+  assert.deepEqual([bash[0].n, bash[0].b, bash[0].e, bash[0].s], [2, 5, 7, [5, bash[0].s![1], 6, bash[0].s![3]]]);
+  assert.ok(tl.closed.every((s) => s.e === 7));
+  for (const p of an.ctx.points) assert.equal(aliveAt(tl, p.n), p.raw, `call ${p.n}`);
+});
+
+test('the spans rebuild the estimate at every call across many turns and compactions', async () => {
+  const w = world('ctxspan');
+  const r = repo(w, 'kiln');
+  const t = new Transcript(w.claude, r);
+  t.shape([{ type: 'text', text: 'S'.repeat(5200) }], []);
+  let cur = 3000;
+  for (let turn = 0; turn < 12; turn++) {
+    t.prompt(`Step ${turn}, keep the ramp slow.`);
+    for (let k = 0; k < 9; k++) {
+      cur += 400;
+      if (k % 3 === 0) t.read(path.join(r, `src/ramp${(turn + k) % 5}.ts`), 'R'.repeat(1300 + 260 * k), { input: 5, read: cur, out: 40 });
+      else if (k % 3 === 1) t.bash('cargo test', 'ok '.repeat(20 + k), { input: 5, read: cur, out: 30 });
+      else t.reply('Ramp updated.', { input: 5, read: cur, write: 50, out: 90 });
+    }
+    if (turn % 4 === 3) {
+      const keep = t.read(path.join(r, 'src/keep.ts'), 'K'.repeat(2600), { input: 5, read: cur, out: 30 });
+      t.compact(cur, 4000, [keep.use, keep.result], 'Kiln ramp work continues in src/ramp0.ts.');
+      cur = 4000;
+    }
+  }
+  t.save();
+  const an = newAnalyzer(t.id, t.file);
+  await advance(an);
+  const tl = timeline(an);
+  assert.equal(an.ctx.compactions.length, 3);
+  for (const p of an.ctx.points) assert.equal(aliveAt(tl, p.n), p.raw, `call ${p.n}`);
+  const ends = new Set(tl.closed.map((s) => s.e));
+  assert.deepEqual([...ends].sort((x, y) => x! - y!), an.ctx.compactions.map((c) => c.n));
+  const ids = tl.live.filter((s) => s.i !== undefined).map((s) => s.i);
+  assert.equal(new Set(ids).size, ids.length);
+  const groups = [...tl.closed, ...tl.live].filter((s) => s.s).map((s) => `${s.c}@${s.u}/${s.e}`);
+  assert.equal(new Set(groups).size, groups.length);
+  const keeps = [...tl.closed, ...tl.live].filter((s) => s.l !== undefined && tl.labels[s.l] === path.join(r, 'src/keep.ts'));
+  assert.ok(keeps.some((s) => s.e === undefined));
+});
+
+test('a long turn of small results folds into one span with a bounded number of steps', async () => {
+  const w = world('ctxfold');
+  const r = repo(w, 'loom');
+  const t = new Transcript(w.claude, r);
+  t.prompt('Run the grid tests until they pass.');
+  for (let k = 0; k < 300; k++) t.bash('npm test -- grid', 'ok ' + 'x'.repeat(k % 40), { input: 5, read: 3000 + k * 20, out: 20 });
+  t.save();
+  const an = newAnalyzer(t.id, t.file);
+  await advance(an);
+  const tl = timeline(an);
+  const bash = tl.live.filter((s) => tl.cats[s.c] === 'tool:Bash');
+  assert.equal(bash.length, 1);
+  assert.equal(bash[0].n, 300);
+  assert.ok(bash[0].s!.length <= MAX_STEPS * 2);
+  assert.equal(bash[0].s!.filter((_, i) => i % 2 === 1).reduce((x, y) => x + y, 0), bash[0].t);
+  assert.equal(bash[0].b, bash[0].s![0]);
+  const slack = tl.live.filter((s) => s.s).reduce((x, s) => x + Math.max(...s.s!.filter((_, i) => i % 2 === 1)), 0);
+  for (const p of an.ctx.points) {
+    const over = aliveAt(tl, p.n) - p.raw;
+    assert.ok(over >= 0 && over <= slack, `call ${p.n} over by ${over}`);
+  }
 });
