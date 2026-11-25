@@ -92,7 +92,7 @@ export function ContextStrip({ points, compactions, window, call, hover, chosen,
         }}
       >
         {window && window === top && width > 0 && (
-          <span className="num pointer-events-none absolute right-0 top-0.5 bg-background pl-1.5 text-[0.6875rem] leading-none text-muted-foreground" aria-hidden>
+          <span className="num pointer-events-none absolute left-0 top-0.5 bg-background pr-1.5 text-[0.6875rem] leading-none text-muted-foreground" aria-hidden>
             {tokens(window)} window
           </span>
         )}
