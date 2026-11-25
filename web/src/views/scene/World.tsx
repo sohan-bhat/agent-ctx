@@ -40,9 +40,9 @@ function Lights({ dark }: { dark: boolean }) {
   );
 }
 
-function Plate({ palette, f }: { palette: Palette; f: Framing }) {
+function Plate({ palette, f, reach }: { palette: Palette; f: Framing; reach: number }) {
   const { material, fade } = useMemo(() => fadeMaterial(palette.table), [palette.table]);
-  const from = f.side < SIDE ? f.side * 1.2 : 100;
+  const from = f.side < SIDE ? Math.max(f.side * 1.2, reach * Math.SQRT2 + 0.4) : 100;
   const to = f.side < SIDE ? from + Math.max(1.2, f.side * 0.35) : 101;
   fade.from.value = from;
   fade.to.value = to;
@@ -89,6 +89,8 @@ function Ruler({ palette, f }: { palette: Palette; f: Framing }) {
 export interface WorldApi {
   home: (smooth: boolean) => void;
   frame: (list: Placed[]) => void;
+  focus: (p: Placed) => Promise<void>;
+  back: () => boolean;
   project: (p: Placed) => [number, number];
   turn: (azimuth: number, polar: number) => void;
   zoom: (factor: number) => void;
@@ -108,9 +110,11 @@ export interface WorldProps {
   outline: (p: Placed) => number;
   api: Ref<WorldApi>;
   onMove: () => void;
+  force: Set<string>;
+  reach: number;
 }
 
-export function World({ placed, palette, portal, framing: f, plateLabel, version, pointing, reduced, queued, pinned, outline, api, onMove }: WorldProps) {
+export function World({ placed, palette, portal, framing: f, plateLabel, version, pointing, reduced, queued, pinned, outline, api, onMove, force, reach }: WorldProps) {
   const controls = useRef<CameraControlsImpl | null>(null);
   const camera = useThree((s) => s.camera) as OrthographicCamera;
   const size = useThree((s) => s.size);
@@ -118,6 +122,9 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
   const raycaster = useThree((s) => s.raycaster);
   const home = useRef(true);
   const homeZoom = useRef(1);
+  const saved = useRef<string | null>(null);
+  const latest = useRef(f);
+  latest.current = f;
   useEffect(() => {
     camera.layers.enable(1);
     raycaster.layers.enable(1);
@@ -126,10 +133,17 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
     const c = controls.current;
     if (!c) return;
     gl.domElement.style.touchAction = 'pan-y';
-    const pad = homePad(size.width, size.height, f);
-    homeZoom.current = fit(camera, homeBox(f), HOME.theta, HOME.phi, pad).zoom;
-    if (home.current) frameTo(c, camera, homeBox(f), HOME.theta, HOME.phi, pad, false);
-  }, [camera, size.width, size.height, gl, f]);
+    const fr = latest.current;
+    const pad = homePad(size.width, size.height, fr);
+    homeZoom.current = fit(camera, homeBox(fr), HOME.theta, HOME.phi, pad).zoom;
+    c.minZoom = homeZoom.current * 0.6;
+    c.maxZoom = homeZoom.current * 16;
+    if (home.current) frameTo(c, camera, homeBox(fr), HOME.theta, HOME.phi, pad, false);
+  }, [camera, size.width, size.height, gl]);
+  const shadows = useMemo(
+    () => <ContactShadows frames={reduced ? 2 : 40} position={[-SIDE / 2, 0.001, -SIDE / 2]} scale={SIDE} resolution={1024} blur={1.4} far={0.7} opacity={palette.dark ? 0.75 : 0.45} color="#000000" renderOrder={1} />,
+    [version, reduced, palette.dark],
+  );
   useImperativeHandle(
     api,
     () => ({
@@ -137,6 +151,7 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
         const c = controls.current;
         if (!c) return;
         home.current = true;
+        saved.current = null;
         frameTo(c, camera, homeBox(f), HOME.theta, HOME.phi, homePad(size.width, size.height, f), smooth && !reduced);
       },
       frame: (list) => {
@@ -146,6 +161,26 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
         const box = boxOf(list);
         const pad = Math.min(size.width, size.height) * 0.12;
         frameTo(c, camera, box, c.azimuthAngle, c.polarAngle, { left: pad, right: pad, top: pad, bottom: pad }, !reduced);
+      },
+      focus: async (p) => {
+        const c = controls.current;
+        if (!c) return;
+        if (!saved.current) saved.current = c.toJSON();
+        home.current = false;
+        const box = boxOf([p]);
+        const span = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+        box.expandByScalar(Math.max(0.6, span * 0.9));
+        box.min.y = 0;
+        const pad = Math.min(size.width, size.height) * 0.08;
+        const { target, zoom } = fit(camera, box, c.azimuthAngle, c.polarAngle, { left: pad, right: pad, top: pad, bottom: pad });
+        await Promise.all([c.moveTo(target.x, target.y, target.z, !reduced), c.zoomTo(Math.max(c.camera.zoom, zoom), !reduced)]);
+      },
+      back: () => {
+        const c = controls.current;
+        if (!c || !saved.current) return false;
+        c.fromJSON(saved.current, !reduced);
+        saved.current = null;
+        return true;
       },
       project: (p) => {
         camera.updateMatrixWorld();
@@ -170,20 +205,21 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
   return (
     <>
       <Lights dark={palette.dark} />
-      <Plate palette={palette} f={f} />
-      <ContactShadows key={version} frames={reduced ? 2 : 40} position={[-SIDE / 2, 0.001, -SIDE / 2]} scale={SIDE} resolution={1024} blur={1.4} far={0.7} opacity={palette.dark ? 0.75 : 0.45} color="#000000" renderOrder={1} />
+      <Plate palette={palette} f={f} reach={reach} />
+      {shadows}
       <Blocks placed={placed} palette={palette} pointing={pointing} reduced={reduced} />
       <Foundations placed={placed} palette={palette} pointing={pointing} />
       <Marks placed={placed} palette={palette} selected={pointing.selected} queued={queued} pinned={pinned} outline={outline} />
       <Ruler palette={palette} f={f} />
-      <Overlay placed={placed} f={f} plateLabel={plateLabel} controls={controls} portal={portal} homeZoom={homeZoom} />
+      <Overlay placed={placed} f={f} plateLabel={plateLabel} controls={controls} portal={portal} homeZoom={homeZoom} force={force} />
       <CameraControls
         ref={controls}
         makeDefault
         minPolarAngle={0.2}
         maxPolarAngle={1.35}
-        smoothTime={reduced ? 0 : 0.18}
-        draggingSmoothTime={reduced ? 0 : 0.08}
+        smoothTime={reduced ? 0 : 0.22}
+        draggingSmoothTime={0}
+        dollyToCursor
         onControlStart={() => {
           home.current = false;
           onMove();

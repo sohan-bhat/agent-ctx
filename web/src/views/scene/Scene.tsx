@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import type { Dropped, Item } from '@/lib/api';
 import { nameOf } from '@/lib/context';
 import { exact, rel, tokens } from '@/lib/format';
-import { plan, piecesAround, piecesAt, siblingKey, type Block, type Line } from '@/lib/model';
+import { plan, piecesAt, piecesBefore, siblingKey, type Block, type Line } from '@/lib/model';
 import { usePalette } from './palette';
 import { framing, heightAt, place, SIDE, type Placed } from './layout';
 import { World, type WorldApi } from './World';
@@ -81,7 +81,7 @@ function Details({ p, placed, root, cut }: { p: Placed; placed: Placed[]; root?:
   const key = siblingKey(b);
   const sibs = key ? placed.filter((q) => siblingKey(q.piece.block) === key && q.piece.state === p.piece.state) : [];
   const name = b.label.startsWith('/') ? rel(b.label, root) : nameOf(b);
-  const when = p.piece.state === 'gone' ? `dropped at compaction ${(cut?.index ?? 0) + 1}` : b.members ? '' : p.piece.age === 0 ? 'entered at this call' : `carried ${calls(p.piece.age)}`;
+  const when = p.piece.state === 'gone' ? `dropped at compaction ${(cut?.index ?? 0) + 1}` : b.members ? '' : b.kind === 'system' && !b.group ? 'sent with every call' : p.piece.age === 0 ? 'entered at this call' : `carried ${calls(p.piece.age)}`;
   const verb = b.file ? 'Read' : b.cat === 'tool:Bash' ? 'Ran' : 'Seen';
   const members = b.members ? [...b.members].sort((x, y) => y.tok - x.tok) : [];
   return (
@@ -117,9 +117,15 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const wrap = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const api = useRef<WorldApi>(null);
-  const pieces = useMemo(() => (cut ? piecesAround(line, cut.n, cut.before, cut.after) : piecesAt(line, call, total)), [line, call, total, cut]);
-  const placed = useMemo(() => place(plan(pieces, plate, SIDE)), [pieces, plate]);
+  const placed = useMemo(() => {
+    if (!cut) return place(plan(piecesAt(line, call, total), plate, SIDE));
+    const now = place(plan(piecesAt(line, cut.n, cut.after), plate, SIDE, undefined, true));
+    const was = place(plan(piecesBefore(line, cut.n, cut.before), plate, SIDE)).filter((p) => p.piece.state === 'gone');
+    return [...was, ...now];
+  }, [line, call, total, cut, plate]);
   const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
+  const force = useMemo(() => new Set(cut ? placed.filter((p) => p.piece.state === 'stand' && p.piece.block.kind === 'summary').map((p) => p.id) : []), [placed, cut]);
+  const reach = useMemo(() => placed.reduce((m, p) => Math.max(m, -(p.cx - p.w / 2), -(p.cz - p.d / 2)), 0), [placed]);
   const f = useMemo(() => framing(peak, plate, last), [peak, plate, last]);
   const version = useRef({ placed, n: 0 });
   if (version.current.placed !== placed) version.current = { placed, n: version.current.n + 1 };
@@ -129,6 +135,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const framed = useRef<string | null>(null);
+  const glide = useRef(0);
 
   const queuedIds = useMemo(() => new Set(placed.filter((p) => p.piece.state === 'gone' && queued.some((q) => matches(q, p.piece.block))).map((p) => p.id)), [placed, queued]);
   const pinnedIds = useMemo(() => new Set(placed.filter((p) => pins.some((q) => matches(q, p.piece.block))).map((p) => p.id)), [placed, pins]);
@@ -156,15 +163,15 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
       setHover(id);
       if (id) requestAnimationFrame(() => moveCard(x, y));
     },
-    onPress: (id: string, x: number, y: number) => {
+    onPress: (id: string) => {
       setHover(null);
       setSelected(id);
-      setFailed(false);
-      setMenu({ id, x, y });
+      openAt(id);
     },
     onFrame: (id: string) => {
       const p = byId.get(id);
       if (!p) return;
+      glide.current++;
       setMenu(null);
       if (framed.current === p.piece.block.kind) {
         framed.current = id;
@@ -179,9 +186,25 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const openAt = (id: string) => {
     const p = byId.get(id);
     if (!p || !api.current) return;
-    const [x, y] = api.current.project(p);
     setFailed(false);
-    setMenu({ id, x, y });
+    setMenu(null);
+    const token = ++glide.current;
+    void api.current.focus(p).then(() => {
+      if (token !== glide.current || !api.current) return;
+      const [x, y] = api.current.project(p);
+      setMenu({ id, x, y });
+    });
+  };
+
+  const escape = () => {
+    glide.current++;
+    if (menu) setMenu(null);
+    if (api.current?.back()) return;
+    if (selected) setSelected(null);
+    else {
+      framed.current = null;
+      api.current?.home(true);
+    }
   };
 
   const step = (dir: string) => {
@@ -230,13 +253,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
       e.preventDefault();
       framed.current = null;
       api.current?.home(true);
-    } else if (k === 'Escape') {
-      if (selected) setSelected(null);
-      else {
-        framed.current = null;
-        api.current?.home(true);
-      }
-    }
+    } else if (k === 'Escape') escape();
   };
 
   const act = async (kind: 'pin' | 'putback', payload: Payload) => {
@@ -266,6 +283,8 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
       role="group"
       aria-roledescription="model"
       aria-label={label}
+      data-blocks={placed.length - placed.filter((p) => p.piece.state === 'gone').length}
+      data-gone={placed.filter((p) => p.piece.state === 'gone').length}
       onKeyDown={onKey}
       onPointerLeave={() => setHover(null)}
     >
@@ -278,6 +297,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
         gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
         camera={{ position: [20, 20, 20], zoom: 40, near: 0.1, far: 200 }}
         onPointerMissed={() => {
+          glide.current++;
           setMenu(null);
           setSelected(null);
         }}
@@ -296,9 +316,12 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
           outline={outline}
           api={api}
           onMove={() => {
+            glide.current++;
             setMenu(null);
             setHover(null);
           }}
+          force={force}
+          reach={reach}
         />
       </Canvas>
       <div ref={overlay} className="pointer-events-none absolute inset-0 overflow-hidden" />
@@ -310,7 +333,12 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
       >
         {hovered && <Details p={hovered} placed={placed} root={root} cut={cut} />}
       </div>
-      <Popover open={!!open} onOpenChange={(o) => !o && setMenu(null)}>
+      <Popover
+        open={!!open}
+        onOpenChange={(o) => {
+          if (!o) setMenu(null);
+        }}
+      >
         <PopoverAnchor asChild>
           <div className="pointer-events-none absolute size-px" style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }} />
         </PopoverAnchor>
@@ -320,6 +348,10 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
             align="center"
             collisionPadding={12}
             className="w-80 gap-2.5 text-sm"
+            onEscapeKeyDown={(e) => {
+              e.preventDefault();
+              escape();
+            }}
             onCloseAutoFocus={(e) => {
               e.preventDefault();
               wrap.current?.focus();
