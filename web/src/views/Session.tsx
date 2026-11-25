@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
-import { events, send, session, type SessionData, type Top } from '@/lib/api';
-import { survival, tree, windowOf } from '@/lib/context';
+import { events, send, session, type SessionData } from '@/lib/api';
+import { survival, tree, treeOf, windowOf } from '@/lib/context';
+import { piecesAt } from '@/lib/model';
 import { ago, exact, tokens } from '@/lib/format';
 import { ContextStrip, cutNumbers } from './ContextStrip';
 import { DroppedList } from './Dropped';
@@ -10,7 +11,16 @@ import { rowTitle } from './Sessions';
 
 function merge(prev: SessionData | null, next: SessionData): SessionData {
   if (!prev || next.from === 0) return next;
-  return { ...next, points: [...prev.points.slice(0, next.from), ...next.points] };
+  const a = prev.timeline;
+  const b = next.timeline;
+  const timeline = {
+    ...b,
+    labelsFrom: 0,
+    labels: [...a.labels.slice(0, b.labelsFrom), ...b.labels],
+    closedFrom: 0,
+    closed: [...a.closed.slice(0, b.closedFrom), ...b.closed],
+  };
+  return { ...next, points: [...prev.points.slice(0, next.from), ...next.points], timeline };
 }
 
 function useNarrow(): boolean {
@@ -36,13 +46,13 @@ export function Session({ id }: { id: string }) {
   const [cut, setCut] = useState<number | null>(null);
   const [focus, setFocus] = useState('used');
   const [live, setLive] = useState(false);
-  const count = useRef(0);
+  const count = useRef({ points: 0, closed: 0, labels: 0 });
   const narrow = useNarrow();
   const top = useRef<HTMLElement>(null);
 
   const load = useCallback(
-    (since: number) =>
-      session(id, since)
+    (since: boolean) =>
+      session(id, since ? count.current.points : 0, since ? count.current.closed : 0, since ? count.current.labels : 0)
         .then((d) => {
           setData((prev) => merge(since ? prev : null, d));
           setError(null);
@@ -57,11 +67,11 @@ export function Session({ id }: { id: string }) {
     setCut(null);
     setFocus('used');
     setLive(false);
-    void load(0);
+    void load(false);
   }, [id, load]);
 
   useEffect(() => {
-    count.current = data?.points.length ?? 0;
+    count.current = { points: data?.points.length ?? 0, closed: data?.timeline.closed.length ?? 0, labels: data?.timeline.labels.length ?? 0 };
   }, [data]);
 
   useEffect(() => {
@@ -75,10 +85,10 @@ export function Session({ id }: { id: string }) {
         if (timer) return;
         timer = setTimeout(() => {
           timer = null;
-          void load(count.current);
+          void load(true);
         }, 400);
       }
-      if (e === 'items') void load(count.current);
+      if (e === 'items') void load(true);
     });
     return () => {
       stop();
@@ -96,12 +106,9 @@ export function Session({ id }: { id: string }) {
   const call = Math.min(last, Math.max(0, hover ?? pinned ?? last));
   const point = points[call];
 
-  const items = useMemo((): Top[] => {
-    if (!data) return [];
-    if (call === last) return data.largest;
-    return data.compactions.find((c) => c.n - 1 === call)?.before ?? [];
-  }, [data, call, last]);
-  const root = useMemo(() => (point ? tree(point, items) : null), [point, items]);
+  const line = data?.timeline;
+  const pieces = useMemo(() => (line && point ? piecesAt(line, call, point.total) : []), [line, call, point]);
+  const root = useMemo(() => (point ? treeOf(pieces) : null), [point, pieces]);
 
   const before = chosen ? points[chosen.n - 1] : undefined;
   const after = chosen ? points[chosen.n] : undefined;
@@ -114,7 +121,7 @@ export function Session({ id }: { id: string }) {
     pinned: (label) => !!data?.pins.some((p) => p.kind === 'file' && p.label === label),
     pin: async (label) => {
       await send('pin', { session: id, kind: 'file', label, text: '' });
-      await load(count.current);
+      await load(true);
     },
   };
 
@@ -229,7 +236,7 @@ export function Session({ id }: { id: string }) {
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
-                <DroppedList session={id} root={data.root} c={chosen} queued={data.queued} pins={data.pins} onDone={() => void load(count.current)} />
+                <DroppedList session={id} root={data.root} c={chosen} queued={data.queued} pins={data.pins} onDone={() => void load(true)} />
               </div>
             ) : (
               <div className="grid gap-5">

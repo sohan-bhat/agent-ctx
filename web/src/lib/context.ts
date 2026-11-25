@@ -1,5 +1,6 @@
 import { hierarchy, partition, type HierarchyRectangularNode } from 'd3-hierarchy';
 import type { Point, Top } from './api';
+import type { Block, Piece } from './model';
 
 export interface Kind {
   key: string;
@@ -100,4 +101,64 @@ export function survival(before: Point, after: Point | undefined): Record<string
     out[cat] = Math.min(1, ((after.est[cat] ?? 0) * ka) / (v * kb));
   }
   return out;
+}
+
+export function toolOf(cat: string): string {
+  return cat.startsWith('tool:') ? toolName(cat) : cat;
+}
+
+export function nameOf(b: Block): string {
+  if (b.members) return `${b.count} smaller items`;
+  if (b.group) {
+    if (b.cat === 'replies') return b.count === 1 ? 'Reply' : `${b.count} replies`;
+    if (b.cat.startsWith('tool:')) return `${b.count} small ${toolOf(b.cat)} results`;
+    return `${b.count} small attachments`;
+  }
+  return b.label || toolOf(b.cat);
+}
+
+export function shortOf(b: Block): string {
+  if (b.members) return 'Smaller items';
+  if (b.group) return b.cat === 'replies' ? 'Replies' : toolOf(b.cat);
+  if (b.cat === 'system' && b.label.startsWith('System prompt')) return 'System prompt';
+  if (b.cat === 'summary') return 'Summary';
+  const l = b.label;
+  if (l.startsWith('/')) return l.split('/').filter(Boolean).pop() ?? l;
+  if (b.kind === 'prompts') {
+    const words = l.split(/\s+/).slice(0, 4).join(' ');
+    return words.length < l.length ? `${words}…` : words;
+  }
+  return l.length > 26 ? `${l.slice(0, 25)}…` : l;
+}
+
+function itemOf(b: Block, size: number): Top {
+  const kind = b.file ? 'file' : b.cat === 'tool:Bash' && !b.group ? 'command' : b.kind === 'prompts' ? 'prompt' : 'other';
+  return { label: b.group ? nameOf(b) : b.label, cat: b.cat, tok: size, kind };
+}
+
+export function treeOf(pieces: Piece[]): Node {
+  const kinds: Node[] = [];
+  for (const kind of KINDS) {
+    const mine = pieces.filter((p) => p.block.kind === kind.key && p.state === 'stand' && p.size > 0);
+    if (!mine.length) continue;
+    const rows = new Map<string, Node>();
+    for (const p of mine) {
+      const key = p.block.group ? p.block.id : `${p.block.cat}\u0000${p.block.label}`;
+      const row = rows.get(key);
+      if (row) {
+        row.own += p.size;
+        row.item = { ...row.item!, tok: row.own, count: (row.item!.count ?? 1) + 1 };
+        continue;
+      }
+      rows.set(key, { id: `${kind.key}#${key}`, label: nameOf(p.block), kind: kind.key, own: p.size, item: itemOf(p.block, p.size) });
+    }
+    let children = [...rows.values()];
+    if (kind.key === 'tools') {
+      const byCat = new Map<string, Node[]>();
+      for (const n of children) byCat.set(n.item!.cat, [...(byCat.get(n.item!.cat) ?? []), n]);
+      children = [...byCat].map(([cat, list]) => ({ id: cat, label: toolName(cat), kind: kind.key, own: 0, children: list }));
+    }
+    kinds.push({ id: kind.key, label: kind.label, kind: kind.key, own: 0, children });
+  }
+  return { id: 'used', label: 'Used', kind: 'used', own: 0, children: kinds };
 }

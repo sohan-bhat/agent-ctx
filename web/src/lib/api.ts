@@ -62,6 +62,27 @@ export interface Compaction {
   before: Top[];
 }
 
+export interface Span {
+  b: number;
+  e?: number;
+  c: number;
+  t: number;
+  l?: number;
+  i?: number;
+  u?: number;
+  n?: number;
+  s?: number[];
+}
+
+export interface TimelineData {
+  cats: string[];
+  labelsFrom: number;
+  labels: string[];
+  closedFrom: number;
+  closed: Span[];
+  live: Span[];
+}
+
 export interface Item {
   id: string;
   session: string;
@@ -87,6 +108,7 @@ export interface SessionData {
   compactions: Compaction[];
   largest: Top[];
   categories: { key: string; label: string }[];
+  timeline: TimelineData;
   queued: Item[];
   pins: Item[];
 }
@@ -108,8 +130,8 @@ export function sessions(): Promise<SessionList> {
   return get('api/sessions');
 }
 
-export function session(id: string, since = 0): Promise<SessionData> {
-  return get(`api/session/${encodeURIComponent(id)}?since=${since}`);
+export function session(id: string, since = 0, closed = 0, labels = 0): Promise<SessionData> {
+  return get(`api/session/${encodeURIComponent(id)}?since=${since}&closed=${closed}&labels=${labels}`);
 }
 
 export async function send(kind: 'putback' | 'pin', body: { session: string; kind: string; label: string; text: string }): Promise<Item> {
