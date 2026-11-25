@@ -1,8 +1,8 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
-import { events, send, session, type SessionData } from '@/lib/api';
+import { events, peek, send, session, type Item, type Peek, type SessionData, type TimelineData } from '@/lib/api';
 import { treeOf, windowOf } from '@/lib/context';
-import { piecesAt, piecesBefore } from '@/lib/model';
+import { AGE_CAP, piecesAt, piecesBefore } from '@/lib/model';
 import { ago, exact, tokens } from '@/lib/format';
 import { ContextStrip, cutNumbers } from './ContextStrip';
 import { DroppedList } from './Dropped';
@@ -38,7 +38,22 @@ function useNarrow(): boolean {
 const loadScene = () => import('./scene/Scene');
 type SceneView = Awaited<ReturnType<typeof loadScene>>['default'];
 
+export function preloadScene(): void {
+  const go = () => void loadScene().catch(() => {});
+  if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 1500 });
+  else setTimeout(go, 400);
+}
+
 const SCENE_HEIGHT = 'h-[16rem] sm:h-[27rem]';
+const EMPTY: TimelineData = { cats: [], labelsFrom: 0, labels: [], closedFrom: 0, closed: [], live: [] };
+const LATE_MS = 300;
+const NONE: Item[] = [];
+
+const mb = (bytes: number) => Math.max(1, Math.round(bytes / 1e6)).toLocaleString('en-US');
+
+function readingLine(size: number, at: number | null): string {
+  return at == null ? `reading ${mb(size)} MB` : `reading ${mb(Math.min(at, size))} of ${mb(size)} MB`;
+}
 
 function hasWebGL(): boolean {
   try {
@@ -77,6 +92,9 @@ export function Session({ id }: { id: string }) {
   const [cut, setCut] = useState<number | null>(null);
   const [focus, setFocus] = useState('used');
   const [live, setLive] = useState(false);
+  const [head, setHead] = useState<Peek | null>(null);
+  const [late, setLate] = useState(false);
+  const [at, setAt] = useState<number | null>(null);
   const count = useRef({ points: 0, closed: 0, labels: 0 });
   const narrow = useNarrow();
   const webgl = useMemo(hasWebGL, []);
@@ -111,7 +129,21 @@ export function Session({ id }: { id: string }) {
     setCut(null);
     setFocus('used');
     setLive(false);
-    void load(false);
+    setHead(null);
+    setAt(null);
+    setLate(false);
+    let done = false;
+    peek(id)
+      .then((p) => !done && !p.ready && setHead(p))
+      .catch(() => {});
+    const timer = setTimeout(() => setLate(true), LATE_MS);
+    void load(false).finally(() => {
+      done = true;
+    });
+    return () => {
+      done = true;
+      clearTimeout(timer);
+    };
   }, [id, load]);
 
   useEffect(() => {
@@ -121,7 +153,11 @@ export function Session({ id }: { id: string }) {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let quiet: ReturnType<typeof setTimeout> | null = null;
-    const stop = events(id, (e) => {
+    const stop = events(id, (e, d) => {
+      if (e === 'reading') {
+        const r = d as { at?: number } | null;
+        if (typeof r?.at === 'number') setAt(r.at);
+      }
       if (e === 'change') {
         setLive(true);
         if (quiet) clearTimeout(quiet);
@@ -143,8 +179,9 @@ export function Session({ id }: { id: string }) {
 
   const points = data?.points ?? [];
   const last = points.length - 1;
+  const reading = !data && head ? head : null;
   const peak = useMemo(() => points.reduce((m, p) => Math.max(m, p.total), 0), [points]);
-  const win = windowOf(data?.model, peak);
+  const win = windowOf(data?.model ?? reading?.model, data ? peak : (reading?.peak ?? 0));
   const compactions = data?.compactions ?? [];
   const chosen = cut != null && compactions[cut] ? compactions[cut] : null;
   const call = Math.min(last, Math.max(0, hover ?? pinned ?? last));
@@ -153,7 +190,7 @@ export function Session({ id }: { id: string }) {
   const line = data?.timeline;
   const pieces = useMemo(() => (line && point ? piecesAt(line, call, point.total) : []), [line, call, point]);
   const root = useMemo(() => (point ? treeOf(pieces) : null), [point, pieces]);
-  const plate = win ?? niceWindow(peak);
+  const plate = win ?? niceWindow(data ? peak : (reading?.peak ?? 0));
 
   const before = chosen ? points[chosen.n - 1] : undefined;
   const after = chosen ? points[chosen.n] : undefined;
@@ -178,7 +215,10 @@ export function Session({ id }: { id: string }) {
       </div>
     );
 
-  if (!data) return <div aria-busy="true" aria-label="Reading the transcript" className="min-h-60" />;
+  if (!data && !reading) return <div aria-busy="true" aria-label="Reading the transcript" className="min-h-60" />;
+  const shown = (data ?? reading)!;
+  const status = reading ? readingLine(reading.size, at) : '';
+  const hide = !!reading && !late;
 
   const choose = (i: number) => {
     setCut(i);
@@ -188,13 +228,13 @@ export function Session({ id }: { id: string }) {
   };
 
   return (
-    <div>
+    <div className={hide ? 'invisible' : undefined} aria-busy={hide || undefined}>
       <Back />
-      <h1 className="mt-5 text-[1.0625rem] font-bold leading-snug text-balance">{rowTitle({ title: data.title, prompt: data.prompt, placeLabel: data.cwd })}</h1>
+      <h1 className="mt-5 text-[1.0625rem] font-bold leading-snug text-balance">{rowTitle({ title: shown.title, prompt: shown.prompt, placeLabel: shown.cwd })}</h1>
       <p className="num mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-        {data.cwd && <span>{data.cwd}</span>}
-        {data.model && <span>{data.model}</span>}
-        <span>{points.length === 1 ? '1 call' : `${points.length} calls`}</span>
+        {shown.cwd && <span>{shown.cwd}</span>}
+        {shown.model && <span>{shown.model}</span>}
+        {data && <span>{points.length === 1 ? '1 call' : `${points.length} calls`}</span>}
         {live && <span className="font-sans font-semibold text-live">running</span>}
       </p>
 
@@ -239,13 +279,14 @@ export function Session({ id }: { id: string }) {
           )}
         </div>
 
-        {points.length === 0 || !point || !root || !line ? (
+        {data && (points.length === 0 || !point || !root || !line) ? (
           <p className="mt-4">No model calls in this transcript yet.</p>
         ) : (
           <div className="mt-3 grid gap-5">
             {(() => {
-              const icicles =
-                chosen && pair ? (
+              const icicles = !point || !root ? (
+                <p className="num text-xs text-muted-foreground">{status}</p>
+              ) : chosen && pair ? (
                   <div className="grid gap-5">
                     <div className="grid gap-1.5">
                       <p className="flex items-baseline gap-3 text-[0.8125rem]">
@@ -265,7 +306,7 @@ export function Session({ id }: { id: string }) {
                     )}
                   </div>
                 ) : (
-                  <Icicle root={root} total={point.total} depth={narrow ? Math.max(1, focusDepth(focus)) : 3} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} label={`Context at call ${call + 1}`} />
+                  <Icicle root={root} total={point.total} depth={narrow ? Math.max(1, focusDepth(focus)) : 3} cwdRoot={shown.root} focusId={focus} onFocus={setFocus} pins={pins} label={`Context at call ${call + 1}`} />
                 );
               if (!webgl || broken) return icicles;
               if (!Scene) return <div className={SCENE_HEIGHT} />;
@@ -273,18 +314,20 @@ export function Session({ id }: { id: string }) {
               return (
                 <Fallback fallback={icicles}>
                     <Scene
-                      line={line}
-                      call={call}
-                      total={point.total}
+                      line={line ?? EMPTY}
+                      call={point ? call : 0}
+                      total={point?.total ?? 0}
                       cut={cutAt}
                       plate={plate}
-                      peak={peak}
-                      last={last}
-                      label={chosen ? `Context at compaction ${cut! + 1}` : `Context at call ${call + 1}`}
-                      root={data.root}
-                      pins={data.pins}
-                      queued={data.queued}
+                      peak={point ? peak : plate}
+                      last={point ? last : AGE_CAP}
+                      label={reading ? `Context window, ${status}` : chosen ? `Context at compaction ${cut! + 1}` : `Context at call ${call + 1}`}
+                      root={shown.root}
+                      pins={data?.pins ?? NONE}
+                      queued={data?.queued ?? NONE}
                       dropped={chosen?.dropped ?? []}
+                      reading={reading ? status : undefined}
+                      hidden={hide}
                       onSend={async (kind, payload) => {
                         await send(kind, { session: id, ...payload });
                         await load(true);
@@ -294,7 +337,7 @@ export function Session({ id }: { id: string }) {
               );
             })()}
 
-            {points.length > 1 && (
+            {data && points.length > 1 && (
               <ContextStrip
                 points={points}
                 compactions={compactions}
@@ -315,7 +358,7 @@ export function Session({ id }: { id: string }) {
               />
             )}
 
-            {chosen ? (
+            {!data || !point || !root ? null : chosen ? (
               <div className="grid gap-5">
                 <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
                 <DroppedList session={id} root={data.root} c={chosen} queued={data.queued} pins={data.pins} onDone={() => void load(true)} />

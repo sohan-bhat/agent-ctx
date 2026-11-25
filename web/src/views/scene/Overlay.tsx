@@ -43,11 +43,12 @@ export interface OverlayProps {
   portal: RefObject<HTMLDivElement | null>;
   homeZoom: RefObject<number>;
   force?: Set<string>;
+  reading?: string;
 }
 
 const NONE = new Set<string>();
 
-export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom, force = NONE }: OverlayProps) {
+export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom, force = NONE, reading }: OverlayProps) {
   const camera = useThree((st) => st.camera) as OrthographicCamera;
   const size = useThree((st) => st.size);
   const narrow = size.width < 520;
@@ -126,6 +127,11 @@ export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom, for
       <Html portal={at} position={[0, -PLATE, 0]} zIndexRange={[20, 0]} pointerEvents="none" style={{ transform: 'translate(-50%, 6px)' }}>
         <span className="ctx-tick num block whitespace-nowrap text-[0.6875rem] leading-none">{plateLabel}</span>
       </Html>
+      {reading && (
+        <Html portal={at} position={[-f.side / 2, 0, -f.side / 2]} zIndexRange={[20, 0]} pointerEvents="none" style={{ transform: 'translate(-50%, -50%)' }}>
+          <span className="ctx-tick num block whitespace-nowrap text-[0.6875rem] leading-none">{reading}</span>
+        </Html>
+      )}
       {ticks.map((a) => (
         <Html key={a} portal={at} position={[rx, heightAt(a), rz]} zIndexRange={[20, 0]} pointerEvents="none" style={{ transform: narrow ? 'translate(calc(-100% - 8px), -50%)' : 'translate(calc(-100% - 10px), -50%)' }}>
           {narrow && a === 1000 ? (

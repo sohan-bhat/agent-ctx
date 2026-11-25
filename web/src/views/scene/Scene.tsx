@@ -29,6 +29,8 @@ export interface SceneProps {
   pins: Item[];
   queued: Item[];
   dropped: Dropped[];
+  reading?: string;
+  hidden?: boolean;
   onSend: (kind: 'pin' | 'putback', payload: Payload) => Promise<void>;
 }
 
@@ -110,16 +112,16 @@ function Details({ p, placed, root, cut }: { p: Placed; placed: Placed[]; root?:
   );
 }
 
-export default function Scene({ line, call, total, cut, plate, peak, last, label, root, pins, queued, dropped, onSend }: SceneProps) {
+export default function Scene({ line, call, total, cut, plate, peak, last, label, root, pins, queued, dropped, reading, hidden = false, onSend }: SceneProps) {
   const palette = usePalette();
   const reduced = useReduced();
   const overlay = useRef<HTMLDivElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const api = useRef<WorldApi>(null);
-  const shown = useDeferredValue(useMemo(() => ({ call, total }), [call, total]));
+  const shown = useDeferredValue(useMemo(() => ({ line, call, total }), [line, call, total]));
   const placed = useMemo(() => {
-    if (!cut) return place(plan(piecesAt(line, shown.call, shown.total), plate, SIDE));
+    if (!cut) return place(plan(piecesAt(shown.line, shown.call, shown.total), plate, SIDE));
     const now = place(plan(piecesAt(line, cut.n, cut.after), plate, SIDE, undefined, true));
     const was = place(plan(piecesBefore(line, cut.n, cut.before), plate, SIDE)).filter((p) => p.piece.state === 'gone');
     return [...was, ...now];
@@ -138,6 +140,17 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const framed = useRef<string | null>(null);
   const glide = useRef(0);
   const [ready, setReady] = useState(false);
+  const marked = useRef(false);
+  const plateSeen = useRef(false);
+  if (ready && reading && !hidden) plateSeen.current = true;
+  useEffect(() => {
+    if (!ready || hidden) return;
+    if (reading) performance.mark('plate-ready');
+    else if (!marked.current) {
+      marked.current = true;
+      performance.mark('model-ready');
+    }
+  }, [ready, reading, hidden]);
 
   const queuedIds = useMemo(() => {
     const out = new Set<string>();
@@ -351,10 +364,9 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
           }}
           force={force}
           reach={reach}
-          onReady={() => {
-            performance.mark('model-ready');
-            setReady(true);
-          }}
+          reading={reading}
+          glideIn={plateSeen.current}
+          onReady={() => setReady(true)}
         />
       </Canvas>
       <div ref={overlay} className="pointer-events-none absolute inset-0 overflow-hidden" />

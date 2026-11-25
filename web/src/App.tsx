@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Moon, Sun } from '@phosphor-icons/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sessions } from '@/views/Sessions';
-import { Session } from '@/views/Session';
+import { preloadScene, Session } from '@/views/Session';
 
 type Theme = 'light' | 'dark';
 
@@ -46,6 +46,7 @@ export function App() {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [id]);
+  useEffect(preloadScene, []);
 
   return (
     <TooltipProvider delayDuration={150}>

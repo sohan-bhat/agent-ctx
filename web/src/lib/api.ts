@@ -108,6 +108,12 @@ export interface SessionData extends Omit<SessionWire, 'totals'> {
   points: Point[];
 }
 
+export interface Peek extends SessionHead {
+  peak: number;
+  size: number;
+  ready: boolean;
+}
+
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path, { headers: { accept: 'application/json' } });
   if (!r.ok) throw new Error(`${r.status}`);
@@ -130,6 +136,9 @@ export async function session(id: string, since = 0, closed = 0, labels = 0): Pr
   return { ...rest, points: totals.map((total) => ({ total })) };
 }
 
+export function peek(id: string): Promise<Peek> {
+  return get(`api/session/${encodeURIComponent(id)}?peek=1`);
+}
 
 export async function send(kind: 'putback' | 'pin', body: { session: string; kind: string; label: string; text: string }): Promise<Item> {
   const r = await fetch(`api/${kind}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -139,7 +148,7 @@ export async function send(kind: 'putback' | 'pin', body: { session: string; kin
 
 export function events(watch: string | null, on: (event: string, data: unknown) => void): () => void {
   const es = new EventSource(watch ? `api/events?watch=${encodeURIComponent(watch)}` : 'api/events');
-  for (const name of ['change', 'sessions', 'items']) {
+  for (const name of ['change', 'sessions', 'items', 'reading']) {
     es.addEventListener(name, (e) => {
       try {
         on(name, JSON.parse((e as MessageEvent).data));

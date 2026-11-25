@@ -112,10 +112,12 @@ export interface WorldProps {
   onMove: () => void;
   force: Set<string>;
   reach: number;
+  reading?: string;
+  glideIn?: boolean;
   onReady: () => void;
 }
 
-export function World({ placed, palette, portal, framing: f, plateLabel, version, pointing, reduced, queued, pinned, outline, api, onMove, force, reach, onReady }: WorldProps) {
+export function World({ placed, palette, portal, framing: f, plateLabel, version, pointing, reduced, queued, pinned, outline, api, onMove, force, reach, reading, glideIn = false, onReady }: WorldProps) {
   const controls = useRef<CameraControlsImpl | null>(null);
   const camera = useThree((s) => s.camera) as OrthographicCamera;
   const size = useThree((s) => s.size);
@@ -145,6 +147,18 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
     c.maxZoom = homeZoom.current * 16;
     if (home.current) frameTo(c, camera, homeBox(fr), HOME.theta, HOME.phi, pad, false);
   }, [camera, size.width, size.height]);
+  const pending = useRef(!!reading);
+  useEffect(() => {
+    if (!pending.current || reading) return;
+    pending.current = false;
+    const c = controls.current;
+    if (!c || !home.current) return;
+    const pad = homePad(size.width, size.height, f);
+    homeZoom.current = fit(camera, homeBox(f), HOME.theta, HOME.phi, pad).zoom;
+    c.minZoom = homeZoom.current * 0.6;
+    c.maxZoom = homeZoom.current * 16;
+    frameTo(c, camera, homeBox(f), HOME.theta, HOME.phi, pad, glideIn && !reduced);
+  }, [reading, f, camera, size.width, size.height, reduced, glideIn]);
   useEffect(() => {
     gl.domElement.style.touchAction = 'pan-y';
     if (connected instanceof HTMLElement) connected.style.touchAction = 'pan-y';
@@ -238,7 +252,7 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
       <Foundations placed={placed} palette={palette} pointing={pointing} />
       <Marks placed={placed} palette={palette} selected={pointing.selected} queued={queued} pinned={pinned} outline={outline} />
       <Ruler palette={palette} f={f} />
-      <Overlay placed={placed} f={f} plateLabel={plateLabel} controls={controls} portal={portal} homeZoom={homeZoom} force={force} />
+      <Overlay placed={placed} f={f} plateLabel={plateLabel} controls={controls} portal={portal} homeZoom={homeZoom} force={force} reading={reading} />
       <AdaptiveDpr />
       <CameraControls
         ref={controls}
