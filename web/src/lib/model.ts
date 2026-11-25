@@ -1,4 +1,4 @@
-import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
+import { hierarchy, treemap, treemapBinary, treemapSquarify, type HierarchyRectangularNode } from 'd3-hierarchy';
 
 export interface SpanRow {
   b: number;
@@ -109,20 +109,21 @@ export function piecesAround(line: Line, n: number, before: number, after: numbe
   return [...now, ...prev.map((p): Piece => ({ ...p, state: 'gone' }))];
 }
 
-export interface Lot {
-  piece: Piece;
+export interface Rect {
   x0: number;
   z0: number;
   x1: number;
   z1: number;
 }
 
-export interface District {
+export interface Lot extends Rect {
+  piece: Piece;
+  district: Rect;
+  group: Rect;
+}
+
+export interface District extends Rect {
   kind: Kind;
-  x0: number;
-  z0: number;
-  x1: number;
-  z1: number;
   size: number;
 }
 
@@ -137,11 +138,13 @@ export interface Plan {
 
 interface TreeNode {
   key: string;
+  order: [number, number];
   piece?: Piece;
   children?: TreeNode[];
 }
 
 export const SMALL_SHARE = 1 / 8000;
+export const TOOL_GROUPS = 3;
 
 function merged(kind: Kind, small: Piece[]): Piece {
   const members = small.map((p) => p.block);
@@ -165,6 +168,25 @@ function merged(kind: Kind, small: Piece[]): Piece {
   };
 }
 
+function leaf(p: Piece): TreeNode {
+  return { key: p.block.id, order: [heightShare(p.age), -p.size], piece: p };
+}
+
+function branch(key: string, kids: TreeNode[]): TreeNode {
+  const size = kids.reduce((a, k) => a + (k.piece ? k.piece.size : -k.order[0]), 0);
+  const age = kids.reduce((a, k) => a + (k.piece ? heightShare(k.piece.age) * -k.order[1] : k.order[1] * -k.order[0]), 0) / (size || 1);
+  return { key, order: [-size, age], children: kids };
+}
+
+function tile(node: HierarchyRectangularNode<TreeNode>, x0: number, y0: number, x1: number, y1: number): void {
+  if (node.children?.[0]?.children) treemapSquarify(node, x0, y0, x1, y1);
+  else treemapBinary(node, x0, y0, x1, y1);
+}
+
+export function toolGroup(cat: string, top: string[]): string {
+  return top.includes(cat) ? cat : 'tool:~';
+}
+
 export function plan(pieces: Piece[], window: number, side: number, smallShare = SMALL_SHARE): Plan {
   const total = pieces.reduce((a, p) => a + p.size, 0);
   const win = Math.max(window, total, 1);
@@ -184,27 +206,32 @@ export function plan(pieces: Piece[], window: number, side: number, smallShare =
       if (list.length === 1) big.push(list[0]);
       else if (list.length > 1) big.push(merged(kind, list));
     }
-    let children: TreeNode[];
     if (kind === 'tools') {
-      const byCat = new Map<string, Piece[]>();
+      const sizes = new Map<string, number>();
+      for (const p of big) if (!p.block.members) sizes.set(p.block.cat, (sizes.get(p.block.cat) ?? 0) + p.size);
+      const top = [...sizes].sort((a, b) => b[1] - a[1]).slice(0, TOOL_GROUPS).map(([c]) => c);
+      const byGroup = new Map<string, TreeNode[]>();
       for (const p of big) {
-        const key = p.block.members ? '~' : p.block.cat;
-        byCat.set(key, [...(byCat.get(key) ?? []), p]);
+        const g = p.block.members ? 'tool:~' : toolGroup(p.block.cat, top);
+        byGroup.set(g, [...(byGroup.get(g) ?? []), leaf(p)]);
       }
-      children = [...byCat].map(([cat, list]) => ({ key: cat, children: list.map((p) => ({ key: p.block.id, piece: p })) }));
-    } else children = big.map((p) => ({ key: p.block.id, piece: p }));
-    kinds.push({ key: kind, children });
+      kinds.push(branch(kind, [...byGroup].map(([g, kids]) => branch(g, kids))));
+    } else kinds.push(branch(kind, big.map(leaf)));
   }
-  const order = new Map(KIND_ORDER.map((k, i) => [k, i]));
-  const root = hierarchy<TreeNode>({ key: 'used', children: kinds }, (d) => d.children)
+  for (const k of kinds) if (k.key === 'system') k.order = [1, k.order[1]];
+  const root = hierarchy<TreeNode>({ key: 'used', order: [0, 0], children: kinds }, (d) => d.children)
     .sum((d) => d.piece?.size ?? 0)
-    .sort((a, b) => (b.value ?? 0) - (a.value ?? 0) || (a.depth === 1 ? (order.get(a.data.key as Kind) ?? 0) - (order.get(b.data.key as Kind) ?? 0) : a.data.key.localeCompare(b.data.key)));
-  const laid = treemap<TreeNode>().tile(treemapSquarify.ratio(1)).size([region, region]).round(false)(root);
+    .sort((a, b) => a.data.order[0] - b.data.order[0] || a.data.order[1] - b.data.order[1] || a.data.key.localeCompare(b.data.key));
+  const laid = treemap<TreeNode>().tile(tile).size([region, region]).round(false)(root);
   const lots: Lot[] = [];
   const districts: District[] = [];
+  const rect = (d: { x0: number; y0: number; x1: number; y1: number }): Rect => ({ x0: d.x0, z0: d.y0, x1: d.x1, z1: d.y1 });
   for (const d of laid.descendants()) {
-    if (d.depth === 1) districts.push({ kind: d.data.key as Kind, x0: d.x0, z0: d.y0, x1: d.x1, z1: d.y1, size: d.value ?? 0 });
-    if (d.data.piece) lots.push({ piece: d.data.piece, x0: d.x0, z0: d.y0, x1: d.x1, z1: d.y1 });
+    if (d.depth === 1) districts.push({ kind: d.data.key as Kind, ...rect(d), size: d.value ?? 0 });
+    if (!d.data.piece) continue;
+    const kindNode = d.ancestors().find((a) => a.depth === 1)!;
+    const groupNode = d.depth === 3 ? d.parent! : kindNode;
+    lots.push({ piece: d.data.piece, ...rect(d), district: rect(kindNode), group: rect(groupNode) });
   }
   return { side, region, total, window: win, lots, districts };
 }
