@@ -54,7 +54,11 @@ function seed(w: World) {
   v.prompt('/compact keep the loom notes');
   v.reply('Compacted.', { input: 10, read: 3000, write: 500, out: 120 });
   v.save();
-  return Object.assign(t, { untitled: u.id, untitledFile: u.file, slash: v.id });
+  const big = new Transcript(w.claude, a);
+  big.prompt('Read the whole loom log');
+  big.read(path.join(a, 'loom.log'), 'L'.repeat(9_000_000), { input: 5, read: 4000, out: 30 });
+  big.save();
+  return Object.assign(t, { untitled: u.id, untitledFile: u.file, slash: v.id, big: big.id });
 }
 
 test('the page server checks token and host, serves analysis, writes put back and pins, follows a live session, and stays offline', async () => {
@@ -90,6 +94,11 @@ test('the page server checks token and host, serves analysis, writes put back an
     const s0: any = await (await fetch(`${url}api/session/${t.untitled}`)).json();
     assert.equal(s0.prompt, bare.prompt);
     assert.equal(s0.points[0].total, 3510);
+    const peeked: any = await (await fetch(`${url}api/session/${t.untitled}?peek=1`)).json();
+    assert.equal(peeked.ready, true);
+    assert.equal(peeked.size, fs.statSync(t.untitledFile).size);
+    assert.equal(peeked.peak, 3510);
+    assert.equal(peeked.model, 'claude-opus-5-5');
     const text = fs.readFileSync(t.untitledFile, 'utf8');
     fs.writeFileSync(t.untitledFile, text.replace('"input_tokens":10,', '"input_tokens":11,'));
     const later5 = new Date(Date.now() + 5000);
@@ -134,6 +143,27 @@ test('the page server checks token and host, serves analysis, writes put back an
       } catch {}
     })();
     await waitFor(() => events.join('').includes('hello'), 5000);
+    const heard: string[] = [];
+    const ctrl2 = new AbortController();
+    const sse2 = await fetch(`${url}api/events?watch=${t.big}`, { signal: ctrl2.signal });
+    const reader2 = sse2.body!.getReader();
+    const pump2 = (async () => {
+      const dec = new TextDecoder();
+      try {
+        for (;;) {
+          const { value, done } = await reader2.read();
+          if (done) break;
+          heard.push(dec.decode(value));
+        }
+      } catch {}
+    })();
+    await waitFor(() => heard.join('').includes('hello'), 5000);
+    const sb: any = await (await fetch(`${url}api/session/${t.big}`)).json();
+    assert.equal(sb.points.length, 1);
+    assert.ok(await waitFor(() => heard.join('').includes('event: reading'), 5000), 'reading event');
+    assert.ok(!events.join('').includes('event: reading'));
+    ctrl2.abort();
+    await pump2;
     t.prompt('Now add redo');
     t.reply('Adding redo.', { input: 5, read: 2500, write: 200, out: 50 });
     t.save();

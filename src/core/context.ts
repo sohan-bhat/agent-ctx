@@ -631,10 +631,17 @@ export function step(a: Analyzer, r: Rec): void {
   }
 }
 
-export async function advance(a: Analyzer, to?: number): Promise<number> {
+export const PROGRESS_BYTES = 8 * 1024 * 1024;
+
+export async function advance(a: Analyzer, to?: number, onProgress?: (offset: number) => void): Promise<number> {
   let n = 0;
+  let mark = a.ctx.offset + PROGRESS_BYTES;
   for await (const line of readLines(a.ctx.transcript, a.ctx.offset, to, lineBytes)) {
     a.ctx.offset = line.end;
+    if (onProgress && line.end >= mark) {
+      mark = line.end + PROGRESS_BYTES;
+      onProgress(line.end);
+    }
     if (!line.text) continue;
     const r = parseLine(line.text);
     if (!r) {

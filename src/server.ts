@@ -6,6 +6,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { claudeDir, type Store } from './core/paths.ts';
 import { loadCards } from './core/store.ts';
+import { parseLine, usageOf } from './core/records.ts';
 import { applyJobs, listTranscripts } from './core/update.ts';
 import { releaseLock, tryLock } from './core/lock.ts';
 import { budgetBytes, WORKER_LIMIT_MS } from './core/limits.ts';
@@ -64,10 +65,10 @@ interface SessionRow {
   size: number;
 }
 
-function firstCwd(file: string): string | null {
+function firstCwd(file: string, bytes = 65536): string | null {
   try {
     const fd = fs.openSync(file, 'r');
-    const buf = Buffer.alloc(65536);
+    const buf = Buffer.alloc(bytes);
     const n = fs.readSync(fd, buf, 0, buf.length, 0);
     fs.closeSync(fd);
     const m = buf.subarray(0, n).toString('utf8').match(/"cwd":"((?:[^"\\]|\\.)*)"/);
@@ -143,6 +144,36 @@ interface Kept {
 
 export const ANALYSIS_BUDGET = 96 * 1024 * 1024;
 export const ANALYSIS_MAX = 64;
+
+function readTail(file: string, size: number): { model?: string; peak: number } {
+  const out: { model?: string; peak: number } = { peak: 0 };
+  try {
+    const len = Math.min(size, 4 << 20);
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(len);
+    const n = fs.readSync(fd, buf, 0, len, size - len);
+    fs.closeSync(fd);
+    const lines = buf.subarray(0, n).toString('utf8').split('\n');
+    if (len < size) lines.shift();
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const text = lines[i];
+      if (!text.includes('"usage"') || !text.includes('"type":"assistant"')) continue;
+      const r = parseLine(text);
+      if (!r || r.isSidechain) continue;
+      const u = usageOf(r);
+      if (u) out.peak = Math.max(out.peak, u.total);
+      if (!out.model && typeof r.message?.model === 'string' && r.message.model.startsWith('claude-')) out.model = r.message.model;
+    }
+    if (!out.model) {
+      const head = Buffer.alloc(Math.min(size, 1 << 18));
+      const fd2 = fs.openSync(file, 'r');
+      const m = fs.readSync(fd2, head, 0, head.length, 0);
+      fs.closeSync(fd2);
+      out.model = head.subarray(0, m).toString('utf8').match(/"model":"(claude-[^"<]+)"/)?.[1];
+    }
+  } catch {}
+  return out;
+}
 
 function sameToken(a: string, b: string): boolean {
   const x = Buffer.from(a);
@@ -235,7 +266,14 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
     const entry = k;
     entry.used = Date.now();
     if (entry.a.ctx.offset < stat.size) {
-      const job = advance(entry.a, stat.size).then(() => undefined);
+      const total = stat.size;
+      let last = 0;
+      const job = advance(entry.a, total, (at) => {
+        const now = Date.now();
+        if (now - last < 100) return;
+        last = now;
+        broadcast('reading', { session, at, size: total }, session);
+      }).then(() => undefined);
       busy.set(file, job);
       try {
         await job;
@@ -248,6 +286,32 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
       trim(file);
     }
     return entry.a;
+  };
+
+  const peek = (session: string) => {
+    const file = pathOf(session);
+    if (!file) return null;
+    let size = 0;
+    try {
+      size = fs.statSync(file).size;
+    } catch {
+      return null;
+    }
+    const k = kept.get(file);
+    const tail = readTail(file, size);
+    const cwd = k?.a.ctx.cwd ?? firstCwd(file, 1 << 20) ?? undefined;
+    const card = loadCards(st).find((c) => c.session === session);
+    return {
+      session,
+      title: k?.a.ctx.title ?? card?.title,
+      prompt: promptTitle(card?.firstPrompt),
+      cwd: cwd ? tilde(cwd) : undefined,
+      root: cwd,
+      model: k?.a.ctx.model ?? tail.model,
+      peak: tail.peak,
+      size,
+      ready: !!k && k.a.ctx.offset >= size,
+    };
   };
 
   const refresh = () => {
@@ -351,6 +415,10 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
       }
       if (req.method === 'GET' && rest.startsWith('api/session/')) {
         const id = decodeURIComponent(rest.slice('api/session/'.length));
+        if (u.searchParams.get('peek')) {
+          const p = peek(id);
+          return p ? send(res, 200, p) : send(res, 404, { error: 'no transcript' });
+        }
         const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
         const a = await analyze(id);
         if (!a) return send(res, 404, { error: 'no transcript' });
