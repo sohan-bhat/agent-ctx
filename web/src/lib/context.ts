@@ -155,7 +155,11 @@ export function treeOf(pieces: Piece[]): Node {
     let children = [...rows.values()];
     if (kind.key === 'tools') {
       const byCat = new Map<string, Node[]>();
-      for (const n of children) byCat.set(n.item!.cat, [...(byCat.get(n.item!.cat) ?? []), n]);
+      for (const n of children) {
+        const list = byCat.get(n.item!.cat);
+        if (list) list.push(n);
+        else byCat.set(n.item!.cat, [n]);
+      }
       children = [...byCat].map(([cat, list]) => ({ id: cat, label: toolName(cat), kind: kind.key, own: 0, children: list }));
     }
     kinds.push({ id: kind.key, label: kind.label, kind: kind.key, own: 0, children });

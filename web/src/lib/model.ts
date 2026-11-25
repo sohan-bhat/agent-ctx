@@ -217,7 +217,9 @@ export function plan(pieces: Piece[], window: number, side: number, smallShare =
       const byGroup = new Map<string, TreeNode[]>();
       for (const p of big) {
         const g = p.block.members ? 'tool:~' : toolGroup(p.block.cat, top);
-        byGroup.set(g, [...(byGroup.get(g) ?? []), leaf(p)]);
+        const list = byGroup.get(g);
+        if (list) list.push(leaf(p));
+        else byGroup.set(g, [leaf(p)]);
       }
       kinds.push(branch(kind, [...byGroup].map(([g, kids]) => branch(g, kids))));
     } else kinds.push(branch(kind, big.map(leaf)));
@@ -228,7 +230,7 @@ export function plan(pieces: Piece[], window: number, side: number, smallShare =
   }
   const root = hierarchy<TreeNode>({ key: 'used', order: [0, 0], children: kinds }, (d) => d.children)
     .sum((d) => d.piece?.size ?? 0)
-    .sort((a, b) => a.data.order[0] - b.data.order[0] || a.data.order[1] - b.data.order[1] || a.data.key.localeCompare(b.data.key));
+    .sort((a, b) => a.data.order[0] - b.data.order[0] || a.data.order[1] - b.data.order[1] || (a.data.key < b.data.key ? -1 : a.data.key > b.data.key ? 1 : 0));
   const laid = treemap<TreeNode>().tile(tile).size([region, region]).round(false)(root);
   const lots: Lot[] = [];
   const districts: District[] = [];
