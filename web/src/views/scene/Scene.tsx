@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -117,12 +117,13 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const wrap = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const api = useRef<WorldApi>(null);
+  const shown = useDeferredValue(useMemo(() => ({ call, total }), [call, total]));
   const placed = useMemo(() => {
-    if (!cut) return place(plan(piecesAt(line, call, total), plate, SIDE));
+    if (!cut) return place(plan(piecesAt(line, shown.call, shown.total), plate, SIDE));
     const now = place(plan(piecesAt(line, cut.n, cut.after), plate, SIDE, undefined, true));
     const was = place(plan(piecesBefore(line, cut.n, cut.before), plate, SIDE)).filter((p) => p.piece.state === 'gone');
     return [...was, ...now];
-  }, [line, call, total, cut, plate]);
+  }, [line, shown, cut, plate]);
   const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
   const force = useMemo(() => new Set(cut ? placed.filter((p) => p.piece.state === 'stand' && p.piece.block.kind === 'summary').map((p) => p.id) : []), [placed, cut]);
   const reach = useMemo(() => placed.reduce((m, p) => Math.max(m, -(p.cx - p.w / 2), -(p.cz - p.d / 2)), 0), [placed]);
@@ -137,7 +138,15 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const framed = useRef<string | null>(null);
   const glide = useRef(0);
 
-  const queuedIds = useMemo(() => new Set(placed.filter((p) => p.piece.state === 'gone' && queued.some((q) => matches(q, p.piece.block))).map((p) => p.id)), [placed, queued]);
+  const queuedIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const q of queued) {
+      let best: Placed | null = null;
+      for (const p of placed) if (p.piece.state === 'gone' && matches(q, p.piece.block) && (!best || p.piece.size > best.piece.size)) best = p;
+      if (best) out.add(best.id);
+    }
+    return out;
+  }, [placed, queued]);
   const pinnedIds = useMemo(() => new Set(placed.filter((p) => pins.some((q) => matches(q, p.piece.block))).map((p) => p.id)), [placed, pins]);
   const outline = useCallback((p: Placed) => heightAt(Math.max(0, (cut?.n ?? call) - 1 - p.piece.block.birth)), [cut, call]);
 
@@ -294,6 +303,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
         shadows="percentage"
         flat
         dpr={[1, 2]}
+        performance={{ min: 0.5, debounce: 250 }}
         gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
         camera={{ position: [20, 20, 20], zoom: 40, near: 0.1, far: 200 }}
         onPointerMissed={() => {
@@ -358,7 +368,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
             }}
           >
             <Details p={open} placed={placed} root={root} cut={cut} />
-            {gone && queuedIds.has(open.id) ? (
+            {gone && queued.some((q) => matches(q, open.piece.block)) ? (
               <p className="text-xs font-semibold">Queued for your next prompt</p>
             ) : gone && back ? (
               <div className="flex gap-2">
