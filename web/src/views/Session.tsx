@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { events, send, session, type SessionData } from '@/lib/api';
 import { survival, tree, treeOf, windowOf } from '@/lib/context';
@@ -35,6 +35,36 @@ function useNarrow(): boolean {
   return narrow;
 }
 
+const Scene = lazy(() => import('./scene/Scene'));
+
+const SCENE_HEIGHT = 'h-[16rem] sm:h-[27rem]';
+
+function hasWebGL(): boolean {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') ?? c.getContext('webgl');
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    return !!gl;
+  } catch {
+    return false;
+  }
+}
+
+function niceWindow(peak: number): number {
+  const steps = [50_000, 100_000, 200_000, 500_000, 1_000_000, 2_000_000];
+  return steps.find((s) => s >= peak * 1.1) ?? Math.ceil((peak * 1.1) / 1_000_000) * 1_000_000;
+}
+
+class Fallback extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
 const LINK = 'font-semibold underline decoration-foreground/35 underline-offset-4 transition-colors duration-150 hover:decoration-foreground';
 
 export function Session({ id }: { id: string }) {
@@ -48,6 +78,7 @@ export function Session({ id }: { id: string }) {
   const [live, setLive] = useState(false);
   const count = useRef({ points: 0, closed: 0, labels: 0 });
   const narrow = useNarrow();
+  const webgl = useMemo(hasWebGL, []);
   const top = useRef<HTMLElement>(null);
 
   const load = useCallback(
@@ -109,6 +140,7 @@ export function Session({ id }: { id: string }) {
   const line = data?.timeline;
   const pieces = useMemo(() => (line && point ? piecesAt(line, call, point.total) : []), [line, call, point]);
   const root = useMemo(() => (point ? treeOf(pieces) : null), [point, pieces]);
+  const plate = win ?? niceWindow(peak);
 
   const before = chosen ? points[chosen.n - 1] : undefined;
   const after = chosen ? points[chosen.n] : undefined;
@@ -194,62 +226,73 @@ export function Session({ id }: { id: string }) {
           )}
         </div>
 
-        {points.length === 0 || !point || !root ? (
+        {points.length === 0 || !point || !root || !line ? (
           <p className="mt-4">No model calls in this transcript yet.</p>
         ) : (
-          <div className="mt-3 grid gap-6">
-            {points.length > 1 && <ContextStrip
-              points={points}
-              compactions={compactions}
-              window={win}
-              call={pinned ?? last}
-              hover={hover}
-              chosen={cut}
-              hoverCut={hoverCut}
-              onHover={(c, h) => {
-                setHover(chosen ? null : c);
-                setHoverCut(h);
-              }}
-              onPick={(c) => {
-                setCut(null);
-                setPinned(c === last ? null : c);
-              }}
-              onPickCut={choose}
-            />}
-
-            {chosen && pair ? (
-              <div className="grid gap-5">
-                <div className="grid gap-1.5">
-                  <p className="flex items-baseline gap-3 text-[0.8125rem]">
-                    <span className="font-semibold">Before, call {chosen.n}</span>
-                    <span className="num text-muted-foreground">{exact(before!.total)}</span>
-                  </p>
-                  <Icicle root={pair.before} total={before!.total} scaleMax={Math.max(before!.total, after?.total ?? 0)} from={1} depth={narrow ? 1 : 2} label="Context before the compaction" />
-                </div>
-                {after && pair.after && (
-                  <div className="grid gap-1.5">
-                    <p className="flex items-baseline gap-3 text-[0.8125rem]">
-                      <span className="font-semibold">After, call {chosen.n + 1}</span>
-                      <span className="num text-muted-foreground">{exact(after.total)}</span>
-                    </p>
-                    <Icicle root={pair.after} total={after.total} scaleMax={Math.max(before!.total, after.total)} from={1} depth={narrow ? 1 : 2} label="Context after the compaction" />
+          <div className="mt-3 grid gap-5">
+            {(() => {
+              const icicles =
+                chosen && pair ? (
+                  <div className="grid gap-5">
+                    <div className="grid gap-1.5">
+                      <p className="flex items-baseline gap-3 text-[0.8125rem]">
+                        <span className="font-semibold">Before, call {chosen.n}</span>
+                        <span className="num text-muted-foreground">{exact(before!.total)}</span>
+                      </p>
+                      <Icicle root={pair.before} total={before!.total} scaleMax={Math.max(before!.total, after?.total ?? 0)} from={1} depth={narrow ? 1 : 2} label="Context before the compaction" />
+                    </div>
+                    {after && pair.after && (
+                      <div className="grid gap-1.5">
+                        <p className="flex items-baseline gap-3 text-[0.8125rem]">
+                          <span className="font-semibold">After, call {chosen.n + 1}</span>
+                          <span className="num text-muted-foreground">{exact(after.total)}</span>
+                        </p>
+                        <Icicle root={pair.after} total={after.total} scaleMax={Math.max(before!.total, after.total)} from={1} depth={narrow ? 1 : 2} label="Context after the compaction" />
+                      </div>
+                    )}
                   </div>
-                )}
+                ) : (
+                  <Icicle root={root} total={point.total} depth={narrow ? Math.max(1, focusDepth(focus)) : 3} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} label={`Context at call ${call + 1}`} />
+                );
+              if (!webgl) return icicles;
+              const cutAt = chosen && before ? { n: chosen.n, before: before.total, after: after?.total ?? chosen.post } : null;
+              return (
+                <Fallback fallback={icicles}>
+                  <Suspense fallback={<div className={SCENE_HEIGHT} />}>
+                    <Scene line={line} call={call} total={point.total} cut={cutAt} plate={plate} label={chosen ? `Context at compaction ${cut! + 1}` : `Context at call ${call + 1}`} />
+                  </Suspense>
+                </Fallback>
+              );
+            })()}
+
+            {points.length > 1 && (
+              <ContextStrip
+                points={points}
+                compactions={compactions}
+                window={win}
+                call={pinned ?? last}
+                hover={hover}
+                chosen={cut}
+                hoverCut={hoverCut}
+                onHover={(c, h) => {
+                  setHover(chosen ? null : c);
+                  setHoverCut(h);
+                }}
+                onPick={(c) => {
+                  setCut(null);
+                  setPinned(c === last ? null : c);
+                }}
+                onPickCut={choose}
+              />
+            )}
+
+            {chosen ? (
+              <div className="grid gap-5">
                 <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
                 <DroppedList session={id} root={data.root} c={chosen} queued={data.queued} pins={data.pins} onDone={() => void load(true)} />
               </div>
             ) : (
               <div className="grid gap-5">
-                <Icicle
-                  root={root}
-                  total={point.total}
-                  depth={narrow ? Math.max(1, focusDepth(focus)) : 3}
-                  cwdRoot={data.root}
-                  focusId={focus}
-                  onFocus={setFocus}
-                  pins={pins}
-                  label={`Context at call ${call + 1}`}
-                />
                 <Breakdown root={root} total={point.total} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} />
                 <p className="text-xs text-muted-foreground">The split is an estimate scaled to the exact total.</p>
               </div>
