@@ -666,6 +666,19 @@ export function largest(a: Analyzer, n = 12): Top[] {
     .map((i) => ({ label: i.label, cat: i.cat, tok: i.tok, kind: i.kind, count: i.count }));
 }
 
+export function weight(a: Analyzer): number {
+  let text = 0;
+  for (const it of a.live.values()) text += (it.label.length + (it.text?.length ?? 0)) * 2;
+  let labels = 0;
+  for (const l of a.labels.keys()) labels += l.length * 2 + 48;
+  let dropped = 0;
+  for (const c of a.ctx.compactions) {
+    dropped += c.summary.length * 2 + 2048;
+    for (const d of c.dropped) dropped += (d.label.length + d.text.length) * 2 + 160;
+  }
+  return 16_384 + a.ctx.points.length * 420 + a.live.size * 260 + a.closed.length * 140 + text + labels + dropped;
+}
+
 export function categories(a: Analyzer): string[] {
   const set = new Set<string>();
   for (const p of a.ctx.points) for (const k of Object.keys(p.est)) set.add(k);

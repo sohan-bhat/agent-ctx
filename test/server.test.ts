@@ -54,7 +54,7 @@ function seed(w: World) {
   v.prompt('/compact keep the loom notes');
   v.reply('Compacted.', { input: 10, read: 3000, write: 500, out: 120 });
   v.save();
-  return Object.assign(t, { untitled: u.id, slash: v.id });
+  return Object.assign(t, { untitled: u.id, untitledFile: u.file, slash: v.id });
 }
 
 test('the page server checks token and host, serves analysis, writes put back and pins, follows a live session, and stays offline', async () => {
@@ -89,6 +89,13 @@ test('the page server checks token and host, serves analysis, writes put back an
     assert.ok(later.store.bytes > 0 && later.store.bytes < later.store.cap);
     const s0: any = await (await fetch(`${url}api/session/${t.untitled}`)).json();
     assert.equal(s0.prompt, bare.prompt);
+    assert.equal(s0.points[0].total, 3510);
+    const text = fs.readFileSync(t.untitledFile, 'utf8');
+    fs.writeFileSync(t.untitledFile, text.replace('"input_tokens":10,', '"input_tokens":11,'));
+    const later5 = new Date(Date.now() + 5000);
+    fs.utimesSync(t.untitledFile, later5, later5);
+    const redone: any = await (await fetch(`${url}api/session/${t.untitled}`)).json();
+    assert.equal(redone.points[0].total, 3511);
     const s1: any = await (await fetch(`${url}api/session/${t.id}`)).json();
     assert.equal(s1.points.length, 5);
     assert.equal(s1.compactions.length, 1);

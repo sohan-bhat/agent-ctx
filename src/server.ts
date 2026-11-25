@@ -9,7 +9,7 @@ import { loadCards } from './core/store.ts';
 import { applyJobs, listTranscripts } from './core/update.ts';
 import { releaseLock, tryLock } from './core/lock.ts';
 import { budgetBytes, WORKER_LIMIT_MS } from './core/limits.ts';
-import { advance, categories, catLabel, CHARS_PER_TOKEN, largest, newAnalyzer, timeline, type Analyzer } from './core/context.ts';
+import { advance, categories, catLabel, CHARS_PER_TOKEN, largest, newAnalyzer, timeline, weight, type Analyzer } from './core/context.ts';
 import { enqueue, makeItem, pin, pinsFor, queued, unpin, type ItemKind } from './core/items.ts';
 import { promptTitle, tilde } from './core/format.ts';
 import { storeSize } from './core/budget.ts';
@@ -133,6 +133,17 @@ function sessionRows(st: Store): SessionRow[] {
   return rows;
 }
 
+interface Kept {
+  a: Analyzer;
+  size: number;
+  mtime: number;
+  used: number;
+  weight: number;
+}
+
+export const ANALYSIS_BUDGET = 96 * 1024 * 1024;
+export const ANALYSIS_MAX = 64;
+
 function sameToken(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
@@ -142,7 +153,9 @@ function sameToken(a: string, b: string): boolean {
 export async function start(st: Store, opts: ServeOptions): Promise<Running> {
   const token = randomBytes(18).toString('base64url');
   const web = webDir();
-  const analyzers = new Map<string, Analyzer>();
+  const kept = new Map<string, Kept>();
+  const busy = new Map<string, Promise<void>>();
+  const paths = new Map<string, string>();
   const clients = new Set<{ res: http.ServerResponse; watch: string | null }>();
   const watched = new Map<string, { file: string; count: number; size: number }>();
   let port = 0;
@@ -176,23 +189,65 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
     return c && fs.existsSync(c.transcript) ? c.transcript : null;
   };
 
+  const pathOf = (session: string): string | null => {
+    const known = paths.get(session);
+    if (known && fs.existsSync(known)) return known;
+    const file = transcriptOf(session);
+    if (file) paths.set(session, file);
+    return file;
+  };
+
+  const trim = (keep: string) => {
+    let total = 0;
+    for (const k of kept.values()) total += k.weight;
+    const order = [...kept.entries()].sort((x, y) => x[1].used - y[1].used);
+    for (const [file, k] of order) {
+      if (total <= ANALYSIS_BUDGET && kept.size <= ANALYSIS_MAX) break;
+      if (file === keep || busy.has(file)) continue;
+      kept.delete(file);
+      total -= k.weight;
+    }
+  };
+
   const analyze = async (session: string): Promise<Analyzer | null> => {
-    let a = analyzers.get(session);
-    const file = a?.ctx.transcript ?? transcriptOf(session);
+    const file = pathOf(session);
     if (!file) return null;
-    let size = 0;
+    for (;;) {
+      const running = busy.get(file);
+      if (!running) break;
+      await running.catch(() => {});
+    }
+    let stat: fs.Stats;
     try {
-      size = fs.statSync(file).size;
+      stat = fs.statSync(file);
     } catch {
-      return a ?? null;
+      return kept.get(file)?.a ?? null;
     }
-    if (!a || a.ctx.offset > size) {
-      a = newAnalyzer(session, file);
-      analyzers.set(session, a);
-      while (analyzers.size > 4) analyzers.delete(analyzers.keys().next().value as string);
+    let k = kept.get(file);
+    if (k && (stat.size < k.size || (stat.size === k.size && stat.mtimeMs !== k.mtime))) {
+      kept.delete(file);
+      k = undefined;
     }
-    await advance(a);
-    return a;
+    if (!k) {
+      k = { a: newAnalyzer(session, file), size: 0, mtime: 0, used: 0, weight: 0 };
+      kept.set(file, k);
+    }
+    const entry = k;
+    entry.used = Date.now();
+    if (entry.a.ctx.offset < stat.size) {
+      const job = advance(entry.a, stat.size).then(() => undefined);
+      busy.set(file, job);
+      try {
+        await job;
+      } finally {
+        busy.delete(file);
+      }
+      entry.size = entry.a.ctx.offset;
+      entry.mtime = entry.a.ctx.offset >= stat.size ? stat.mtimeMs : 0;
+      entry.weight = weight(entry.a);
+      trim(file);
+    }
+    return entry.a;
   };
 
   const refresh = () => {
