@@ -66,6 +66,7 @@
   --kind-tools: #7cb5f5;
   --kind-summary: #d481a2;
   --kind-ink: #141414;
+  --table: #e2e2e2;
 }
 
 .dark {
@@ -97,6 +98,7 @@
   --kind-tools: #558dca;
   --kind-summary: #c37292;
   --kind-ink: #141414;
+  --table: #1f1f1f;
 }
 
 @layer base {
@@ -146,5 +148,19 @@
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@layer components {
+  .ctx-label,
+  .ctx-tick {
+    color: var(--foreground);
+    text-shadow:
+      0 0 1px var(--background),
+      0 0 2px var(--background),
+      0 0 3px var(--background);
+  }
+  .ctx-tick {
+    color: var(--muted-foreground);
   }
 }
