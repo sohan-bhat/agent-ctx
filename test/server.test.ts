@@ -96,6 +96,11 @@ test('the page server checks token and host, serves analysis, writes put back an
     assert.deepEqual(kinds, ['command', 'decision', 'file']);
     assert.deepEqual(s1.compactions[0].dropped.map((d: any) => d.kind), ['decision', 'file', 'command']);
     assert.ok(s1.categories.some((c: any) => c.label === 'Tool results, Read'));
+    const tl = s1.timeline;
+    assert.equal(tl.closedFrom, 0);
+    assert.ok(tl.closed.length > 0 && tl.closed.every((x: any) => x.e === 4));
+    assert.ok(tl.closed.some((x: any) => x.l !== undefined && tl.labels[x.l].endsWith('forgotten.ts') && x.b === 2));
+    assert.ok(tl.live.some((x: any) => x.i === -1));
 
     const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
       raw(port, `${base}${p}`, { host: `127.0.0.1:${port}`, 'content-type': 'application/json', ...headers }, 'POST', JSON.stringify(body));
@@ -126,8 +131,12 @@ test('the page server checks token and host, serves analysis, writes put back an
     t.reply('Adding redo.', { input: 5, read: 2500, write: 200, out: 50 });
     t.save();
     assert.ok(await waitFor(() => events.join('').includes('event: change'), 8000), 'change event');
-    const s2: any = await (await fetch(`${url}api/session/${t.id}?since=${s1.count}`)).json();
+    const s2: any = await (await fetch(`${url}api/session/${t.id}?since=${s1.count}&closed=${tl.closed.length}&labels=${tl.labels.length}`)).json();
     assert.equal(s2.from, 5);
+    assert.equal(s2.timeline.closedFrom, tl.closed.length);
+    assert.equal(s2.timeline.closed.length, 0);
+    assert.equal(s2.timeline.labelsFrom, tl.labels.length);
+    assert.ok(s2.timeline.live.length > tl.live.length);
     assert.equal(s2.points.length, 1);
     assert.equal(s2.points[0].total, 2705);
     ctrl.abort();

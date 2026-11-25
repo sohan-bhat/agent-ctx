@@ -9,7 +9,7 @@ import { loadCards } from './core/store.ts';
 import { applyJobs, listTranscripts } from './core/update.ts';
 import { releaseLock, tryLock } from './core/lock.ts';
 import { budgetBytes, WORKER_LIMIT_MS } from './core/limits.ts';
-import { advance, categories, catLabel, CHARS_PER_TOKEN, largest, newAnalyzer, type Analyzer } from './core/context.ts';
+import { advance, categories, catLabel, CHARS_PER_TOKEN, largest, newAnalyzer, timeline, type Analyzer } from './core/context.ts';
 import { enqueue, makeItem, pin, pinsFor, queued, unpin, type ItemKind } from './core/items.ts';
 import { promptTitle, tilde } from './core/format.ts';
 import { storeSize } from './core/budget.ts';
@@ -302,6 +302,11 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
         const pts = a.ctx.points;
         const from = since <= pts.length ? since : 0;
         const cats = categories(a);
+        const tl = timeline(a);
+        const closedFrom = Math.max(0, Number(u.searchParams.get('closed')) || 0);
+        const labelsFrom = Math.max(0, Number(u.searchParams.get('labels')) || 0);
+        const cf = from > 0 && closedFrom <= tl.closed.length ? closedFrom : 0;
+        const lf = from > 0 && labelsFrom <= tl.labels.length ? labelsFrom : 0;
         return send(res, 200, {
           session: id,
           title: a.ctx.title,
@@ -318,6 +323,7 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
           compactions: a.ctx.compactions,
           largest: largest(a),
           categories: cats.map((c) => ({ key: c, label: catLabel(c) })),
+          timeline: { cats: tl.cats, labelsFrom: lf, labels: tl.labels.slice(lf), closedFrom: cf, closed: tl.closed.slice(cf), live: tl.live },
           queued: queued(st, id),
           pins: pinsFor(st, id),
         });
