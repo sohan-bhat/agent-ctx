@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { events, send, session, type SessionData } from '@/lib/api';
 import { survival, tree, treeOf, windowOf } from '@/lib/context';
@@ -36,7 +36,7 @@ function useNarrow(): boolean {
 }
 
 const loadScene = () => import('./scene/Scene');
-const Scene = lazy(loadScene);
+type SceneView = Awaited<ReturnType<typeof loadScene>>['default'];
 
 const SCENE_HEIGHT = 'h-[16rem] sm:h-[27rem]';
 
@@ -80,8 +80,17 @@ export function Session({ id }: { id: string }) {
   const count = useRef({ points: 0, closed: 0, labels: 0 });
   const narrow = useNarrow();
   const webgl = useMemo(hasWebGL, []);
+  const [Scene, setScene] = useState<SceneView | null>(null);
+  const [broken, setBroken] = useState(false);
   useEffect(() => {
-    if (webgl) void loadScene();
+    if (!webgl) return;
+    let live = true;
+    loadScene()
+      .then((m) => live && setScene(() => m.default))
+      .catch(() => live && setBroken(true));
+    return () => {
+      live = false;
+    };
   }, [webgl]);
   const top = useRef<HTMLElement>(null);
 
@@ -258,11 +267,11 @@ export function Session({ id }: { id: string }) {
                 ) : (
                   <Icicle root={root} total={point.total} depth={narrow ? Math.max(1, focusDepth(focus)) : 3} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} label={`Context at call ${call + 1}`} />
                 );
-              if (!webgl) return icicles;
+              if (!webgl || broken) return icicles;
+              if (!Scene) return <div className={SCENE_HEIGHT} />;
               const cutAt = chosen && before ? { n: chosen.n, index: cut!, before: before.total, after: after?.total ?? chosen.post } : null;
               return (
                 <Fallback fallback={icicles}>
-                  <Suspense fallback={<div className={SCENE_HEIGHT} />}>
                     <Scene
                       line={line}
                       call={call}
@@ -281,7 +290,6 @@ export function Session({ id }: { id: string }) {
                         await load(true);
                       }}
                     />
-                  </Suspense>
                 </Fallback>
               );
             })()}
