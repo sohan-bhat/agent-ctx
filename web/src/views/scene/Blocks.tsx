@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Instance, Instances, Segment, Segments } from '@react-three/drei';
 import { Color, type Group, type Object3D } from 'three';
@@ -34,6 +34,7 @@ interface Move {
 const shapeOf = (p: Placed): Shape => ({ x: p.cx, z: p.cz, w: p.w, d: p.d, h: p.h });
 const ease = (t: number) => 1 - (1 - t) ** 3;
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+const same = (a: Shape, b: Shape) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.z - b.z) < 1e-6 && Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.d - b.d) < 1e-6 && Math.abs(a.h - b.h) < 1e-6;
 
 export function mix(a: string, b: string, t: number): Color {
   return new Color(a).lerp(new Color(b), t);
@@ -72,29 +73,53 @@ function handlers(pointing: Pointing, live: (id: string) => boolean) {
 
 function useTint(placed: Placed[], palette: Palette, hover: string | null) {
   return useMemo(() => {
+    const table = new Color(palette.table);
+    const white = new Color('#ffffff');
+    const kinds = new Map(Object.entries(palette.kinds).map(([k, v]) => [k, new Color(v)]));
+    const cache = new Map<string, Color>();
+    const tone = (p: Placed, look: 'base' | 'lit' | 'dim') => {
+      const key = `${p.piece.block.kind}|${p.tone}|${p.piece.state}|${look}`;
+      let c = cache.get(key);
+      if (c) return c;
+      const k = kinds.get(p.piece.block.kind) ?? white;
+      if (p.piece.state === 'gone') c = table.clone().lerp(k, look === 'lit' ? 0.45 : 0.2);
+      else c = k.clone().lerp(table, p.tone);
+      if (look === 'lit' && p.piece.state !== 'gone') c.lerp(white, 0.14);
+      if (look === 'dim') c.lerp(table, palette.dark ? 0.55 : 0.5);
+      cache.set(key, c);
+      return c;
+    };
     const byId = new Map(placed.map((p) => [p.id, p]));
     const h = hover ? byId.get(hover) : undefined;
     const key = h ? siblingKey(h.piece.block) : null;
-    const lit = (p: Placed) => !h || p.id === h.id || (key !== null && siblingKey(p.piece.block) === key);
     const out = new Map<string, Color>();
     for (const p of placed) {
-      const base = p.piece.state === 'gone' ? mix(palette.table, palette.kinds[p.piece.block.kind], 0.2) : mix(palette.kinds[p.piece.block.kind], palette.table, p.tone);
-      if (!h) out.set(p.id, base);
-      else if (lit(p)) out.set(p.id, p.piece.state === 'gone' ? mix(palette.table, palette.kinds[p.piece.block.kind], 0.45) : base.clone().lerp(new Color('#ffffff'), 0.14));
-      else out.set(p.id, base.clone().lerp(new Color(palette.table), palette.dark ? 0.55 : 0.5));
+      if (!h) out.set(p.id, tone(p, 'base'));
+      else if (p.id === h.id || (key !== null && siblingKey(p.piece.block) === key)) out.set(p.id, tone(p, 'lit'));
+      else out.set(p.id, tone(p, 'dim'));
     }
     return out;
   }, [placed, palette, hover]);
 }
 
+const Item = memo(function Item({ color, data, attach }: { id: string; color: Color; data: { id: string }; attach: (o: Object3D | null) => void }) {
+  return <Instance userData={data} color={color} ref={attach} matrixAutoUpdate={false} />;
+});
+
 export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[]; palette: Palette; pointing: Pointing; reduced: boolean }) {
-  const geometry = useMemo(() => new RoundedBoxGeometry(1, 1, 1, 3, 0.1), []);
+  const geometry = useMemo(() => new RoundedBoxGeometry(1, 1, 1, 1, 0.1), []);
   const mats = useMemo(() => blockMaterials(EDGE, 0.3), []);
   mats.rim.value = palette.dark ? 0.32 : 0.42;
   const invalidate = useThree((s) => s.invalidate);
+  const gl = useThree((s) => s.gl);
+  const regress = useThree((s) => s.performance.regress);
   const standing = useMemo(() => placed.filter((p) => p.piece.state === 'stand'), [placed]);
   const [leaving, setLeaving] = useState<Placed[]>([]);
   const refs = useRef(new Map<string, Object3D>());
+  const latest = useRef(new Map<string, Placed>());
+  const colors = useRef(new Map<string, Color>());
+  const datas = useRef(new Map<string, { id: string }>());
+  const attaches = useRef(new Map<string, (o: Object3D | null) => void>());
   const now = useRef(new Map<string, Shape>());
   const moves = useRef(new Map<string, Move>());
   const prev = useRef<Placed[]>([]);
@@ -106,17 +131,22 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
     const dur = reduced || prev.current.length === 0 ? 0 : Math.min(300, t - lastChange.current);
     lastChange.current = t;
     const next = new Set(standing.map((p) => p.id));
+    let changed = 0;
     for (const p of standing) {
       const to = shapeOf(p);
-      const from = now.current.get(p.id) ?? { ...to, h: 0 };
+      const cur = now.current.get(p.id);
+      if (cur && same(cur, to) && !moves.current.has(p.id)) continue;
+      const from = cur ? { ...cur } : { ...to, h: 0 };
       moves.current.set(p.id, { from, to, t0: t, dur });
+      changed++;
     }
     const gone = prev.current.filter((p) => !next.has(p.id));
     for (const p of gone) {
       const from = now.current.get(p.id) ?? shapeOf(p);
-      moves.current.set(p.id, { from, to: { ...from, h: 0 }, t0: t, dur });
+      moves.current.set(p.id, { from: { ...from }, to: { ...from, h: 0 }, t0: t, dur });
     }
     prev.current = standing;
+    if (changed + gone.length > 200 && dur > 0) regress();
     setLeaving(dur > 0 ? gone : []);
     if (!dur) for (const p of gone) now.current.delete(p.id);
     invalidate();
@@ -126,7 +156,7 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
       for (const p of gone) now.current.delete(p.id);
     }, dur + 40);
     return () => clearTimeout(timer);
-  }, [standing, reduced, invalidate]);
+  }, [standing, reduced, invalidate, regress]);
 
   useFrame(() => {
     if (!moves.current.size) return;
@@ -135,20 +165,60 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
     for (const [id, m] of moves.current) {
       const k = m.dur > 0 ? Math.min(1, (t - m.t0) / m.dur) : 1;
       const e = ease(k);
-      const s = { x: lerp(m.from.x, m.to.x, e), z: lerp(m.from.z, m.to.z, e), w: lerp(m.from.w, m.to.w, e), d: lerp(m.from.d, m.to.d, e), h: lerp(m.from.h, m.to.h, e) };
-      now.current.set(id, s);
+      let s = now.current.get(id);
+      if (!s) now.current.set(id, (s = { ...m.to }));
+      s.x = lerp(m.from.x, m.to.x, e);
+      s.z = lerp(m.from.z, m.to.z, e);
+      s.w = lerp(m.from.w, m.to.w, e);
+      s.d = lerp(m.from.d, m.to.d, e);
+      s.h = lerp(m.from.h, m.to.h, e);
       const o = refs.current.get(id);
       if (o) {
         o.position.set(s.x, s.h / 2, s.z);
         o.scale.set(s.w, Math.max(s.h, 1e-4), s.d);
+        o.updateMatrix();
         o.updateMatrixWorld();
       }
       if (k >= 1) moves.current.delete(id);
       else moving = true;
     }
+    gl.shadowMap.needsUpdate = true;
     if (moving) invalidate();
   }, -1);
 
+  latest.current = new Map(standing.map((p) => [p.id, p]));
+  for (const p of leaving) if (!latest.current.has(p.id)) latest.current.set(p.id, p);
+  const stable = (id: string, c: Color) => {
+    const prev = colors.current.get(id);
+    if (prev && prev.equals(c)) return prev;
+    colors.current.set(id, c);
+    return c;
+  };
+  const dataOf = (id: string) => {
+    let d = datas.current.get(id);
+    if (!d) datas.current.set(id, (d = { id }));
+    return d;
+  };
+  const attachOf = (id: string) => {
+    let f = attaches.current.get(id);
+    if (!f) {
+      f = (o: Object3D | null) => {
+        if (!o) {
+          refs.current.delete(id);
+          return;
+        }
+        refs.current.set(id, o);
+        const p = latest.current.get(id);
+        const s = now.current.get(id) ?? (p ? { ...shapeOf(p), h: 0 } : { x: 0, z: 0, w: 1e-4, d: 1e-4, h: 0 });
+        o.position.set(s.x, s.h / 2, s.z);
+        o.scale.set(s.w, Math.max(s.h, 1e-4), s.d);
+        o.updateMatrix();
+        o.updateMatrixWorld();
+      };
+      attaches.current.set(id, f);
+    }
+    return f;
+  };
   const all = leaving.length ? [...standing, ...leaving.filter((p) => !standing.some((s) => s.id === p.id))] : standing;
   const live = useMemo(() => new Set(standing.map((p) => p.id)), [standing]);
   const limit = 2 ** Math.ceil(Math.log2(Math.max(256, all.length)));
@@ -156,22 +226,7 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
     <group {...handlers(pointing, (id) => live.has(id))}>
       <Instances key={limit} limit={limit} range={all.length} geometry={geometry} material={mats.surface} customDepthMaterial={mats.depth} castShadow receiveShadow frustumCulled={false}>
         {all.map((p) => (
-          <Instance
-            key={p.id}
-            userData={{ id: p.id }}
-            color={tint.get(p.id) ?? palette.kinds[p.piece.block.kind]}
-            ref={(o: Object3D | null) => {
-              if (!o) {
-                refs.current.delete(p.id);
-                return;
-              }
-              refs.current.set(p.id, o);
-              const s = now.current.get(p.id) ?? { ...shapeOf(p), h: 0 };
-              o.position.set(s.x, s.h / 2, s.z);
-              o.scale.set(s.w, Math.max(s.h, 1e-4), s.d);
-              o.updateMatrixWorld();
-            }}
-          />
+          <Item key={p.id} id={p.id} color={stable(p.id, tint.get(p.id) ?? new Color(palette.kinds[p.piece.block.kind]))} data={dataOf(p.id)} attach={attachOf(p.id)} />
         ))}
       </Instances>
     </group>
