@@ -1,6 +1,6 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, type Ref, type RefObject } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref, type RefObject } from 'react';
 import { useThree } from '@react-three/fiber';
-import { CameraControls, CameraControlsImpl, ContactShadows, Grid, RoundedBox } from '@react-three/drei';
+import { AdaptiveDpr, CameraControls, CameraControlsImpl, ContactShadows, Grid, RoundedBox } from '@react-three/drei';
 import { Object3D, Vector3, type OrthographicCamera } from 'three';
 import { AGE_TICKS } from '@/lib/model';
 import { fadeMaterial } from './rounded';
@@ -120,11 +120,16 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
   const raycaster = useThree((s) => s.raycaster);
+  const connected = useThree((s) => s.events.connected);
   const home = useRef(true);
   const homeZoom = useRef(1);
   const saved = useRef<string | null>(null);
   const latest = useRef(f);
   latest.current = f;
+  useLayoutEffect(() => {
+    gl.shadowMap.autoUpdate = false;
+    gl.shadowMap.needsUpdate = true;
+  });
   useEffect(() => {
     camera.layers.enable(1);
     raycaster.layers.enable(1);
@@ -133,16 +138,24 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
     const c = controls.current;
     if (!c) return;
     gl.domElement.style.touchAction = 'pan-y';
+    if (connected instanceof HTMLElement) connected.style.touchAction = 'pan-y';
     const fr = latest.current;
     const pad = homePad(size.width, size.height, fr);
     homeZoom.current = fit(camera, homeBox(fr), HOME.theta, HOME.phi, pad).zoom;
     c.minZoom = homeZoom.current * 0.6;
     c.maxZoom = homeZoom.current * 16;
     if (home.current) frameTo(c, camera, homeBox(fr), HOME.theta, HOME.phi, pad, false);
-  }, [camera, size.width, size.height, gl]);
+  }, [camera, size.width, size.height, gl, connected]);
+  const invalidate = useThree((s) => s.invalidate);
+  const [settled, setSettled] = useState(version);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(version), reduced ? 0 : 120);
+    return () => clearTimeout(t);
+  }, [version, reduced]);
+  useEffect(() => invalidate(), [settled, invalidate]);
   const shadows = useMemo(
-    () => <ContactShadows frames={reduced ? 2 : 40} position={[-SIDE / 2, 0.001, -SIDE / 2]} scale={SIDE} resolution={1024} blur={1.4} far={0.7} opacity={palette.dark ? 0.75 : 0.45} color="#000000" renderOrder={1} />,
-    [version, reduced, palette.dark],
+    () => <ContactShadows frames={reduced ? 2 : 24} position={[-SIDE / 2, 0.001, -SIDE / 2]} scale={SIDE} resolution={512} blur={1.4} far={0.7} opacity={palette.dark ? 0.75 : 0.45} color="#000000" renderOrder={1} />,
+    [settled, reduced, palette.dark],
   );
   useImperativeHandle(
     api,
@@ -212,9 +225,11 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
       <Marks placed={placed} palette={palette} selected={pointing.selected} queued={queued} pinned={pinned} outline={outline} />
       <Ruler palette={palette} f={f} />
       <Overlay placed={placed} f={f} plateLabel={plateLabel} controls={controls} portal={portal} homeZoom={homeZoom} force={force} />
+      <AdaptiveDpr />
       <CameraControls
         ref={controls}
         makeDefault
+        regress
         minPolarAngle={0.2}
         maxPolarAngle={1.35}
         smoothTime={reduced ? 0 : 0.22}

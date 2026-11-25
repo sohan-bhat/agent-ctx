@@ -109,12 +109,13 @@ export function Overlay({ placed, f, plateLabel, controls, portal, homeZoom, for
     setTags((prev) => (prev.length === next.length && prev.every((t, i) => t.p === next[i].p && t.dx === next[i].dx && t.dy === next[i].dy) ? prev : next));
   }, [camera, size, placed, narrow, rx, rz, plateLabel, homeZoom, force]);
   useEffect(() => {
-    pick();
+    const id = requestAnimationFrame(pick);
     const c = controls.current;
     if (!c) return;
     c.addEventListener('update', pick);
     c.addEventListener('rest', pick);
     return () => {
+      cancelAnimationFrame(id);
       c.removeEventListener('update', pick);
       c.removeEventListener('rest', pick);
     };
