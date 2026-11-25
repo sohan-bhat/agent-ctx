@@ -138,15 +138,17 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
   useLayoutEffect(() => {
     const c = controls.current;
     if (!c) return;
-    gl.domElement.style.touchAction = 'pan-y';
-    if (connected instanceof HTMLElement) connected.style.touchAction = 'pan-y';
     const fr = latest.current;
     const pad = homePad(size.width, size.height, fr);
     homeZoom.current = fit(camera, homeBox(fr), HOME.theta, HOME.phi, pad).zoom;
     c.minZoom = homeZoom.current * 0.6;
     c.maxZoom = homeZoom.current * 16;
     if (home.current) frameTo(c, camera, homeBox(fr), HOME.theta, HOME.phi, pad, false);
-  }, [camera, size.width, size.height, gl, connected]);
+  }, [camera, size.width, size.height]);
+  useEffect(() => {
+    gl.domElement.style.touchAction = 'pan-y';
+    if (connected instanceof HTMLElement) connected.style.touchAction = 'pan-y';
+  }, [gl, connected]);
   const invalidate = useThree((s) => s.invalidate);
   const warm = useRef(0);
   useFrame(() => {
