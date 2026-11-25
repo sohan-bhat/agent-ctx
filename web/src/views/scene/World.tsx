@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref, type RefObject } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { AdaptiveDpr, CameraControls, CameraControlsImpl, ContactShadows, Grid, RoundedBox } from '@react-three/drei';
 import { Object3D, Vector3, type OrthographicCamera } from 'three';
 import { AGE_TICKS } from '@/lib/model';
@@ -112,9 +112,10 @@ export interface WorldProps {
   onMove: () => void;
   force: Set<string>;
   reach: number;
+  onReady: () => void;
 }
 
-export function World({ placed, palette, portal, framing: f, plateLabel, version, pointing, reduced, queued, pinned, outline, api, onMove, force, reach }: WorldProps) {
+export function World({ placed, palette, portal, framing: f, plateLabel, version, pointing, reduced, queued, pinned, outline, api, onMove, force, reach, onReady }: WorldProps) {
   const controls = useRef<CameraControlsImpl | null>(null);
   const camera = useThree((s) => s.camera) as OrthographicCamera;
   const size = useThree((s) => s.size);
@@ -134,7 +135,7 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
     camera.layers.enable(1);
     raycaster.layers.enable(1);
   }, [camera, raycaster]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const c = controls.current;
     if (!c) return;
     gl.domElement.style.touchAction = 'pan-y';
@@ -147,6 +148,13 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
     if (home.current) frameTo(c, camera, homeBox(fr), HOME.theta, HOME.phi, pad, false);
   }, [camera, size.width, size.height, gl, connected]);
   const invalidate = useThree((s) => s.invalidate);
+  const warm = useRef(0);
+  useFrame(() => {
+    if (warm.current > 6) return;
+    warm.current++;
+    if (warm.current > 6) onReady();
+    else invalidate();
+  });
   const [settled, setSettled] = useState(version);
   useEffect(() => {
     const t = setTimeout(() => setSettled(version), reduced ? 0 : 120);

@@ -137,6 +137,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   const [failed, setFailed] = useState(false);
   const framed = useRef<string | null>(null);
   const glide = useRef(0);
+  const [ready, setReady] = useState(false);
 
   const queuedIds = useMemo(() => {
     const out = new Set<string>();
@@ -207,6 +208,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
 
   const escape = () => {
     glide.current++;
+    setHover(null);
     if (menu) setMenu(null);
     if (api.current?.back()) return;
     if (selected) setSelected(null);
@@ -216,12 +218,21 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
     }
   };
 
+  const select = (id: string) => {
+    setSelected(id);
+    const p = byId.get(id);
+    if (!p || !api.current) return;
+    const [x, y] = api.current.project(p);
+    setHover(id);
+    requestAnimationFrame(() => moveCard(x, y));
+  };
+
   const step = (dir: string) => {
     const order = [...placed].sort((a, b) => b.w * b.d - a.w * a.d);
     if (!api.current || !order.length) return;
     const cur = selected ? byId.get(selected) : undefined;
     if (!cur) {
-      setSelected(order[0].id);
+      select(order[0].id);
       return;
     }
     const [cx, cy] = api.current.project(cur);
@@ -241,7 +252,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
         best = p;
       }
     }
-    if (best) setSelected(best.id);
+    if (best) select(best.id);
   };
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -250,14 +261,20 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
     if (k.startsWith('Arrow')) {
       e.preventDefault();
       if (e.shiftKey) {
+        setHover(null);
         const turn = Math.PI / 12;
         api.current?.turn(k === 'ArrowLeft' ? -turn : k === 'ArrowRight' ? turn : 0, k === 'ArrowUp' ? -turn / 2 : k === 'ArrowDown' ? turn / 2 : 0);
       } else step(k);
     } else if ((k === 'Enter' || k === ' ') && selected) {
       e.preventDefault();
       openAt(selected);
-    } else if (k === '+' || k === '=') api.current?.zoom(1.25);
-    else if (k === '-' || k === '_') api.current?.zoom(0.8);
+    } else if (k === '+' || k === '=') {
+      setHover(null);
+      api.current?.zoom(1.25);
+    } else if (k === '-' || k === '_') {
+      setHover(null);
+      api.current?.zoom(0.8);
+    }
     else if (k === 'Home') {
       e.preventDefault();
       framed.current = null;
@@ -287,7 +304,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
   return (
     <div
       ref={wrap}
-      className="relative h-[16rem] select-none rounded-[2px] outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring sm:h-[27rem]"
+      className={`relative h-[16rem] select-none rounded-[2px] outline-offset-4 focus-visible:outline-2 focus-visible:outline-ring sm:h-[27rem] ${ready ? '' : 'pointer-events-none opacity-0'}`}
       tabIndex={0}
       role="group"
       aria-roledescription="model"
@@ -296,6 +313,9 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
       data-gone={placed.filter((p) => p.piece.state === 'gone').length}
       onKeyDown={onKey}
       onPointerLeave={() => setHover(null)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(null);
+      }}
     >
       <Canvas
         orthographic
@@ -332,6 +352,10 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
           }}
           force={force}
           reach={reach}
+          onReady={() => {
+            performance.mark('model-ready');
+            setReady(true);
+          }}
         />
       </Canvas>
       <div ref={overlay} className="pointer-events-none absolute inset-0 overflow-hidden" />

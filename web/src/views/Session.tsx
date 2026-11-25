@@ -35,7 +35,8 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-const Scene = lazy(() => import('./scene/Scene'));
+const loadScene = () => import('./scene/Scene');
+const Scene = lazy(loadScene);
 
 const SCENE_HEIGHT = 'h-[16rem] sm:h-[27rem]';
 
@@ -79,6 +80,9 @@ export function Session({ id }: { id: string }) {
   const count = useRef({ points: 0, closed: 0, labels: 0 });
   const narrow = useNarrow();
   const webgl = useMemo(hasWebGL, []);
+  useEffect(() => {
+    if (webgl) void loadScene();
+  }, [webgl]);
   const top = useRef<HTMLElement>(null);
 
   const load = useCallback(
