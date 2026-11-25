@@ -255,11 +255,28 @@ export function Session({ id }: { id: string }) {
                   <Icicle root={root} total={point.total} depth={narrow ? Math.max(1, focusDepth(focus)) : 3} cwdRoot={data.root} focusId={focus} onFocus={setFocus} pins={pins} label={`Context at call ${call + 1}`} />
                 );
               if (!webgl) return icicles;
-              const cutAt = chosen && before ? { n: chosen.n, before: before.total, after: after?.total ?? chosen.post } : null;
+              const cutAt = chosen && before ? { n: chosen.n, index: cut!, before: before.total, after: after?.total ?? chosen.post } : null;
               return (
                 <Fallback fallback={icicles}>
                   <Suspense fallback={<div className={SCENE_HEIGHT} />}>
-                    <Scene line={line} call={call} total={point.total} cut={cutAt} plate={plate} label={chosen ? `Context at compaction ${cut! + 1}` : `Context at call ${call + 1}`} />
+                    <Scene
+                      line={line}
+                      call={call}
+                      total={point.total}
+                      cut={cutAt}
+                      plate={plate}
+                      peak={peak}
+                      last={last}
+                      label={chosen ? `Context at compaction ${cut! + 1}` : `Context at call ${call + 1}`}
+                      root={data.root}
+                      pins={data.pins}
+                      queued={data.queued}
+                      dropped={chosen?.dropped ?? []}
+                      onSend={async (kind, payload) => {
+                        await send(kind, { session: id, ...payload });
+                        await load(true);
+                      }}
+                    />
                   </Suspense>
                 </Fallback>
               );
