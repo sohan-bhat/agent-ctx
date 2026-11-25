@@ -116,6 +116,10 @@ export interface Rect {
   z1: number;
 }
 
+export function piecesBefore(line: Line, n: number, before: number): Piece[] {
+  return piecesAt(line, n - 1, before).map((p): Piece => (p.block.end === n ? { ...p, state: 'gone' } : p));
+}
+
 export interface Lot extends Rect {
   piece: Piece;
   district: Rect;
@@ -187,7 +191,7 @@ export function toolGroup(cat: string, top: string[]): string {
   return top.includes(cat) ? cat : 'tool:~';
 }
 
-export function plan(pieces: Piece[], window: number, side: number, smallShare = SMALL_SHARE): Plan {
+export function plan(pieces: Piece[], window: number, side: number, smallShare = SMALL_SHARE, summaryFirst = false): Plan {
   const total = pieces.reduce((a, p) => a + p.size, 0);
   const win = Math.max(window, total, 1);
   const region = side * Math.sqrt(total / win);
@@ -218,7 +222,10 @@ export function plan(pieces: Piece[], window: number, side: number, smallShare =
       kinds.push(branch(kind, [...byGroup].map(([g, kids]) => branch(g, kids))));
     } else kinds.push(branch(kind, big.map(leaf)));
   }
-  for (const k of kinds) if (k.key === 'system') k.order = [1, k.order[1]];
+  for (const k of kinds) {
+    if (k.key === 'system') k.order = [1, k.order[1]];
+    if (k.key === 'summary' && summaryFirst) k.order = [-Infinity, k.order[1]];
+  }
   const root = hierarchy<TreeNode>({ key: 'used', order: [0, 0], children: kinds }, (d) => d.children)
     .sum((d) => d.piece?.size ?? 0)
     .sort((a, b) => a.data.order[0] - b.data.order[0] || a.data.order[1] - b.data.order[1] || a.data.key.localeCompare(b.data.key));

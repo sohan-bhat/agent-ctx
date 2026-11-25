@@ -100,6 +100,19 @@ test('lot areas in the layout sum to the tokens and stay inside the corner regio
   });
 });
 
+test('the view after a compaction stands the new context in the near corner over the old foundations', { skip }, () => {
+  const before = m!.piecesBefore(line, 7, 11300);
+  assert.deepEqual(before.filter((p) => p.state === 'gone').map((p) => p.block.id).sort(), ['2@1/7', 'c0', 'c1']);
+  assert.deepEqual(before.filter((p) => p.state === 'stand').map((p) => p.block.id).sort(), ['#-1', '#9']);
+  const now = m!.plan(m!.piecesAt(line, 7, 6800), 200_000, 10, undefined, true);
+  const summary = now.lots.find((l) => l.piece.block.kind === 'summary')!;
+  assert.deepEqual([summary.x0, summary.z0], [0, 0]);
+  const old = m!.plan(before, 200_000, 10);
+  assert.ok(old.region > now.region);
+  const system = old.lots.find((l) => l.piece.block.kind === 'system')!;
+  assert.ok(Math.abs(system.x1 - old.region) < 1e-9 && Math.abs(system.z1 - old.region) < 1e-9);
+});
+
 test('height grows with the calls carried and stops at the cap', { skip }, () => {
   assert.equal(m!.heightShare(0), 0);
   assert.equal(m!.heightShare(m!.AGE_CAP), 1);
