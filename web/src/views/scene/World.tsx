@@ -131,7 +131,7 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     camera.layers.enable(1);
     raycaster.layers.enable(1);
   }, [camera, raycaster]);

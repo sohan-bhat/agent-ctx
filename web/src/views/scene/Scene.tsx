@@ -274,8 +274,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
     } else if (k === '-' || k === '_') {
       setHover(null);
       api.current?.zoom(0.8);
-    }
-    else if (k === 'Home') {
+    } else if (k === 'Home') {
       e.preventDefault();
       framed.current = null;
       api.current?.home(true);
