@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readLines } from './lines.ts';
 import { cleanSummary, contentBlocks, cut, parseLine, promptText, textOf, usageOf, type Rec } from './records.ts';
 import { redact } from './redact.ts';
+import { slim } from './slim.ts';
 import { tokens } from './text.ts';
 
 export const CHARS_PER_TOKEN = 2.6;
@@ -577,9 +578,27 @@ function boundary(a: Analyzer, r: Rec): void {
   };
 }
 
-function wantedLine(text: string): boolean {
-  if (text.includes('"type":"api-request-blob"') || text.includes('"type":"api-request"')) return false;
+const SIDE = Buffer.from('"isSidechain":true');
+const API = Buffer.from('"type":"api-request');
+const BLOB = Buffer.from('-blob"');
+
+export function wantedBytes(buf: Buffer): boolean {
+  const head = buf.subarray(0, 256);
+  const side = head.indexOf(SIDE);
+  if (side > 0) {
+    const nested = head.indexOf(123, 1);
+    if (nested === -1 || nested > side) return false;
+  }
+  for (let i = buf.indexOf(API); i >= 0; i = buf.indexOf(API, i + 1)) {
+    const at = i + API.length;
+    if (buf[at] === 34) return false;
+    if (buf.subarray(at, at + BLOB.length).equals(BLOB)) return false;
+  }
   return true;
+}
+
+export function lineBytes(buf: Buffer): Buffer | null {
+  return wantedBytes(buf) ? slim(buf) : null;
 }
 
 export function step(a: Analyzer, r: Rec): void {
@@ -614,9 +633,9 @@ export function step(a: Analyzer, r: Rec): void {
 
 export async function advance(a: Analyzer, to?: number): Promise<number> {
   let n = 0;
-  for await (const line of readLines(a.ctx.transcript, a.ctx.offset, to)) {
+  for await (const line of readLines(a.ctx.transcript, a.ctx.offset, to, lineBytes)) {
     a.ctx.offset = line.end;
-    if (!line.text || !wantedLine(line.text)) continue;
+    if (!line.text) continue;
     const r = parseLine(line.text);
     if (!r) {
       a.ctx.unreadable++;

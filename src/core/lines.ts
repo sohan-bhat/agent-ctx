@@ -6,7 +6,7 @@ export interface Line {
   end: number;
 }
 
-export async function* readLines(file: string, from = 0, to?: number): AsyncGenerator<Line> {
+export async function* readLines(file: string, from = 0, to?: number, pick?: (line: Buffer) => Buffer | null): AsyncGenerator<Line> {
   let size: number;
   try {
     size = fs.statSync(file).size;
@@ -15,7 +15,7 @@ export async function* readLines(file: string, from = 0, to?: number): AsyncGene
   }
   const stop = to == null ? size : Math.min(size, to);
   if (from >= stop) return;
-  const stream = fs.createReadStream(file, { start: from, end: stop - 1, highWaterMark: 1 << 20 });
+  const stream = fs.createReadStream(file, { start: from, end: stop - 1, highWaterMark: 1 << 22 });
   let parts: Buffer[] = [];
   let partsLen = 0;
   let lineStart = from;
@@ -39,7 +39,8 @@ export async function* readLines(file: string, from = 0, to?: number): AsyncGene
         buf = piece;
       }
       const end = lineStart + buf.length + 1;
-      yield { text: buf.toString('utf8'), start: lineStart, end };
+      const use = pick ? pick(buf) : buf;
+      yield { text: use ? use.toString('utf8') : '', start: lineStart, end };
       lineStart = end;
       pos = nl + 1;
     }
