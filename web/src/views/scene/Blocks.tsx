@@ -115,6 +115,7 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
   const regress = useThree((s) => s.performance.regress);
   const standing = useMemo(() => placed.filter((p) => p.piece.state === 'stand'), [placed]);
   const [leaving, setLeaving] = useState<Placed[]>([]);
+  const exiting = useRef(new Set<string>());
   const refs = useRef(new Map<string, Object3D>());
   const latest = useRef(new Map<string, Placed>());
   const colors = useRef(new Map<string, Color>());
@@ -147,15 +148,10 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
     }
     prev.current = standing;
     if (changed + gone.length > 200 && dur > 0) regress();
+    exiting.current = new Set(dur > 0 ? gone.map((p) => p.id) : []);
     setLeaving(dur > 0 ? gone : []);
     if (!dur) for (const p of gone) now.current.delete(p.id);
     invalidate();
-    if (!dur || !gone.length) return;
-    const timer = setTimeout(() => {
-      setLeaving([]);
-      for (const p of gone) now.current.delete(p.id);
-    }, dur + 40);
-    return () => clearTimeout(timer);
   }, [standing, reduced, invalidate, regress]);
 
   useFrame(() => {
@@ -179,8 +175,14 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
         o.updateMatrix();
         o.updateMatrixWorld();
       }
-      if (k >= 1) moves.current.delete(id);
-      else moving = true;
+      if (k < 1) moving = true;
+      else {
+        moves.current.delete(id);
+        if (exiting.current.delete(id)) {
+          now.current.delete(id);
+          if (!exiting.current.size) setLeaving([]);
+        }
+      }
     }
     gl.shadowMap.needsUpdate = true;
     if (moving) invalidate();
