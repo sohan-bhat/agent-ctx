@@ -1,8 +1,8 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { events, send, session, type SessionData } from '@/lib/api';
-import { survival, tree, treeOf, windowOf } from '@/lib/context';
-import { piecesAt } from '@/lib/model';
+import { treeOf, windowOf } from '@/lib/context';
+import { piecesAt, piecesBefore } from '@/lib/model';
 import { ago, exact, tokens } from '@/lib/format';
 import { ContextStrip, cutNumbers } from './ContextStrip';
 import { DroppedList } from './Dropped';
@@ -158,9 +158,9 @@ export function Session({ id }: { id: string }) {
   const before = chosen ? points[chosen.n - 1] : undefined;
   const after = chosen ? points[chosen.n] : undefined;
   const pair = useMemo(() => {
-    if (!before) return null;
-    return { before: tree(before, [], survival(before, after)), after: after ? tree(after) : null };
-  }, [before, after]);
+    if (!chosen || !before || !line) return null;
+    return { before: treeOf(piecesBefore(line, chosen.n, before.total), true), after: after ? treeOf(piecesAt(line, chosen.n, after.total)) : null };
+  }, [chosen, before, after, line]);
 
   const pins: PinState = {
     pinned: (label) => !!data?.pins.some((p) => p.kind === 'file' && p.label === label),

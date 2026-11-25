@@ -7,6 +7,8 @@ import { advance, newAnalyzer, timeline } from '../src/core/context.ts';
 
 const ready = fs.existsSync(path.join(ROOT, 'web', 'node_modules', 'd3-hierarchy'));
 const m = ready ? await import('../web/src/lib/model.ts') : null;
+type Row = { id: string; own: number; kept?: number; children?: Row[] };
+const view: { treeOf: (pieces: unknown[], withKept?: boolean) => Row } | null = ready ? await import(path.join(ROOT, 'web', 'src', 'lib', 'context.ts')) : null;
 const skip = ready ? false : 'the page dependencies are not installed';
 
 const line = {
@@ -51,6 +53,20 @@ test('a compaction keeps what it dropped beside what stands', { skip }, () => {
   assert.ok(Math.abs(before.reduce((a, p) => a + p.size, 0) - 11300) < 1e-9);
   const sys = ps.find((p) => p.block.id === '#-1')!;
   assert.equal(sys.age, 7);
+});
+
+test('the table before a compaction shows how much of each kind stayed', { skip }, () => {
+  const before = m!.piecesBefore(line, 7, 11300);
+  const kept = view!.treeOf(before, true);
+  const kind = (id: string) => kept.children!.find((k) => k.id === id)!;
+  assert.equal(kind('system').kept, 1);
+  assert.ok(Math.abs(kind('tools').kept! - 1000 / 6000) < 1e-9);
+  assert.ok(Math.abs(kind('tools').children![0].kept! - 1000 / 6000) < 1e-9);
+  const now = view!.treeOf(before);
+  assert.equal(now.children!.find((k) => k.id === 'tools')!.kept, undefined);
+  const sum = (n: Row): number => n.own + (n.children ?? []).reduce((a, c) => a + sum(c), 0);
+  assert.ok(Math.abs(sum(kept) - 11300) < 1e-9);
+  assert.ok(Math.abs(sum(now) - 6000) < 1e-9);
 });
 
 test('lot areas in the layout sum to the tokens and stay inside the corner region', { skip }, () => {

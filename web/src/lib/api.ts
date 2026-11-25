@@ -17,16 +17,7 @@ export interface SessionRow {
 }
 
 export interface Point {
-  n: number;
-  t: string;
   total: number;
-  input: number;
-  read: number;
-  write: number;
-  out: number;
-  est: Record<string, number>;
-  raw: number;
-  prompt: number;
 }
 
 export interface Top {
@@ -59,7 +50,6 @@ export interface Compaction {
   commands: number;
   smallReads: number;
   named: number;
-  before: Top[];
 }
 
 export interface Span {
@@ -92,25 +82,30 @@ export interface Item {
   at: string;
 }
 
-export interface SessionData {
+export interface SessionHead {
   session: string;
   title?: string;
   prompt?: string;
   cwd?: string;
   root?: string;
   model?: string;
+}
+
+interface SessionWire extends SessionHead {
   offset: number;
   system: { tok: number; measured: boolean };
   ratio: number;
   from: number;
   count: number;
-  points: Point[];
+  totals: number[];
   compactions: Compaction[];
-  largest: Top[];
-  categories: { key: string; label: string }[];
   timeline: TimelineData;
   queued: Item[];
   pins: Item[];
+}
+
+export interface SessionData extends Omit<SessionWire, 'totals'> {
+  points: Point[];
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -130,9 +125,11 @@ export function sessions(): Promise<SessionList> {
   return get('api/sessions');
 }
 
-export function session(id: string, since = 0, closed = 0, labels = 0): Promise<SessionData> {
-  return get(`api/session/${encodeURIComponent(id)}?since=${since}&closed=${closed}&labels=${labels}`);
+export async function session(id: string, since = 0, closed = 0, labels = 0): Promise<SessionData> {
+  const { totals, ...rest } = await get<SessionWire>(`api/session/${encodeURIComponent(id)}?since=${since}&closed=${closed}&labels=${labels}`);
+  return { ...rest, points: totals.map((total) => ({ total })) };
 }
+
 
 export async function send(kind: 'putback' | 'pin', body: { session: string; kind: string; label: string; text: string }): Promise<Item> {
   const r = await fetch(`api/${kind}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

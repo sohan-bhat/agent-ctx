@@ -93,7 +93,7 @@ test('the page server checks token and host, serves analysis, writes put back an
     assert.ok(later.store.bytes > 0 && later.store.bytes < later.store.cap);
     const s0: any = await (await fetch(`${url}api/session/${t.untitled}`)).json();
     assert.equal(s0.prompt, bare.prompt);
-    assert.equal(s0.points[0].total, 3510);
+    assert.deepEqual(s0.totals, [3510]);
     const peeked: any = await (await fetch(`${url}api/session/${t.untitled}?peek=1`)).json();
     assert.equal(peeked.ready, true);
     assert.equal(peeked.size, fs.statSync(t.untitledFile).size);
@@ -104,14 +104,17 @@ test('the page server checks token and host, serves analysis, writes put back an
     const later5 = new Date(Date.now() + 5000);
     fs.utimesSync(t.untitledFile, later5, later5);
     const redone: any = await (await fetch(`${url}api/session/${t.untitled}`)).json();
-    assert.equal(redone.points[0].total, 3511);
+    assert.deepEqual(redone.totals, [3511]);
     const s1: any = await (await fetch(`${url}api/session/${t.id}`)).json();
-    assert.equal(s1.points.length, 5);
+    assert.equal(s1.totals.length, 5);
+    assert.equal(s1.points, undefined);
+    assert.equal(s1.largest, undefined);
+    assert.equal(s1.compactions[0].before, undefined);
     assert.equal(s1.compactions.length, 1);
     const kinds = s1.compactions[0].dropped.map((d: any) => d.kind).sort();
     assert.deepEqual(kinds, ['command', 'decision', 'file']);
     assert.deepEqual(s1.compactions[0].dropped.map((d: any) => d.kind), ['decision', 'file', 'command']);
-    assert.ok(s1.categories.some((c: any) => c.label === 'Tool results, Read'));
+    assert.ok(s1.timeline.cats.includes('tool:Read'));
     const tl = s1.timeline;
     assert.equal(tl.closedFrom, 0);
     assert.ok(tl.closed.length > 0 && tl.closed.every((x: any) => x.e === 4));
@@ -159,7 +162,7 @@ test('the page server checks token and host, serves analysis, writes put back an
     })();
     await waitFor(() => heard.join('').includes('hello'), 5000);
     const sb: any = await (await fetch(`${url}api/session/${t.big}`)).json();
-    assert.equal(sb.points.length, 1);
+    assert.equal(sb.totals.length, 1);
     assert.ok(await waitFor(() => heard.join('').includes('event: reading'), 5000), 'reading event');
     assert.ok(!events.join('').includes('event: reading'));
     ctrl2.abort();
@@ -174,8 +177,7 @@ test('the page server checks token and host, serves analysis, writes put back an
     assert.equal(s2.timeline.closed.length, 0);
     assert.equal(s2.timeline.labelsFrom, tl.labels.length);
     assert.ok(s2.timeline.live.length > tl.live.length);
-    assert.equal(s2.points.length, 1);
-    assert.equal(s2.points[0].total, 2705);
+    assert.deepEqual(s2.totals, [2705]);
     ctrl.abort();
     await pump;
   } finally {

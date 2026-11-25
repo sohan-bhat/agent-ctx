@@ -10,7 +10,7 @@ import { parseLine, usageOf } from './core/records.ts';
 import { applyJobs, listTranscripts } from './core/update.ts';
 import { releaseLock, tryLock } from './core/lock.ts';
 import { budgetBytes, WORKER_LIMIT_MS } from './core/limits.ts';
-import { advance, categories, catLabel, CHARS_PER_TOKEN, largest, newAnalyzer, timeline, weight, type Analyzer } from './core/context.ts';
+import { advance, CHARS_PER_TOKEN, newAnalyzer, timeline, weight, type Analyzer } from './core/context.ts';
 import { enqueue, makeItem, pin, pinsFor, queued, unpin, type ItemKind } from './core/items.ts';
 import { promptTitle, tilde } from './core/format.ts';
 import { storeSize } from './core/budget.ts';
@@ -424,7 +424,6 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
         if (!a) return send(res, 404, { error: 'no transcript' });
         const pts = a.ctx.points;
         const from = since <= pts.length ? since : 0;
-        const cats = categories(a);
         const tl = timeline(a);
         const closedFrom = Math.max(0, Number(u.searchParams.get('closed')) || 0);
         const labelsFrom = Math.max(0, Number(u.searchParams.get('labels')) || 0);
@@ -442,10 +441,8 @@ export async function start(st: Store, opts: ServeOptions): Promise<Running> {
           ratio: CHARS_PER_TOKEN,
           from,
           count: pts.length,
-          points: pts.slice(from),
-          compactions: a.ctx.compactions,
-          largest: largest(a),
-          categories: cats.map((c) => ({ key: c, label: catLabel(c) })),
+          totals: pts.slice(from).map((p) => p.total),
+          compactions: a.ctx.compactions.map(({ before: _, ...c }) => c),
           timeline: { cats: tl.cats, labelsFrom: lf, labels: tl.labels.slice(lf), closedFrom: cf, closed: tl.closed.slice(cf), live: tl.live },
           queued: queued(st, id),
           pins: pinsFor(st, id),

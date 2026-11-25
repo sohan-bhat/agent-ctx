@@ -1,5 +1,5 @@
 import { hierarchy, partition, type HierarchyRectangularNode } from 'd3-hierarchy';
-import type { Point, Top } from './api';
+import type { Top } from './api';
 import type { Block, Piece } from './model';
 
 export interface Kind {
@@ -44,63 +44,12 @@ export interface Node {
 
 export type Cell = HierarchyRectangularNode<Node>;
 
-function factor(p: Point): number {
-  return p.raw > 0 ? p.total / p.raw : 0;
-}
-
-function leaves(items: Top[], cats: string[], k: number, kind: string, cap: number): Node[] {
-  const kids = items
-    .filter((it) => it.tok > 0 && cats.includes(it.cat))
-    .map((it, i): Node => ({ id: `${it.cat}#${i}#${it.label}`, label: it.label, kind, own: it.tok * k, item: it }));
-  const sum = kids.reduce((a, c) => a + c.own, 0);
-  if (sum <= cap || sum <= 0) return kids;
-  return kids.map((c) => ({ ...c, own: (c.own * cap) / sum }));
-}
-
-function withRest(node: Node, total: number): Node {
-  const kids = node.children ?? [];
-  const sum = kids.reduce((a, c) => a + c.own + (c.children ?? []).reduce((x, y) => x + y.own, 0), 0);
-  return { ...node, own: Math.max(0, total - sum), children: kids.length ? kids : undefined };
-}
-
-export function tree(p: Point, items: Top[] = [], kept?: Record<string, number>): Node {
-  const k = factor(p);
-  const kinds: Node[] = [];
-  for (const kind of KINDS) {
-    const cats = Object.entries(p.est).filter(([c, v]) => v > 0 && kind.match(c));
-    if (!cats.length) continue;
-    const total = cats.reduce((a, [, v]) => a + v * k, 0);
-    const keptTok = cats.reduce((a, [c, v]) => a + v * k * (kept?.[c] ?? 0), 0);
-    let children: Node[];
-    if (kind.key === 'tools') {
-      children = cats.map(([cat, v]) => {
-        const tok = v * k;
-        return withRest({ id: cat, label: toolName(cat), kind: kind.key, own: 0, kept: kept ? kept[cat] ?? 0 : undefined, children: leaves(items, [cat], k, kind.key, tok) }, tok);
-      });
-    } else children = leaves(items, cats.map(([c]) => c), k, kind.key, total);
-    kinds.push(withRest({ id: kind.key, label: kind.label, kind: kind.key, own: 0, kept: kept && total > 0 ? keptTok / total : undefined, children }, total));
-  }
-  return { id: 'used', label: 'Used', kind: 'used', own: 0, children: kinds };
-}
-
 export function layout(root: Node): Cell {
   const order = new Map(KINDS.map((k, i) => [k.key, i]));
   const h = hierarchy(root, (d) => d.children)
     .sum((d) => d.own)
     .sort((a, b) => (a.depth === 1 && b.depth === 1 ? (order.get(a.data.id) ?? 0) - (order.get(b.data.id) ?? 0) : (b.value ?? 0) - (a.value ?? 0)));
   return partition<Node>().size([1, 1])(h);
-}
-
-export function survival(before: Point, after: Point | undefined): Record<string, number> {
-  const out: Record<string, number> = {};
-  if (!after) return out;
-  const kb = factor(before);
-  const ka = factor(after);
-  for (const [cat, v] of Object.entries(before.est)) {
-    if (cat === 'summary' || v <= 0 || kb <= 0) continue;
-    out[cat] = Math.min(1, ((after.est[cat] ?? 0) * ka) / (v * kb));
-  }
-  return out;
 }
 
 export function toolOf(cat: string): string {
@@ -136,13 +85,25 @@ function itemOf(b: Block, size: number): Top {
   return { label: b.group ? nameOf(b) : b.label, cat: b.cat, tok: size, kind };
 }
 
-export function treeOf(pieces: Piece[]): Node {
+export function treeOf(pieces: Piece[], withKept = false): Node {
   const kinds: Node[] = [];
+  const share = (all: number, stay: number) => (withKept && all > 0 ? stay / all : undefined);
   for (const kind of KINDS) {
-    const mine = pieces.filter((p) => p.block.kind === kind.key && p.state === 'stand' && p.size > 0);
+    const mine = pieces.filter((p) => p.block.kind === kind.key && (withKept || p.state === 'stand') && p.size > 0);
     if (!mine.length) continue;
     const rows = new Map<string, Node>();
+    const byCatSize = new Map<string, [number, number]>();
+    let all = 0;
+    let stay = 0;
     for (const p of mine) {
+      const kept = p.state === 'stand' ? p.size : 0;
+      all += p.size;
+      stay += kept;
+      const c = byCatSize.get(p.block.cat);
+      if (c) {
+        c[0] += p.size;
+        c[1] += kept;
+      } else byCatSize.set(p.block.cat, [p.size, kept]);
       const key = p.block.group ? p.block.id : `${p.block.cat}\u0000${p.block.label}`;
       const row = rows.get(key);
       if (row) {
@@ -160,9 +121,12 @@ export function treeOf(pieces: Piece[]): Node {
         if (list) list.push(n);
         else byCat.set(n.item!.cat, [n]);
       }
-      children = [...byCat].map(([cat, list]) => ({ id: cat, label: toolName(cat), kind: kind.key, own: 0, children: list }));
+      children = [...byCat].map(([cat, list]) => {
+        const [a, k] = byCatSize.get(cat) ?? [0, 0];
+        return { id: cat, label: toolName(cat), kind: kind.key, own: 0, kept: share(a, k), children: list };
+      });
     }
-    kinds.push({ id: kind.key, label: kind.label, kind: kind.key, own: 0, children });
+    kinds.push({ id: kind.key, label: kind.label, kind: kind.key, own: 0, kept: share(all, stay), children });
   }
   return { id: 'used', label: 'Used', kind: 'used', own: 0, children: kinds };
 }
