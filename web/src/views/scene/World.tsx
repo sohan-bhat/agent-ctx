@@ -152,9 +152,9 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
   const invalidate = useThree((s) => s.invalidate);
   const warm = useRef(0);
   useFrame(() => {
-    if (warm.current > 6) return;
+    if (warm.current > 3) return;
     warm.current++;
-    if (warm.current > 6) onReady();
+    if (warm.current > 3) onReady();
     else invalidate();
   });
   const [settled, setSettled] = useState(version);
@@ -192,11 +192,15 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
         home.current = false;
         const box = boxOf([p]);
         const span = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
-        box.expandByScalar(Math.max(0.6, span * 0.9));
-        box.min.y = 0;
+        const grow = Math.max(1.4, span * 1.4);
+        box.min.x -= grow;
+        box.max.x += grow;
+        box.min.z -= grow;
+        box.max.z += grow;
         const pad = Math.min(size.width, size.height) * 0.08;
         const { target, zoom } = fit(camera, box, c.azimuthAngle, c.polarAngle, { left: pad, right: pad, top: pad, bottom: pad });
-        await Promise.all([c.moveTo(target.x, target.y, target.z, !reduced), c.zoomTo(Math.max(c.camera.zoom, zoom), !reduced)]);
+        const to = Math.max(c.camera.zoom, Math.min(zoom, homeZoom.current * 3));
+        await Promise.all([c.moveTo(target.x, target.y, target.z, !reduced), c.zoomTo(to, !reduced)]);
       },
       back: () => {
         const c = controls.current;
@@ -242,8 +246,9 @@ export function World({ placed, palette, portal, framing: f, plateLabel, version
         regress
         minPolarAngle={0.2}
         maxPolarAngle={1.35}
-        smoothTime={reduced ? 0 : 0.22}
+        smoothTime={reduced ? 0 : 0.2}
         draggingSmoothTime={0}
+        restThreshold={0.04}
         dollyToCursor
         onControlStart={() => {
           home.current = false;

@@ -381,6 +381,11 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
             align="center"
             collisionPadding={12}
             className="w-80 gap-2.5 text-sm"
+            onOpenAutoFocus={(e) => {
+              e.preventDefault();
+              const el = e.currentTarget as HTMLElement | null;
+              (el?.querySelector('button') ?? el)?.focus({ preventScroll: true });
+            }}
             onEscapeKeyDown={(e) => {
               e.preventDefault();
               escape();
