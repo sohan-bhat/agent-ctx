@@ -1,6 +1,6 @@
 import { MeshDepthMaterial, MeshStandardMaterial, type WebGLProgramParametersWithUniforms } from 'three';
 
-const helpers = /* glsl */ `
+const helpers = `
 varying float vRim;
 #ifdef USE_INSTANCING
 uniform float uEdge;

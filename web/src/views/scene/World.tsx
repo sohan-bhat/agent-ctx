@@ -54,10 +54,10 @@ function Plate({ palette, f, reach }: { palette: Palette; f: Framing; reach: num
         position={[-SIDE / 2, 0.003, -SIDE / 2]}
         cellSize={1}
         cellThickness={0.7}
-        cellColor={mix(palette.table, palette.foreground, palette.dark ? 0.09 : 0.11)}
+        cellColor={mix(palette.table, palette.foreground, palette.dark ? 0.1 : 0.17)}
         sectionSize={2.5}
         sectionThickness={1.1}
-        sectionColor={mix(palette.table, palette.foreground, palette.dark ? 0.2 : 0.22)}
+        sectionColor={mix(palette.table, palette.foreground, palette.dark ? 0.2 : 0.32)}
         fadeFrom={0}
         fadeDistance={f.side < SIDE ? to : 40}
         fadeStrength={1}
@@ -73,12 +73,12 @@ function Ruler({ palette, f }: { palette: Palette; f: Framing }) {
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, H_MAX / 2, 0]} castShadow>
-        <boxGeometry args={[0.022, H_MAX, 0.022]} />
+        <boxGeometry args={[0.016, H_MAX, 0.016]} />
         <meshStandardMaterial color={palette.muted} roughness={1} />
       </mesh>
       {AGE_TICKS.map((a) => (
         <mesh key={a} position={[0, heightAt(a), 0]} rotation={[0, Math.PI / 4, 0]}>
-          <boxGeometry args={[0.18, 0.016, 0.016]} />
+          <boxGeometry args={[0.16, 0.012, 0.012]} />
           <meshStandardMaterial color={palette.muted} roughness={1} />
         </mesh>
       ))}
