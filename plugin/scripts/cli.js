@@ -5,8 +5,8 @@ var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
 var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
+  for (var name2 in all)
+    __defProp(target, name2, { get: all[name2], enumerable: true });
 };
 
 // src/core/paths.ts
@@ -278,8 +278,8 @@ function fileTokens(file) {
   const parts = file.split("/").filter(Boolean);
   const base = parts[parts.length - 1] ?? "";
   const parent = parts[parts.length - 2] ?? "";
-  const name = base.replace(/\.[a-z0-9]{1,6}$/i, "");
-  return [...tokens(name), ...tokens(parent)];
+  const name2 = base.replace(/\.[a-z0-9]{1,6}$/i, "");
+  return [...tokens(name2), ...tokens(parent)];
 }
 var STOP;
 var init_text = __esm({
@@ -294,8 +294,8 @@ var init_text = __esm({
 // src/core/store.ts
 import fs2 from "node:fs";
 import path3 from "node:path";
-function termsFile(st, name) {
-  return path3.join(path3.dirname(st.index), path3.basename(name));
+function termsFile(st, name2) {
+  return path3.join(path3.dirname(st.index), path3.basename(name2));
 }
 function cardTokens(c) {
   const out2 = [];
@@ -737,8 +737,8 @@ function cleanSummary(raw) {
   const parts = [];
   for (const m of s.matchAll(HEADINGS)) parts.push({ head: m[1].toLowerCase(), at: m.index ?? 0, body: (m.index ?? 0) + m[0].length });
   if (!parts.length) return tidy(s);
-  const section = (name) => {
-    const i = parts.findIndex((p) => p.head === name);
+  const section = (name2) => {
+    const i = parts.findIndex((p) => p.head === name2);
     return i < 0 ? "" : tidy(s.slice(parts[i].body, i + 1 < parts.length ? parts[i + 1].at : s.length));
   };
   const lead = tidy(s.slice(0, parts[0].at));
@@ -859,7 +859,7 @@ var init_format = __esm({
 
 // src/core/lines.ts
 import fs4 from "node:fs";
-async function* readLines(file, from = 0, to) {
+async function* readLines(file, from = 0, to, pick) {
   let size;
   try {
     size = fs4.statSync(file).size;
@@ -868,7 +868,7 @@ async function* readLines(file, from = 0, to) {
   }
   const stop = to == null ? size : Math.min(size, to);
   if (from >= stop) return;
-  const stream = fs4.createReadStream(file, { start: from, end: stop - 1, highWaterMark: 1 << 20 });
+  const stream = fs4.createReadStream(file, { start: from, end: stop - 1, highWaterMark: 1 << 22 });
   let parts = [];
   let partsLen = 0;
   let lineStart = from;
@@ -892,7 +892,8 @@ async function* readLines(file, from = 0, to) {
         buf = piece;
       }
       const end = lineStart + buf.length + 1;
-      yield { text: buf.toString("utf8"), start: lineStart, end };
+      const use = pick ? pick(buf) : buf;
+      yield { text: use ? use.toString("utf8") : "", start: lineStart, end };
       lineStart = end;
       pos = nl + 1;
     }
@@ -1458,11 +1459,11 @@ function entries(dir) {
   } catch {
     return out2;
   }
-  for (const name of names) {
-    const p = path9.join(dir, name);
+  for (const name2 of names) {
+    const p = path9.join(dir, name2);
     try {
       const s = fs10.statSync(p);
-      out2.push({ path: p, name, size: s.size, mtime: s.mtimeMs, dir: s.isDirectory() });
+      out2.push({ path: p, name: name2, size: s.size, mtime: s.mtimeMs, dir: s.isDirectory() });
     } catch {
     }
   }
@@ -1588,12 +1589,113 @@ var init_budget = __esm({
   }
 });
 
+// src/core/slim.ts
+function stringEnd(buf, open) {
+  for (let q = buf.indexOf(QUOTE, open + 1); q !== -1; q = buf.indexOf(QUOTE, q + 1)) {
+    let k = 0;
+    while (buf[q - 1 - k] === SLASH) k++;
+    if (k % 2 === 0) return q;
+  }
+  throw BAD;
+}
+function space(buf, i) {
+  while (buf[i] === 32 || buf[i] === 9 || buf[i] === 10 || buf[i] === 13) i++;
+  return i;
+}
+function same(buf, a, b, n) {
+  return b - a === n.length && buf.compare(n, 0, n.length, a, b) === 0;
+}
+function value(buf, at, blank, w, top2) {
+  let i = space(buf, at);
+  const c = buf[i];
+  if (c === QUOTE) {
+    const q = stringEnd(buf, i);
+    if (blank && w && q - i > LONG) w.cuts.push({ from: i, to: q + 1, put: '""' });
+    return q + 1;
+  }
+  if (c === 123) {
+    i = space(buf, i + 1);
+    if (buf[i] === 125) return i + 1;
+    for (; ; ) {
+      if (buf[i] !== QUOTE) throw BAD;
+      const q = stringEnd(buf, i);
+      const k0 = i + 1;
+      i = space(buf, q + 1);
+      if (buf[i] !== 58) throw BAD;
+      i++;
+      if (w && top2 && same(buf, k0, q, RESULT)) {
+        const from = space(buf, i);
+        i = value(buf, from, false, null, false);
+        if (i - from > 4) w.cuts.push({ from, to: i, put: "null" });
+      } else if (w && top2 && same(buf, k0, q, TYPE)) {
+        const from = space(buf, i);
+        i = value(buf, from, false, null, false);
+        if (buf[from] === QUOTE) w.kind = KINDS.some((n) => same(buf, from + 1, i - 1, n));
+      } else i = value(buf, i, BLANKED.some((n) => same(buf, k0, q, n)), w, false);
+      i = space(buf, i);
+      if (buf[i] === 44) {
+        i = space(buf, i + 1);
+        continue;
+      }
+      if (buf[i] === 125) return i + 1;
+      throw BAD;
+    }
+  }
+  if (c === 91) {
+    i = space(buf, i + 1);
+    if (buf[i] === 93) return i + 1;
+    for (; ; ) {
+      i = space(buf, value(buf, i, false, w, false));
+      if (buf[i] === 44) {
+        i++;
+        continue;
+      }
+      if (buf[i] === 93) return i + 1;
+      throw BAD;
+    }
+  }
+  const start2 = i;
+  while (i < buf.length && buf[i] !== 44 && buf[i] !== 125 && buf[i] !== 93) i++;
+  if (i >= buf.length || i === start2) throw BAD;
+  return i;
+}
+function slim(buf) {
+  if (buf.length < SLIM_FROM || buf[0] !== 123) return buf;
+  const w = { cuts: [], kind: false };
+  try {
+    if (value(buf, 0, false, w, true) !== buf.length) return buf;
+  } catch {
+    return buf;
+  }
+  if (!w.kind || !w.cuts.length) return buf;
+  const parts = [];
+  let at = 0;
+  for (const c of w.cuts.sort((x, y) => x.from - y.from)) {
+    parts.push(buf.subarray(at, c.from), Buffer.from(c.put));
+    at = c.to;
+  }
+  parts.push(buf.subarray(at));
+  return Buffer.concat(parts);
+}
+var QUOTE, SLASH, name, RESULT, TYPE, BLANKED, KINDS, SLIM_FROM, LONG, BAD;
+var init_slim = __esm({
+  "src/core/slim.ts"() {
+    "use strict";
+    QUOTE = 34;
+    SLASH = 92;
+    name = (s) => Buffer.from(s);
+    RESULT = name("toolUseResult");
+    TYPE = name("type");
+    BLANKED = [name("data"), name("signature"), name("thinking")];
+    KINDS = [name("user"), name("assistant")];
+    SLIM_FROM = 16 * 1024;
+    LONG = 1024;
+    BAD = new Error("bad line");
+  }
+});
+
 // src/core/context.ts
 import path10 from "node:path";
-function catLabel(cat) {
-  if (cat.startsWith("tool:")) return `Tool results, ${cat.slice(5)}`;
-  return CAT_LABEL[cat] ?? cat;
-}
 function newAnalyzer(session, transcript) {
   return {
     ctx: { session, transcript, offset: 0, points: [], compactions: [], system: { tok: 0, measured: false }, prompts: 0, skipped: 0, unreadable: 0 },
@@ -1720,14 +1822,14 @@ function attachment(a, r) {
     add(a, { id, cat: "skills", tok: tok(chars), kind: "other", label: type.replace(/_/g, " ") });
   }
 }
-function toolLabel(name, input) {
-  if (!input || typeof input !== "object") return name;
+function toolLabel(name2, input) {
+  if (!input || typeof input !== "object") return name2;
   if (typeof input.file_path === "string") return input.file_path;
   if (typeof input.command === "string") return cut(redact(input.command.replace(/\s+/g, " ")), 160);
-  if (typeof input.pattern === "string") return `${name} ${cut(redact(input.pattern), 80)}`;
+  if (typeof input.pattern === "string") return `${name2} ${cut(redact(input.pattern), 80)}`;
   if (typeof input.url === "string") return cut(redact(input.url), 160);
-  if (typeof input.description === "string") return `${name} ${cut(redact(input.description), 80)}`;
-  return name;
+  if (typeof input.description === "string") return `${name2} ${cut(redact(input.description), 80)}`;
+  return name2;
 }
 function snapshot(a, r, u) {
   const est = {};
@@ -1768,10 +1870,10 @@ function assistant(a, r) {
   }
   for (const b of contentBlocks(r)) {
     if (!b || typeof b !== "object" || b.type !== "tool_use") continue;
-    const name = String(b.name ?? "tool").startsWith("mcp__") ? String(b.name).split("__").slice(0, 2).join("__") : String(b.name ?? "tool");
-    a.tools.set(String(b.id ?? ""), { name, label: toolLabel(name, b.input) });
+    const name2 = String(b.name ?? "tool").startsWith("mcp__") ? String(b.name).split("__").slice(0, 2).join("__") : String(b.name ?? "tool");
+    a.tools.set(String(b.id ?? ""), { name: name2, label: toolLabel(name2, b.input) });
     const file = b.input?.file_path ?? b.input?.notebook_path;
-    if (EDIT_TOOLS2.has(name) && typeof file === "string") add(a, { id: uid, cat: "replies", tok: 0, kind: "edit", label: file });
+    if (EDIT_TOOLS2.has(name2) && typeof file === "string") add(a, { id: uid, cat: "replies", tok: 0, kind: "edit", label: file });
   }
 }
 function hasError(output, flagged) {
@@ -1989,9 +2091,22 @@ function boundary(a, r) {
     before: [...a.live.values()]
   };
 }
-function wantedLine(text) {
-  if (text.includes('"type":"api-request-blob"') || text.includes('"type":"api-request"')) return false;
+function wantedBytes(buf) {
+  const head = buf.subarray(0, 256);
+  const side = head.indexOf(SIDE);
+  if (side > 0) {
+    const nested = head.indexOf(123, 1);
+    if (nested === -1 || nested > side) return false;
+  }
+  for (let i = buf.indexOf(API); i >= 0; i = buf.indexOf(API, i + 1)) {
+    const at = i + API.length;
+    if (buf[at] === 34) return false;
+    if (buf.subarray(at, at + BLOB.length).equals(BLOB)) return false;
+  }
   return true;
+}
+function lineBytes(buf) {
+  return wantedBytes(buf) ? slim(buf) : null;
 }
 function step(a, r) {
   if (r.isSidechain) return;
@@ -2022,11 +2137,16 @@ function step(a, r) {
       a.ctx.skipped++;
   }
 }
-async function advance(a, to) {
+async function advance(a, to, onProgress) {
   let n = 0;
-  for await (const line of readLines(a.ctx.transcript, a.ctx.offset, to)) {
+  let mark = a.ctx.offset + PROGRESS_BYTES;
+  for await (const line of readLines(a.ctx.transcript, a.ctx.offset, to, lineBytes)) {
     a.ctx.offset = line.end;
-    if (!line.text || !wantedLine(line.text)) continue;
+    if (onProgress && line.end >= mark) {
+      mark = line.end + PROGRESS_BYTES;
+      onProgress(line.end);
+    }
+    if (!line.text) continue;
     const r = parseLine(line.text);
     if (!r) {
       a.ctx.unreadable++;
@@ -2037,33 +2157,26 @@ async function advance(a, to) {
   }
   return n;
 }
-function largest(a, n = 12) {
-  const groups = /* @__PURE__ */ new Map();
-  for (const it of a.live.values()) {
-    if (it.tok <= 0) continue;
-    const key2 = it.cat + "\0" + it.label;
-    const g = groups.get(key2);
-    if (g) {
-      g.tok += it.tok;
-      g.count++;
-    } else groups.set(key2, { ...it, count: 1 });
+function weight(a) {
+  let text = 0;
+  for (const it of a.live.values()) text += (it.label.length + (it.text?.length ?? 0)) * 2;
+  let labels = 0;
+  for (const l of a.labels.keys()) labels += l.length * 2 + 48;
+  let dropped = 0;
+  for (const c of a.ctx.compactions) {
+    dropped += c.summary.length * 2 + 2048;
+    for (const d of c.dropped) dropped += (d.label.length + d.text.length) * 2 + 160;
   }
-  const items = [...groups.values()];
-  if (a.ctx.system.tok) items.push({ id: "system", cat: "system", tok: a.ctx.system.tok, kind: "other", label: a.ctx.system.measured ? "System prompt and tool definitions" : "System prompt", count: 1 });
-  return items.sort((x, y) => y.tok - x.tok).slice(0, n).map((i) => ({ label: i.label, cat: i.cat, tok: i.tok, kind: i.kind, count: i.count }));
+  return 16384 + a.ctx.points.length * 420 + a.live.size * 260 + a.closed.length * 140 + text + labels + dropped;
 }
-function categories(a) {
-  const set = /* @__PURE__ */ new Set();
-  for (const p of a.ctx.points) for (const k of Object.keys(p.est)) set.add(k);
-  return [...set];
-}
-var CHARS_PER_TOKEN, IMAGE_TOKENS, OUTPUT_CAP, MAX_DROPPED, LARGE_READ, SMALL_ITEM, MAX_STEPS, CAT_LABEL, tok, SYSTEM_ATTACH, MEMORY_ATTACH, FILE_ATTACH, EDIT_TOOLS2, ERROR, DECISION, WORDISH;
+var CHARS_PER_TOKEN, IMAGE_TOKENS, OUTPUT_CAP, MAX_DROPPED, LARGE_READ, SMALL_ITEM, MAX_STEPS, tok, SYSTEM_ATTACH, MEMORY_ATTACH, FILE_ATTACH, EDIT_TOOLS2, ERROR, DECISION, WORDISH, SIDE, API, BLOB, PROGRESS_BYTES;
 var init_context = __esm({
   "src/core/context.ts"() {
     "use strict";
     init_lines();
     init_records();
     init_redact();
+    init_slim();
     init_text();
     CHARS_PER_TOKEN = 2.6;
     IMAGE_TOKENS = 1600;
@@ -2072,14 +2185,6 @@ var init_context = __esm({
     LARGE_READ = 2e3;
     SMALL_ITEM = 250;
     MAX_STEPS = 32;
-    CAT_LABEL = {
-      system: "System and tools",
-      memory: "Memory and instruction files",
-      skills: "Skills and attachments",
-      prompts: "Your prompts",
-      replies: "Claude's replies",
-      summary: "Compaction summary"
-    };
     tok = (chars) => Math.round(chars / CHARS_PER_TOKEN);
     SYSTEM_ATTACH = /* @__PURE__ */ new Set(["deferred_tools_delta", "mcp_instructions_delta", "agent_listing_delta"]);
     MEMORY_ATTACH = /* @__PURE__ */ new Set(["instructions", "nested_memory"]);
@@ -2088,12 +2193,18 @@ var init_context = __esm({
     ERROR = /^(error|fatal)(\[[^\]]*\])?:|Traceback \(most recent call last\)|npm ERR!|command not found|panicked at|^\s*FAIL\s|^Exit code [1-9]/im;
     DECISION = /\b(use|using|don'?t|do not|never|always|must|should|instead|prefer|keep|switch to|go with|stick with|make sure|no more|stop|avoid|only|rather than|from now on|decid)/i;
     WORDISH = /[a-z0-9_\-]/;
+    SIDE = Buffer.from('"isSidechain":true');
+    API = Buffer.from('"type":"api-request');
+    BLOB = Buffer.from('-blob"');
+    PROGRESS_BYTES = 8 * 1024 * 1024;
   }
 });
 
 // src/server.ts
 var server_exports = {};
 __export(server_exports, {
+  ANALYSIS_BUDGET: () => ANALYSIS_BUDGET,
+  ANALYSIS_MAX: () => ANALYSIS_MAX,
   serve: () => serve,
   start: () => start
 });
@@ -2108,10 +2219,10 @@ function webDir() {
   for (const d of [path11.join(here2, "web"), path11.join(here2, "..", "dist", "web")]) if (fs11.existsSync(path11.join(d, "index.html"))) return d;
   return path11.join(here2, "web");
 }
-function firstCwd(file) {
+function firstCwd(file, bytes = 65536) {
   try {
     const fd = fs11.openSync(file, "r");
-    const buf = Buffer.alloc(65536);
+    const buf = Buffer.alloc(bytes);
     const n = fs11.readSync(fd, buf, 0, buf.length, 0);
     fs11.closeSync(fd);
     const m = buf.subarray(0, n).toString("utf8").match(/"cwd":"((?:[^"\\]|\\.)*)"/);
@@ -2175,6 +2286,36 @@ function sessionRows(st) {
   rows.sort((a, b) => b.last.localeCompare(a.last));
   return rows;
 }
+function readTail(file, size) {
+  const out2 = { peak: 0 };
+  try {
+    const len = Math.min(size, 4 << 20);
+    const fd = fs11.openSync(file, "r");
+    const buf = Buffer.alloc(len);
+    const n = fs11.readSync(fd, buf, 0, len, size - len);
+    fs11.closeSync(fd);
+    const lines = buf.subarray(0, n).toString("utf8").split("\n");
+    if (len < size) lines.shift();
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const text = lines[i];
+      if (!text.includes('"usage"') || !text.includes('"type":"assistant"')) continue;
+      const r = parseLine(text);
+      if (!r || r.isSidechain) continue;
+      const u = usageOf(r);
+      if (u) out2.peak = Math.max(out2.peak, u.total);
+      if (!out2.model && typeof r.message?.model === "string" && r.message.model.startsWith("claude-")) out2.model = r.message.model;
+    }
+    if (!out2.model) {
+      const head = Buffer.alloc(Math.min(size, 1 << 18));
+      const fd2 = fs11.openSync(file, "r");
+      const m = fs11.readSync(fd2, head, 0, head.length, 0);
+      fs11.closeSync(fd2);
+      out2.model = head.subarray(0, m).toString("utf8").match(/"model":"(claude-[^"<]+)"/)?.[1];
+    }
+  } catch {
+  }
+  return out2;
+}
 function sameToken(a, b) {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
@@ -2183,7 +2324,9 @@ function sameToken(a, b) {
 async function start(st, opts) {
   const token = randomBytes(18).toString("base64url");
   const web = webDir();
-  const analyzers = /* @__PURE__ */ new Map();
+  const kept = /* @__PURE__ */ new Map();
+  const busy = /* @__PURE__ */ new Map();
+  const paths = /* @__PURE__ */ new Map();
   const clients = /* @__PURE__ */ new Set();
   const watched = /* @__PURE__ */ new Map();
   let port = 0;
@@ -2216,23 +2359,96 @@ data: ${JSON.stringify(data)}
     const c = loadCards(st).find((x) => x.session === session);
     return c && fs11.existsSync(c.transcript) ? c.transcript : null;
   };
+  const pathOf = (session) => {
+    const known = paths.get(session);
+    if (known && fs11.existsSync(known)) return known;
+    const file = transcriptOf(session);
+    if (file) paths.set(session, file);
+    return file;
+  };
+  const trim = (keep) => {
+    let total = 0;
+    for (const k of kept.values()) total += k.weight;
+    const order = [...kept.entries()].sort((x, y) => x[1].used - y[1].used);
+    for (const [file, k] of order) {
+      if (total <= ANALYSIS_BUDGET && kept.size <= ANALYSIS_MAX) break;
+      if (file === keep || busy.has(file)) continue;
+      kept.delete(file);
+      total -= k.weight;
+    }
+  };
   const analyze = async (session) => {
-    let a = analyzers.get(session);
-    const file = a?.ctx.transcript ?? transcriptOf(session);
+    const file = pathOf(session);
+    if (!file) return null;
+    for (; ; ) {
+      const running = busy.get(file);
+      if (!running) break;
+      await running.catch(() => {
+      });
+    }
+    let stat;
+    try {
+      stat = fs11.statSync(file);
+    } catch {
+      return kept.get(file)?.a ?? null;
+    }
+    let k = kept.get(file);
+    if (k && (stat.size < k.size || stat.size === k.size && stat.mtimeMs !== k.mtime)) {
+      kept.delete(file);
+      k = void 0;
+    }
+    if (!k) {
+      k = { a: newAnalyzer(session, file), size: 0, mtime: 0, used: 0, weight: 0 };
+      kept.set(file, k);
+    }
+    const entry = k;
+    entry.used = Date.now();
+    if (entry.a.ctx.offset < stat.size) {
+      const total = stat.size;
+      let last = 0;
+      const job = advance(entry.a, total, (at) => {
+        const now = Date.now();
+        if (now - last < 100) return;
+        last = now;
+        broadcast("reading", { session, at, size: total }, session);
+      }).then(() => void 0);
+      busy.set(file, job);
+      try {
+        await job;
+      } finally {
+        busy.delete(file);
+      }
+      entry.size = entry.a.ctx.offset;
+      entry.mtime = entry.a.ctx.offset >= stat.size ? stat.mtimeMs : 0;
+      entry.weight = weight(entry.a);
+      trim(file);
+    }
+    return entry.a;
+  };
+  const peek = (session) => {
+    const file = pathOf(session);
     if (!file) return null;
     let size = 0;
     try {
       size = fs11.statSync(file).size;
     } catch {
-      return a ?? null;
+      return null;
     }
-    if (!a || a.ctx.offset > size) {
-      a = newAnalyzer(session, file);
-      analyzers.set(session, a);
-      while (analyzers.size > 4) analyzers.delete(analyzers.keys().next().value);
-    }
-    await advance(a);
-    return a;
+    const k = kept.get(file);
+    const tail = readTail(file, size);
+    const cwd = k?.a.ctx.cwd ?? firstCwd(file, 1 << 20) ?? void 0;
+    const card = loadCards(st).find((c) => c.session === session);
+    return {
+      session,
+      title: k?.a.ctx.title ?? card?.title,
+      prompt: promptTitle(card?.firstPrompt),
+      cwd: cwd ? tilde(cwd) : void 0,
+      root: cwd,
+      model: k?.a.ctx.model ?? tail.model,
+      peak: tail.peak,
+      size,
+      ready: !!k && k.a.ctx.offset >= size
+    };
   };
   const refresh = () => {
     if (indexing) return indexing;
@@ -2330,12 +2546,15 @@ data: ${JSON.stringify(data)}
       }
       if (req.method === "GET" && rest.startsWith("api/session/")) {
         const id = decodeURIComponent(rest.slice("api/session/".length));
+        if (u.searchParams.get("peek")) {
+          const p = peek(id);
+          return p ? send(res, 200, p) : send(res, 404, { error: "no transcript" });
+        }
         const since = Math.max(0, Number(u.searchParams.get("since")) || 0);
         const a = await analyze(id);
         if (!a) return send(res, 404, { error: "no transcript" });
         const pts = a.ctx.points;
         const from = since <= pts.length ? since : 0;
-        const cats = categories(a);
         const tl = timeline(a);
         const closedFrom = Math.max(0, Number(u.searchParams.get("closed")) || 0);
         const labelsFrom = Math.max(0, Number(u.searchParams.get("labels")) || 0);
@@ -2353,10 +2572,8 @@ data: ${JSON.stringify(data)}
           ratio: CHARS_PER_TOKEN,
           from,
           count: pts.length,
-          points: pts.slice(from),
-          compactions: a.ctx.compactions,
-          largest: largest(a),
-          categories: cats.map((c) => ({ key: c, label: catLabel(c) })),
+          totals: pts.slice(from).map((p) => p.total),
+          compactions: a.ctx.compactions.map(({ before: _, ...c }) => c),
           timeline: { cats: tl.cats, labelsFrom: lf, labels: tl.labels.slice(lf), closedFrom: cf, closed: tl.closed.slice(cf), live: tl.live },
           queued: queued(st, id),
           pins: pinsFor(st, id)
@@ -2453,12 +2670,13 @@ Press Ctrl+C to close it.
     process.once("SIGTERM", stop);
   });
 }
-var MIME;
+var MIME, ANALYSIS_BUDGET, ANALYSIS_MAX;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
     init_paths();
     init_store();
+    init_records();
     init_update();
     init_lock();
     init_limits();
@@ -2477,6 +2695,8 @@ var init_server = __esm({
       ".json": "application/json",
       ".ico": "image/x-icon"
     };
+    ANALYSIS_BUDGET = 96 * 1024 * 1024;
+    ANALYSIS_MAX = 64;
   }
 });
 
@@ -2504,17 +2724,17 @@ var CHAT = new Set(
 function promptTerms(ix, prompt) {
   const n = ix.bm25.n;
   const rareMax = Math.max(2, Math.ceil(PROMPT_RARE * n));
-  const weight = /* @__PURE__ */ new Map();
+  const weight2 = /* @__PURE__ */ new Map();
   let total = 0;
   for (const t of new Set(tokens(prompt))) {
     if (CHAT.has(t)) continue;
     const df = (ix.bm25.get(t)?.length ?? 0) / 2;
     if (df > rareMax) continue;
     const w = idf(n, df);
-    weight.set(t, w);
+    weight2.set(t, w);
     total += w;
   }
-  return { weight, total };
+  return { weight: weight2, total };
 }
 var REMOTE_BOOST = 1.3;
 function recency(lastMs, now) {
@@ -2530,16 +2750,16 @@ function newestDocs(ix, n, keep = () => true) {
   return ix.docs.map((_, i) => i).filter((i) => keep(ix.docs[i])).sort((a, b) => ix.docs[b].t - ix.docs[a].t).slice(0, n);
 }
 function rankPrompt(ix, prompt, now = Date.now(), exclude = /* @__PURE__ */ new Set(), remote = null) {
-  const { weight, total } = promptTerms(ix, prompt);
-  if (weight.size < PROMPT_MIN_MATCH || !total) return [];
+  const { weight: weight2, total } = promptTerms(ix, prompt);
+  if (weight2.size < PROMPT_MIN_MATCH || !total) return [];
   const cover = /* @__PURE__ */ new Map();
-  for (const [t, w] of weight) {
+  for (const [t, w] of weight2) {
     const p = ix.bm25.get(t);
     if (!p) continue;
     for (let i = 0; i < p.length; i += 2) cover.set(p[i], (cover.get(p[i]) ?? 0) + w);
   }
   const hits = [];
-  for (const s of search(ix.bm25, [...weight.keys()])) {
+  for (const s of search(ix.bm25, [...weight2.keys()])) {
     const d = ix.docs[s.doc];
     if (!d || exclude.has(d.id) || exclude.has(d.s)) continue;
     if (s.matched < PROMPT_MIN_MATCH || (cover.get(s.doc) ?? 0) / total < PROMPT_COVER || s.norm < PROMPT_BAR) continue;
@@ -2692,12 +2912,12 @@ function planUninstall(file, hookJs2) {
   const cleaned = withoutHooks(data, hookJs2);
   const counts = countHooks(data, hookJs2);
   const after = text.trim() ? render(cleaned) : text;
-  const same = JSON.stringify(cleaned) === JSON.stringify(data);
+  const same2 = JSON.stringify(cleaned) === JSON.stringify(data);
   return {
     file,
     before: text,
-    after: same ? text : after,
-    changes: same ? [] : diffLines(text, after).filter((d) => d.sign !== " "),
+    after: same2 ? text : after,
+    changes: same2 ? [] : diffLines(text, after).filter((d) => d.sign !== " "),
     exists: !!text.trim(),
     missing: missingHooks(data, hookJs2),
     ours: counts.ours,
