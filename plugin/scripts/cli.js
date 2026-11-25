@@ -1602,7 +1602,12 @@ function newAnalyzer(session, transcript) {
     tools: /* @__PURE__ */ new Map(),
     out: /* @__PURE__ */ new Map(),
     lastMsg: null,
-    pending: null
+    pending: null,
+    serial: 0,
+    systemFrom: 0,
+    cats: /* @__PURE__ */ new Map(),
+    labels: /* @__PURE__ */ new Map(),
+    closed: []
   };
 }
 function add(a, item) {
@@ -1614,13 +1619,77 @@ function add(a, item) {
     if (item.text) prev.text = item.text;
     return;
   }
-  a.live.set(key2, { ...item });
+  a.live.set(key2, { ...item, birth: a.ctx.points.length, turn: a.ctx.prompts, serial: a.serial++ });
+}
+function intern(map, s) {
+  let n = map.get(s);
+  if (n === void 0) {
+    n = map.size;
+    map.set(s, n);
+  }
+  return n;
+}
+function single(it) {
+  return it.kind === "prompt" || it.cat === "summary" || it.cat !== "replies" && it.tok >= SMALL_ITEM;
+}
+function squeeze(steps) {
+  let s = steps;
+  while (s.length > MAX_STEPS * 2) {
+    const next = [];
+    for (let i = 0; i < s.length; i += 4) {
+      if (i + 2 < s.length) next.push(s[i], s[i + 1] + s[i + 3]);
+      else next.push(s[i], s[i + 1]);
+    }
+    s = next;
+  }
+  return s;
+}
+function spansOf(a, items, end) {
+  const out2 = [];
+  const groups = /* @__PURE__ */ new Map();
+  for (const it of items) {
+    if (it.tok <= 0) continue;
+    const c = intern(a.cats, it.cat);
+    if (single(it)) {
+      const span = { b: it.birth, c, l: intern(a.labels, it.label), t: it.tok };
+      if (end === void 0) span.i = it.serial;
+      else span.e = end;
+      out2.push(span);
+      continue;
+    }
+    const key2 = `${c}@${it.turn}`;
+    let g = groups.get(key2);
+    if (!g) {
+      g = { span: { b: it.birth, c, t: 0, u: it.turn, n: 0 }, steps: /* @__PURE__ */ new Map() };
+      if (end !== void 0) g.span.e = end;
+      groups.set(key2, g);
+      out2.push(g.span);
+    }
+    g.span.t += it.tok;
+    g.span.n = (g.span.n ?? 0) + 1;
+    g.span.b = Math.min(g.span.b, it.birth);
+    g.steps.set(it.birth, (g.steps.get(it.birth) ?? 0) + it.tok);
+  }
+  for (const g of groups.values()) g.span.s = squeeze([...g.steps].sort((x, y) => x[0] - y[0]).flat());
+  return out2;
+}
+function timeline(a) {
+  const live = spansOf(a, a.live.values());
+  if (a.ctx.system.tok > 0) {
+    const label = a.ctx.system.measured ? "System prompt and tool definitions" : "System prompt";
+    live.unshift({ b: a.systemFrom, c: intern(a.cats, "system"), l: intern(a.labels, label), t: a.ctx.system.tok, i: -1 });
+  }
+  return { cats: [...a.cats.keys()], labels: [...a.labels.keys()], closed: a.closed, live };
 }
 function remove2(a, key2) {
   const it = a.live.get(key2);
   if (!it) return;
   a.live.delete(key2);
   a.sums.set(it.cat, (a.sums.get(it.cat) || 0) - it.tok);
+}
+function setSystem(a, t) {
+  if (!a.ctx.system.tok) a.systemFrom = a.ctx.points.length;
+  a.ctx.system = { tok: t, measured: true };
 }
 function renderedChars(r) {
   if (!Array.isArray(r.rendered)) return 0;
@@ -1633,7 +1702,7 @@ function attachment(a, r) {
   const type = String(at.type ?? "");
   if (type === "prompt_snapshot" && !a.ctx.system.measured) {
     const chars2 = JSON.stringify(at.systemPrompt ?? "").length + JSON.stringify(at.tools ?? "").length;
-    if (chars2 > 2) a.ctx.system = { tok: tok(chars2), measured: true };
+    if (chars2 > 2) setSystem(a, tok(chars2));
     return;
   }
   const chars = renderedChars(r);
@@ -1903,7 +1972,9 @@ function finishCompaction(a, rawSummary, r) {
     named,
     before: top(p.before, 10)
   });
-  for (const [k, v] of [...a.live]) if (!p.preserved.has(v.id)) remove2(a, k);
+  const gone = [...a.live].filter(([, v]) => !p.preserved.has(v.id));
+  a.closed.push(...spansOf(a, gone.map(([, v]) => v), p.n));
+  for (const [k] of gone) remove2(a, k);
 }
 function boundary(a, r) {
   const m = r.compactMetadata ?? {};
@@ -1938,7 +2009,7 @@ function step(a, r) {
     case "api-request-shape": {
       const sh = r.shape ?? {};
       const chars = JSON.stringify(sh.system ?? "").length + JSON.stringify(sh.tools ?? "").length;
-      if (chars > 2) a.ctx.system = { tok: tok(chars), measured: true };
+      if (chars > 2) setSystem(a, tok(chars));
       return;
     }
     case "ai-title":
@@ -1986,7 +2057,7 @@ function categories(a) {
   for (const p of a.ctx.points) for (const k of Object.keys(p.est)) set.add(k);
   return [...set];
 }
-var CHARS_PER_TOKEN, IMAGE_TOKENS, OUTPUT_CAP, MAX_DROPPED, LARGE_READ, CAT_LABEL, tok, SYSTEM_ATTACH, MEMORY_ATTACH, FILE_ATTACH, EDIT_TOOLS2, ERROR, DECISION, WORDISH;
+var CHARS_PER_TOKEN, IMAGE_TOKENS, OUTPUT_CAP, MAX_DROPPED, LARGE_READ, SMALL_ITEM, MAX_STEPS, CAT_LABEL, tok, SYSTEM_ATTACH, MEMORY_ATTACH, FILE_ATTACH, EDIT_TOOLS2, ERROR, DECISION, WORDISH;
 var init_context = __esm({
   "src/core/context.ts"() {
     "use strict";
@@ -1999,6 +2070,8 @@ var init_context = __esm({
     OUTPUT_CAP = 1500;
     MAX_DROPPED = 80;
     LARGE_READ = 2e3;
+    SMALL_ITEM = 250;
+    MAX_STEPS = 32;
     CAT_LABEL = {
       system: "System and tools",
       memory: "Memory and instruction files",
@@ -2263,6 +2336,11 @@ data: ${JSON.stringify(data)}
         const pts = a.ctx.points;
         const from = since <= pts.length ? since : 0;
         const cats = categories(a);
+        const tl = timeline(a);
+        const closedFrom = Math.max(0, Number(u.searchParams.get("closed")) || 0);
+        const labelsFrom = Math.max(0, Number(u.searchParams.get("labels")) || 0);
+        const cf = from > 0 && closedFrom <= tl.closed.length ? closedFrom : 0;
+        const lf = from > 0 && labelsFrom <= tl.labels.length ? labelsFrom : 0;
         return send(res, 200, {
           session: id,
           title: a.ctx.title,
@@ -2279,6 +2357,7 @@ data: ${JSON.stringify(data)}
           compactions: a.ctx.compactions,
           largest: largest(a),
           categories: cats.map((c) => ({ key: c, label: catLabel(c) })),
+          timeline: { cats: tl.cats, labelsFrom: lf, labels: tl.labels.slice(lf), closedFrom: cf, closed: tl.closed.slice(cf), live: tl.live },
           queued: queued(st, id),
           pins: pinsFor(st, id)
         });
