@@ -106,7 +106,7 @@ async function signedIn(b, url, w, h) {
       const after = await labels(page);
       const moved = before.length && after.length ? Math.max(...before.map((a, i) => Math.hypot(a.x - (after[i]?.x ?? a.x), a.y - (after[i]?.y ?? a.y)))) : 0;
       check(`${tag} pinch zooms the scene`, moved > 8, `label moved ${moved.toFixed(1)} px`);
-    }
+    } else if (touch) console.log(`NOTE ${tag} two finger touch is sent through the Chrome DevTools protocol, so the pinch check is done in Chrome only`);
 
     const b0 = (await space(page)).blocks;
     const grew = await waitFor(async () => {
@@ -571,7 +571,7 @@ try {
     await b.close();
   }
   if (engine === 'chromium') await part('list without WebGL', () => noWebGL(srv.url));
-  else console.log(`NOTE ${engine} has no flag to turn WebGL off, so the list check runs in Chrome only`);
+  else console.log(`NOTE ${engine} has no flag to turn WebGL off, so the list check is done in Chrome only`);
 } finally {
   await srv.stop();
 }
