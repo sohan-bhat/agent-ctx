@@ -8,6 +8,11 @@
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }],
   "durable_objects": { "bindings": [{ "name": "PERSON", "class_name": "Person" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Person"] }],
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/mcp", "/authorize", "/oauth/*", "/.well-known/*", "/login*", "/logout", "/api/*"]
+  },
   "dev": { "port": 8790 },
   "observability": { "enabled": true, "traces": { "enabled": true } }
 }
