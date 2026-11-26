@@ -1,4 +1,6 @@
 import { itemBytes } from '@core/model.ts';
+import { ruleLine } from '@core/rules.ts';
+import { ApiError } from '@/lib/api';
 import type { Agent, Item, Live, Me, NewRule, RuleBody, Space, Transport } from '@/lib/types';
 import { liveCard, PROJECTS, ruleItem, seed, type World } from './data';
 
@@ -39,6 +41,7 @@ function state(): World {
 const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 const send = (m: Live) => listeners.forEach((f) => f(m));
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const view = (i: Item): Item => (i.kind === 'rule' ? { ...clone(i), line: ruleLine(i.body as RuleBody) } : clone(i));
 
 function find(id: string): Item {
   const it = state().items.find((i) => i.id === id);
@@ -47,7 +50,7 @@ function find(id: string): Item {
 }
 
 function touch(it: Item): void {
-  send({ type: 'item', item: clone(it) });
+  send({ type: 'item', item: view(it) });
 }
 
 let pulse: ReturnType<typeof setInterval> | null = null;
@@ -68,6 +71,12 @@ function startPulse(): void {
   }, Number(flag('every') ?? EVERY));
 }
 
+if (typeof window !== 'undefined')
+  (window as unknown as { __mockEdit?: (id: string, words: string) => void }).__mockEdit = (id, words) => {
+    const it = find(id);
+    it.body = { ...(it.body as RuleBody), words };
+  };
+
 export const transport: Transport = {
   async me(): Promise<Me | null> {
     await wait();
@@ -80,7 +89,7 @@ export const transport: Transport = {
     if (flag('fail') === 'space') throw new Error('offline');
     const w = state();
     const projects = PROJECTS.map((p) => ({ ...p, items: w.items.filter((i) => i.project === p.key).length })).filter((p) => p.items > 0);
-    return clone({ projects, agents: w.agents, items: w.items, queue: w.queue, reads: w.reads, now: Date.now() });
+    return clone({ projects, agents: w.agents, items: w.items.map(view), queue: w.queue, reads: w.reads, now: Date.now() });
   },
   async pin(id, on) {
     await wait();
@@ -113,14 +122,27 @@ export const transport: Transport = {
     const it = ruleItem(rule.text, rule.scope, project, Date.now());
     state().items.push(it);
     touch(it);
-    return clone(it);
+    return view(it);
   },
-  async setRule(id, status) {
+  async setRule(id, status, line) {
     await wait();
     const it = find(id);
     const b = it.body as RuleBody;
-    it.body = { ...b, status, proof: b.proof ?? 'page' };
+    if (line !== undefined && ruleLine(b) !== line) throw new ApiError(409);
+    it.body = { ...b, status, ...(status === 'active' && b.status !== 'active' ? { proof: 'page' as const } : {}) };
+    it.held = status === 'active' ? false : it.held;
     touch(it);
+  },
+  async removeAgent(id) {
+    await wait();
+    const w = state();
+    if (!w.agents.some((a) => a.id === id)) throw new ApiError(404);
+    w.agents = w.agents.filter((a) => a.id !== id);
+    send({ type: 'agent-removed', id });
+  },
+  async signOut() {
+    await wait();
+    signIn(false);
   },
   async merge(from, into) {
     await wait();
@@ -163,7 +185,7 @@ export const transport: Transport = {
     setTimeout(() => {
       if (w.agents.some((a) => a.label === product)) return;
       const now = Date.now();
-      const agent: Agent = { id: `agent-${w.agents.length + 1}`, label: product, first: now, last: now };
+      const agent: Agent = { id: product, label: product, first: now, last: now };
       w.agents.push(agent);
       send({ type: 'agent', agent: { ...agent } });
     }, Number(flag('connect') ?? 2500));

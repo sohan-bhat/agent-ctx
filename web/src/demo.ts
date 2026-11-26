@@ -34,7 +34,7 @@ const handoff: HandoffBody = {
   check: 'npm test -- refund',
 };
 
-const rule: RuleBody = { text: 'Never commit straight to main, open a branch first', words: 'never commit straight to main, open a branch first', scope: 'all', status: 'active', proof: 'hook' };
+const rule: RuleBody = { text: 'Never commit straight to main, open a branch first', words: 'never commit straight to main, open a branch first', scope: 'all', status: 'active', proof: 'elicit' };
 const pending: RuleBody = { text: 'Skip the slow tests on every run', words: 'skip the slow tests on every run', scope: 'project', status: 'pending' };
 
 const ROWS: Row[] = [

@@ -72,12 +72,12 @@ const HANDOFFS: Record<string, HandoffBody[]> = {
 };
 
 const RULES: { project: string; agent: string; body: RuleBody; days: number }[] = [
-  { project: 'github.com/kelpworks/harbor', agent: 'Claude Code', days: 18, body: { text: 'Never commit straight to main, open a branch first', words: 'never commit straight to main, open a branch first', scope: 'all', status: 'active', proof: 'hook' } },
-  { project: 'github.com/kelpworks/harbor', agent: 'Codex', days: 11, body: { text: 'Run the full test suite before calling a task done', words: 'run the full test suite before you call a task done', scope: 'project', status: 'active', proof: 'hook' } },
-  { project: 'github.com/kelpworks/lantern', agent: 'Claude Code', days: 9, body: { text: 'Keep clippy clean with no allow attributes', words: 'keep clippy clean, no allow attributes', scope: 'project', status: 'active', proof: 'hook' } },
+  { project: 'github.com/kelpworks/harbor', agent: 'Claude Code', days: 18, body: { text: 'Never commit straight to main, open a branch first', words: 'never commit straight to main, open a branch first', scope: 'all', status: 'active', proof: 'elicit' } },
+  { project: 'github.com/kelpworks/harbor', agent: 'Codex', days: 11, body: { text: 'Run the full test suite before calling a task done', words: 'run the full test suite before you call a task done', scope: 'project', status: 'active', proof: 'elicit' } },
+  { project: 'github.com/kelpworks/lantern', agent: 'Claude Code', days: 9, body: { text: 'Keep clippy clean with no allow attributes', words: 'keep clippy clean, no allow attributes', scope: 'project', status: 'active', proof: 'page' } },
   { project: 'github.com/kelpworks/lantern', agent: 'Cursor', days: 2, body: { text: 'Skip the slow tests on every run', words: 'skip the slow tests on every run', scope: 'project', status: 'pending' } },
   { project: 'github.com/kelpworks/harbor', agent: 'Codex', days: 1, body: { text: 'Push to the release branch after each fix', words: 'push to the release branch after each fix', scope: 'project', status: 'pending' } },
-  { project: 'github.com/kelpworks/harbor', agent: 'Claude Code', days: 15, body: { text: 'Write commit messages in the past tense', words: 'write commit messages in the past tense', scope: 'all', status: 'off', proof: 'hook' } },
+  { project: 'github.com/kelpworks/harbor', agent: 'Claude Code', days: 15, body: { text: 'Write commit messages in the past tense', words: 'write commit messages in the past tense', scope: 'all', status: 'off', proof: 'page' } },
 ];
 
 export const AGENT_SEED: { label: string; days: number; via: Origin['via']; projects: string[] }[] = [
@@ -121,7 +121,7 @@ function make(kind: Kind, project: string, body: Item['body'], agent: string, at
     project,
     kind,
     body,
-    origin: { agent, machine: agent === 'Cursor' ? 'laptop' : 'studio', session: `s${Math.floor(at / HOUR)}${agent.length}`, via, source: kind === 'rule' ? 'person' : 'agent', at },
+    origin: { agent, machine: agent === 'Cursor' ? 'laptop' : 'studio', session: `s${Math.floor(at / HOUR)}${agent.length}`, via, source: kind === 'rule' && (body as RuleBody).proof ? 'person' : 'agent', at },
     flags: [],
     held: false,
     pinned: false,
@@ -148,7 +148,7 @@ export interface World {
 export function seed(now: number): World {
   serial = 0;
   const r = rng(20261125);
-  const agents: Agent[] = AGENT_SEED.map((a, i) => ({ id: `agent-${i + 1}`, label: a.label, first: now - a.days * DAY, last: now }));
+  const agents: Agent[] = AGENT_SEED.map((a) => ({ id: a.label, label: a.label, first: now - a.days * DAY, last: now }));
   const items: Item[] = [];
   const keyOf = (name: string) => PROJECTS.find((p) => p.name === name)!.key;
   for (const a of AGENT_SEED) {
@@ -176,7 +176,7 @@ export function seed(now: number): World {
     });
   }
   for (const rule of RULES) {
-    const via: Origin['via'] = rule.body.proof === 'hook' ? 'hook' : 'tool';
+    const via: Origin['via'] = rule.body.proof === 'page' ? 'page' : 'tool';
     items.push(make('rule', rule.project, rule.body, rule.agent, workHour(rule.days, r, now), via));
   }
   const compact = (agent: string, name: string, day: number, files: string[]) => {
