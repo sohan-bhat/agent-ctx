@@ -10,7 +10,9 @@ describe('agent labels', () => {
     expect(labelFor({ clientId: 'https://chatgpt.com/oauth/client.json', redirectUri: 'https://chatgpt.com/connector_platform_oauth_redirect' })).toBe('ChatGPT');
     expect(labelFor({ clientId: 'dcr-123', redirectUri: 'https://chatgpt.com/connector_platform_oauth_redirect' })).toBe('ChatGPT');
     expect(labelFor({ clientId: 'https://antigravity.google/oauth/client-metadata.json' })).toBe('Antigravity');
-    expect(labelFor({ clientId: 'dcr-2', clientName: 'x', redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback' })).toBe('Cursor');
+    expect(labelFor({ clientId: 'dcr-2', clientName: 'x', redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback' })).toBe('Cursor');
+    expect(labelFor({ clientId: 'dcr-2', clientName: 'x', redirectUri: 'https://vscode.dev/redirect' })).toBe('VS Code');
+    expect(labelFor({ clientId: 'dcr-2', clientName: 'Cursor', redirectUri: 'http://localhost:8787/callback' })).toBe('unverified Cursor');
   });
 
   it('a self registered client never wears a product label by its name or a look alike address', () => {

@@ -20,7 +20,8 @@ function within(h: string, domain: string): boolean {
 const DOCUMENTED: Record<string, string> = {
   [CLAUDE_REDIRECT]: 'Claude',
   'https://chatgpt.com/connector_platform_oauth_redirect': 'ChatGPT',
-  'cursor://anysphere.cursor-mcp/oauth/callback': 'Cursor',
+  'https://www.cursor.com/agents/mcp/oauth/callback': 'Cursor',
+  'https://vscode.dev/redirect': 'VS Code',
 };
 
 export function labelFor(c: ClientIdentity): string {
