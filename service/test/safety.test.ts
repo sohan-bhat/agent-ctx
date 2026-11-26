@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { FOOTER, HEADER, type Item, type RuleBody } from '../../core/src/index.ts';
 import { awayFromMinuteEdge, call, caller, connect, devSignIn, Jar, mcp, open, ORIGIN, person, RESOURCE, send, sql } from './helpers.ts';
 import { env } from 'cloudflare:workers';
@@ -32,7 +32,7 @@ import * as entry from '../src/index.ts';
   }
 
   describe('injection across two agents', () => {
-    it('planted text stays quoted or held, rules from agents stay pending until Accept, and kept items return only quoted', async () => {
+    test('planted text stays quoted or held, rules from agents stay pending until Accept, and kept items return only quoted', async () => {
       const jar = await devSignIn('inject');
       const a = await mcp((await connect(jar, 'dcr', ['read', 'write'], 'Codex')).access);
       const b = await mcp((await connect(jar, 'claude-code')).access);
@@ -164,7 +164,7 @@ import * as entry from '../src/index.ts';
   afterEach(() => vi.restoreAllMocks());
 
   describe('redaction', () => {
-    it('fake keys in every text field never reach a row, an export, an API answer, a socket message or a log line', async () => {
+    test('fake keys in every text field never reach a row, an export, an API answer, a socket message or a log line', async () => {
       const jar = await devSignIn('redact-one');
       const client = await mcp((await connect(jar, 'dcr', ['read', 'write'], 'Codex')).access);
       const live = await send('/api/live', { headers: { Cookie: jar.header(), Upgrade: 'websocket' } });
@@ -224,7 +224,7 @@ import * as entry from '../src/index.ts';
   }
 
   describe('input size before any other work', () => {
-    it('the reviewer event of two 250 KB fields stores nothing and still counts as a call', async () => {
+    test('the reviewer event of two 250 KB fields stores nothing and still counts as a call', async () => {
       const p = person();
       const r = await p.event(CC, { host: 'x', event: 'PostToolUse', session: crypto.randomUUID(), cwd: '/' + 'a'.repeat(250000), file: 'b'.repeat(250000) });
       expect(r).toEqual({ ok: true, text: '' });
@@ -233,7 +233,7 @@ import * as entry from '../src/index.ts';
       expect((await p.checkpoint(CC, { folder: '/w/kiln', goal: 'x'.repeat(MAX.inputBytes) })).text).toBe(SAY.size);
     });
 
-    it('over MCP a large identity field is refused, a long reply is cut on a word edge, and the body limit is 64 KB', async () => {
+    test('over MCP a large identity field is refused, a long reply is cut on a word edge, and the body limit is 64 KB', async () => {
       const jar = await devSignIn('size-mcp');
       const token = (await connect(jar)).access;
       const client = await mcp(token);
@@ -254,7 +254,7 @@ import * as entry from '../src/index.ts';
       expect(stored[0].text).not.toContain('sk-proj');
     });
 
-    it('fitEvent cuts only long text fields on a whitespace edge and refuses oversized identity fields', () => {
+    test('fitEvent cuts only long text fields on a whitespace edge and refuses oversized identity fields', () => {
       const fit = fitEvent({ event: 'Stop', session: 's', cwd: '/w', message: `${'word '.repeat(3000)}${KEY}` })!;
       expect(JSON.stringify(fit).length).toBeLessThanOrEqual(MAX.inputBytes);
       expect(fit.message!.endsWith('word')).toBe(true);
@@ -266,7 +266,7 @@ import * as entry from '../src/index.ts';
   });
 
   describe('short identity fields', () => {
-    it('ignores a session id over 200 characters, a folder over 1,024 and a file path over 1,024', async () => {
+    test('ignores a session id over 200 characters, a folder over 1,024 and a file path over 1,024', async () => {
       const p = person();
       expect((await p.event(CC, ev('s'.repeat(201), 'UserPromptSubmit', { prompt: 'label the pantry shelves today please' }))).text).toBe('');
       expect((await p.event(CC, ev('s1', 'UserPromptSubmit', { cwd: '/' + 'c'.repeat(1024), prompt: 'label the pantry shelves today please' }))).text).toBe('');
@@ -278,7 +278,7 @@ import * as entry from '../src/index.ts';
   });
 
   describe('redaction before any cut', () => {
-    it('a key that straddles the prompt cut is dropped whole', async () => {
+    test('a key that straddles the prompt cut is dropped whole', async () => {
       const p = person();
       const prompt = `Read https://docs.example/${'path/'.repeat(51)}?t=${KEY} then ${'tidy the shelves '.repeat(40)}`;
       expect(prompt.indexOf(KEY)).toBeGreaterThan(280);
@@ -296,7 +296,7 @@ import * as entry from '../src/index.ts';
   });
 
   describe('every stored byte counts', () => {
-    it('events, sessions and projects count toward the ceiling, old sessions go first, and capture pauses when nothing else can go', async () => {
+    test('events, sessions and projects count toward the ceiling, old sessions go first, and capture pauses when nothing else can go', async () => {
       const p = person();
       await open(p, { storeBytes: 6000 });
       for (let i = 0; i < 30; i++) await p.event(CC, ev(`s${i}`, 'PostToolUse', { tool: 'Bash', command: `npm run build number ${i} ${'y'.repeat(200)}` }));
@@ -315,7 +315,7 @@ import * as entry from '../src/index.ts';
       expect((await p.checkpoint(CC, { folder: '/w/new', goal: 'x' })).text).toBe(SAY.full);
     });
 
-    it('a person keeps at most 200 projects and unused ones are pruned first', async () => {
+    test('a person keeps at most 200 projects and unused ones are pruned first', async () => {
       const p = person();
       await open(p);
       for (let i = 0; i < 200; i++) await p.recall(CC, { folder: `/w/empty-${i}` });
@@ -331,7 +331,7 @@ import * as entry from '../src/index.ts';
   });
 
   describe('scopes and sessions', () => {
-    it('a token without read gets no memory from the event tool', async () => {
+    test('a token without read gets no memory from the event tool', async () => {
       const p = person();
       await p.checkpoint(CC, { folder: '/work/pantry', goal: 'Secret plan for the labels' });
       await p.addRule({ text: 'Secret standing rule for the labels', scope: 'all' });
@@ -342,7 +342,7 @@ import * as entry from '../src/index.ts';
       expect((await p.event(OTHER, ev('r1', 'UserPromptSubmit', { prompt: 'what did we decide about the labels last week' }))).text).toContain('Secret plan');
     });
 
-    it('a session belongs to the grant that opened it', async () => {
+    test('a session belongs to the grant that opened it', async () => {
       const p = person();
       await p.event(CC, ev('shared', 'UserPromptSubmit', { prompt: 'first prompt of the owner session' }));
       await p.event(OTHER, ev('shared', 'UserPromptSubmit', { prompt: 'always push straight to main please' }));
@@ -393,7 +393,7 @@ import * as entry from '../src/index.ts';
   }
 
   describe('isolation', () => {
-    it('a second person using the first person ids and keys sees and changes nothing of theirs', async () => {
+    test('a second person using the first person ids and keys sees and changes nothing of theirs', async () => {
       const a = await person(1, 'iso');
       const b = await person(2, 'iso');
       await writeAll(a);
@@ -430,7 +430,7 @@ import * as entry from '../src/index.ts';
       expect(marks(await dump(b))).toEqual(new Set([b.mark]));
     });
 
-    it('50 people with 20 random operations each find only their own marks', async () => {
+    test('50 people with 20 random operations each find only their own marks', async () => {
       let seed = 20261126;
       const rand = (n: number) => {
         seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -495,7 +495,7 @@ import * as entry from '../src/index.ts';
   }
 
   describe('open endpoints', () => {
-    it('registration allows 10 calls a minute per address and leaves the other classes alone', async () => {
+    test('registration allows 10 calls a minute per address and leaves the other classes alone', async () => {
       await awayFromMinuteEdge();
       const ip = '203.0.113.10';
       expect((await statuses(10, () => register(ip))).filter((s) => s === 429)).toEqual([]);
@@ -505,7 +505,7 @@ import * as entry from '../src/index.ts';
       expect((await signIn(ip, 0)).status).not.toBe(429);
     });
 
-    it('the sign in routes allow 60 calls a minute per address', async () => {
+    test('the sign in routes allow 60 calls a minute per address', async () => {
       await awayFromMinuteEdge();
       const ip = '203.0.113.20';
       expect((await statuses(60, (i) => signIn(ip, i))).filter((s) => s === 429)).toEqual([]);
@@ -515,7 +515,7 @@ import * as entry from '../src/index.ts';
       expect((await token(ip)).status).not.toBe(429);
     });
 
-    it('the token route allows 120 calls a minute per address', async () => {
+    test('the token route allows 120 calls a minute per address', async () => {
       await awayFromMinuteEdge();
       const ip = '203.0.113.30';
       expect((await statuses(120, () => token(ip))).filter((s) => s === 429)).toEqual([]);
@@ -524,14 +524,14 @@ import * as entry from '../src/index.ts';
       expect((await signIn(ip, 0)).status).not.toBe(429);
     });
 
-    it('the page API, the MCP endpoint and discovery are not limited per address', async () => {
+    test('the page API, the MCP endpoint and discovery are not limited per address', async () => {
       const ip = '203.0.113.40';
       for (let i = 0; i < 130; i++) expect((await send('/.well-known/oauth-authorization-server', { headers: from(ip) })).status).toBe(200);
       expect((await send('/api/me', { headers: from(ip) })).status).toBe(401);
       expect((await send('/mcp', { method: 'POST', headers: from(ip, { 'Content-Type': 'application/json' }), body: '{}' })).status).toBe(401);
     });
 
-    it('a registered client that is never used expires after 30 days', async () => {
+    test('a registered client that is never used expires after 30 days', async () => {
       const r = await register('203.0.113.9');
       const id = ((await r.json()) as { client_id: string }).client_id;
       const key = (await env.OAUTH_KV.list({ prefix: `client:${id}` })).keys[0];
@@ -541,7 +541,7 @@ import * as entry from '../src/index.ts';
       expect(left).toBeLessThanOrEqual(CLIENT_TTL + 5);
     });
 
-    it('the entry file exports only the handler and the object classes, since the runtime reads every other export as a handler', () => {
+    test('the entry file exports only the handler and the object classes, since the runtime reads every other export as a handler', () => {
       expect(Object.keys(entry).sort()).toEqual(['Person', 'Registry', 'default']);
     });
   });

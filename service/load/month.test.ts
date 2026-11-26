@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { it, expect, vi } from 'vitest';
+import { test, expect, vi } from 'vitest';
 import { PROJECTS, month, type Label } from '../../core/test/month.ts';
 import type { CardBody, Item } from '../../core/src/index.ts';
 import { caller, devSignIn, open, send } from '../test/helpers.ts';
@@ -12,7 +12,7 @@ function text(b: CardBody): string {
   return JSON.stringify(b).toLowerCase().replace(/\s+/g, ' ');
 }
 
-it(`a month of use on seed ${SEED}`, async () => {
+test(`a month of use on seed ${SEED}`, async () => {
   const m = month(SEED);
   const name = `month-${SEED}-${crypto.randomUUID().slice(0, 6)}`;
   const stub = env.PERSON.getByName(`dev-${name}`);

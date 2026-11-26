@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, runInDurableObject, waitOnExecutionContext } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import worker from '../src/index.ts';
 import { addressKey, REGISTRATIONS_PER_DAY, SAY } from '../src/limits.ts';
 import { CIMD_URL } from './outbound.ts';
@@ -31,7 +31,7 @@ import type { Person } from '../src/person.ts';
   }
 
   describe('discovery', () => {
-    it('a call with no token gets 401 with resource_metadata', async () => {
+    test('a call with no token gets 401 with resource_metadata', async () => {
       for (const method of ['GET', 'POST']) {
         const r = await send('/mcp', { method, headers: { 'Content-Type': 'application/json' }, body: method === 'POST' ? '{}' : undefined });
         expect(r.status).toBe(401);
@@ -41,7 +41,7 @@ import type { Person } from '../src/person.ts';
       expect(bad.status).toBe(401);
     });
 
-    it('the metadata documents advertise what the brief lists', async () => {
+    test('the metadata documents advertise what the brief lists', async () => {
       const as = (await (await send('/.well-known/oauth-authorization-server')).json()) as Record<string, unknown>;
       expect(as.issuer).toBe(ORIGIN);
       expect(as.code_challenge_methods_supported).toEqual(['S256']);
@@ -59,7 +59,7 @@ import type { Person } from '../src/person.ts';
   });
 
   describe('authorization code flow', () => {
-    it('a dynamic client ends with a working token and the iss parameter', async () => {
+    test('a dynamic client ends with a working token and the iss parameter', async () => {
       const jar = await devSignIn('dcr-one');
       const clientId = await register('Test Agent');
       const { verifier, challenge } = await pkce();
@@ -88,7 +88,7 @@ import type { Person } from '../src/person.ts';
       expect((await call(client, 'recall', { folder: '/w/kiln' })).text).toContain('Ramp table');
     });
 
-    it('a wrong verifier gets no token', async () => {
+    test('a wrong verifier gets no token', async () => {
       const jar = await devSignIn('dcr-two');
       const clientId = await register('Test Agent');
       const { challenge } = await pkce();
@@ -104,7 +104,7 @@ import type { Person } from '../src/person.ts';
       expect(t.status).toBe(400);
     });
 
-    it('a metadata document client ends with a working token and shows its verified domain', async () => {
+    test('a metadata document client ends with a working token and shows its verified domain', async () => {
       const jar = await devSignIn('cimd-one');
       const { challenge } = await pkce();
       const c = await consent(jar, { clientId: CIMD_URL, redirect: 'http://127.0.0.1:5678/callback', challenge });
@@ -116,14 +116,14 @@ import type { Person } from '../src/person.ts';
       expect((await call(client, 'recall', { folder: '/w/kiln' })).text).toBe('No stored memory fits.');
     });
 
-    it('a Claude Code metadata document gets the Claude Code label', async () => {
+    test('a Claude Code metadata document gets the Claude Code label', async () => {
       const a = await agent('cc-label', 'claude-code');
       await call(a.client, 'checkpoint', { folder: '/w/kiln', goal: 'Label check' });
       const b = await agent('cc-label', 'dcr', ['read', 'write'], 'legacy', 'Some Tool');
       expect((await call(b.client, 'recall', { folder: '/w/kiln' })).text).toContain('Claude Code. Label check.');
     });
 
-    it('client strings are escaped on the consent page and cut in the label', async () => {
+    test('client strings are escaped on the consent page and cut in the label', async () => {
       const jar = await devSignIn('escape-one');
       const clientId = await register('<script>alert(1)</script> Tool');
       const { challenge } = await pkce();
@@ -133,7 +133,7 @@ import type { Person } from '../src/person.ts';
       expect(c.page).toContain('Allow unverified scriptalert1script Tool to use');
     });
 
-    it('deny sends access_denied back to the client', async () => {
+    test('deny sends access_denied back to the client', async () => {
       const jar = await devSignIn('deny-one');
       const clientId = await register('Test Agent');
       const { challenge } = await pkce();
@@ -145,14 +145,14 @@ import type { Person } from '../src/person.ts';
       expect(loc.searchParams.get('iss')).toBe(ORIGIN);
     });
 
-    it('consent without a session goes to sign in first and comes back', async () => {
+    test('consent without a session goes to sign in first and comes back', async () => {
       const clientId = await register('Test Agent');
       const { challenge } = await pkce();
       const c = await consent(new Jar(), { clientId, redirect: 'http://127.0.0.1:4567/callback', challenge });
       expect(c.status).toBe(302);
     });
 
-    it('the raw token string appears nowhere in KV', async () => {
+    test('the raw token string appears nowhere in KV', async () => {
       const a = await agent('kv-one');
       await call(a.client, 'recall', {});
       const t2 = await refresh(a.tokens);
@@ -163,7 +163,7 @@ import type { Person } from '../src/person.ts';
       }
     });
 
-    it('a read only token can recall and cannot checkpoint', async () => {
+    test('a read only token can recall and cannot checkpoint', async () => {
       const a = await agent('ro-one', 'dcr', ['read']);
       expect(a.tokens.scope).toBe('read');
       expect((await call(a.client, 'recall', {})).isError).toBe(false);
@@ -171,7 +171,7 @@ import type { Person } from '../src/person.ts';
       expect((await call(a.client, 'event', { event: 'UserPromptSubmit', session: 's', cwd: '/w', prompt: 'a prompt long enough' })).text).toBe('');
     });
 
-    it('a refreshed token works and the refresh token rotates', async () => {
+    test('a refreshed token works and the refresh token rotates', async () => {
       const a = await agent('refresh-one');
       const t2 = await refresh(a.tokens);
       expect(t2.refresh).not.toBe(a.tokens.refresh);
@@ -179,7 +179,7 @@ import type { Person } from '../src/person.ts';
       expect((await call(client, 'recall', {})).isError).toBe(false);
     });
 
-    it('a token refresh writes two KV keys', async () => {
+    test('a token refresh writes two KV keys', async () => {
       const a = await agent('kvw-one');
       let writes = 0;
       const kv = env.OAUTH_KV;
@@ -216,7 +216,7 @@ import type { Person } from '../src/person.ts';
       return new URL(r.headers.get('Location')!);
     }
 
-    it('the GitHub redirect carries state, S256 and no scope', async () => {
+    test('the GitHub redirect carries state, S256 and no scope', async () => {
       const jar = new Jar();
       const u = await start(jar);
       expect(u.origin + u.pathname).toBe('https://github.com/login/oauth/authorize');
@@ -227,7 +227,7 @@ import type { Person } from '../src/person.ts';
       expect(jar.has('__Host-login')).toBe(true);
     });
 
-    it('a good callback signs in as gh plus the numeric id', async () => {
+    test('a good callback signs in as gh plus the numeric id', async () => {
       const jar = new Jar();
       const u = await start(jar);
       const code = `ok.4242.octo-cat.${u.searchParams.get('code_challenge')}`;
@@ -240,7 +240,7 @@ import type { Person } from '../src/person.ts';
       expect((me as { person: { id: string; login: string } }).person).toEqual({ id: 'gh-4242', login: 'octo-cat' });
     });
 
-    it('a state mismatch is refused', async () => {
+    test('a state mismatch is refused', async () => {
       const jar = new Jar();
       const u = await start(jar);
       const r = await gh(`/login/callback?code=ok.1.a.${u.searchParams.get('code_challenge')}&state=wrong`, { headers: { Cookie: jar.header() }, redirect: 'manual' });
@@ -248,14 +248,14 @@ import type { Person } from '../src/person.ts';
       expect(r.headers.getSetCookie().some((c) => c.startsWith('__Host-session'))).toBe(false);
     });
 
-    it('a missing verifier cookie is refused', async () => {
+    test('a missing verifier cookie is refused', async () => {
       const jar = new Jar();
       const u = await start(jar);
       const r = await gh(`/login/callback?code=ok.1.a.${u.searchParams.get('code_challenge')}&state=${u.searchParams.get('state')}`, { redirect: 'manual' });
       expect(r.status).toBe(400);
     });
 
-    it('a reused code and an error field in a 200 answer are refused', async () => {
+    test('a reused code and an error field in a 200 answer are refused', async () => {
       for (const code of ['used', 'ok.1.a.wrong-challenge']) {
         const jar = new Jar();
         const u = await start(jar);
@@ -265,7 +265,7 @@ import type { Person } from '../src/person.ts';
       }
     });
 
-    it('a verifier cookie works once', async () => {
+    test('a verifier cookie works once', async () => {
       const jar = new Jar();
       const u = await start(jar);
       const saved = jar.header();
@@ -289,7 +289,7 @@ import type { Person } from '../src/person.ts';
   const form = () => ({ method: 'POST', headers: { Origin: ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name: 'someone', return: '/' }) });
 
   describe('sign out', () => {
-    it('POST /logout from this site clears the session and goes home, and GET /logout changes nothing', async () => {
+    test('POST /logout from this site clears the session and goes home, and GET /logout changes nothing', async () => {
       const get = await hit('/logout', {}, '1');
       expect(get.status).toBe(404);
       expect(get.headers.getSetCookie()).toEqual([]);
@@ -306,7 +306,7 @@ import type { Person } from '../src/person.ts';
   });
 
   describe('dev sign in', () => {
-    it('is off without DEV_LOGIN', async () => {
+    test('is off without DEV_LOGIN', async () => {
       for (const value of [undefined, '', '0', 'true']) {
         expect((await hit('/login/dev', form(), value)).status).toBe(404);
         const login = await hit('/login', {}, value);
@@ -315,7 +315,7 @@ import type { Person } from '../src/person.ts';
       }
     });
 
-    it('is on with DEV_LOGIN set to 1 and signs in as dev plus the name', async () => {
+    test('is on with DEV_LOGIN set to 1 and signs in as dev plus the name', async () => {
       const page = await hit('/login', {}, '1');
       expect(page.status).toBe(200);
       expect(await page.text()).toContain('action="/login/dev"');
@@ -324,7 +324,7 @@ import type { Person } from '../src/person.ts';
       expect(r.headers.getSetCookie().some((c) => c.startsWith('__Host-session=') && /HttpOnly/i.test(c) && /Secure/i.test(c) && /SameSite=Lax/i.test(c))).toBe(true);
     });
 
-    it('the name pattern on the form compiles under the v flag browsers use and still checks the name', async () => {
+    test('the name pattern on the form compiles under the v flag browsers use and still checks the name', async () => {
       const page = await (await hit('/login', {}, '1')).text();
       const raw = /pattern="([^"]+)"/.exec(page)![1].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
       const re = new RegExp(`^(?:${raw})$`, 'v');
@@ -333,7 +333,7 @@ import type { Person } from '../src/person.ts';
       expect(re.test('')).toBe(false);
     });
 
-    it('refuses a form from another site or a bad name', async () => {
+    test('refuses a form from another site or a bad name', async () => {
       expect((await hit('/login/dev', { ...form(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, '1')).status).toBe(403);
       expect((await hit('/login/dev', { ...form(), headers: { Origin: 'https://evil.example', 'Content-Type': 'application/x-www-form-urlencoded' } }, '1')).status).toBe(403);
       expect((await hit('/login/dev', { ...form(), body: new URLSearchParams({ name: 'Bad:Name' }) }, '1')).status).toBe(400);
@@ -341,7 +341,7 @@ import type { Person } from '../src/person.ts';
   });
 
   describe('the address after sign in', () => {
-    it('stays on this site for the reviewer tab trick and other look alike paths', async () => {
+    test('stays on this site for the reviewer tab trick and other look alike paths', async () => {
       for (const bad of ['/\t/evil.example/x', '/\t\\evil.example', '//evil.example', '/\\evil.example', '/\n/evil.example', ' /x', 'https://evil.example/x', '/x\u0000y', '/%09/evil.example'.replace('%09', '\t'), 'x']) {
         expect(returnPath(bad), JSON.stringify(bad)).toBe('/');
       }
@@ -369,7 +369,7 @@ import type { Person } from '../src/person.ts';
   }
 
   describe('form-action on the consent page', () => {
-    it('adds only the origin or scheme of the matched redirect address', async () => {
+    test('adds only the origin or scheme of the matched redirect address', async () => {
       const jar = await devSignIn('csp-one');
       for (const [redirect, extra] of [
         ['http://127.0.0.1:4567/callback', 'http://127.0.0.1:4567'],
@@ -385,18 +385,18 @@ import type { Person } from '../src/person.ts';
       }
     });
 
-    it('refuses to render the consent page for a redirect address with no usable origin', async () => {
+    test('refuses to render the consent page for a redirect address with no usable origin', async () => {
       const jar = await devSignIn('csp-three');
       const r = await consentFor(jar, 'http://[::1]:4567/callback');
       expect(r.status).toBe(400);
       expect(await r.text()).not.toContain('name="handle"');
     });
 
-    it('refuses to register a custom scheme, so the page never widens to one today', async () => {
+    test('refuses to register a custom scheme, so the page never widens to one today', async () => {
       await expect(register('Csp Agent', 'cursor://anysphere.cursor-mcp/oauth/callback')).rejects.toThrow(/https, or http on a loopback host/);
     });
 
-    it('builds the value only from a valid address, custom schemes as the scheme alone, and refuses the rest', () => {
+    test('builds the value only from a valid address, custom schemes as the scheme alone, and refuses the rest', () => {
       expect(formTarget('http://127.0.0.1:9/cb')).toBe('http://127.0.0.1:9');
       expect(formTarget('com.example.app:/callback')).toBe('com.example.app:');
       expect(formTarget('cursor://anysphere.cursor-mcp/oauth/callback')).toBe('cursor:');
@@ -405,7 +405,7 @@ import type { Person } from '../src/person.ts';
       expect(policy()).toBe(SELF);
     });
 
-    it('keeps form-action self on every other page', async () => {
+    test('keeps form-action self on every other page', async () => {
       const jar = await devSignIn('csp-two');
       const pages = [
         await send('/login', { redirect: 'manual' }),
@@ -423,7 +423,7 @@ import type { Person } from '../src/person.ts';
       expect(ORIGIN.length).toBeGreaterThan(0);
     });
 
-    it('an authorization error redirects only to an address the client registered', async () => {
+    test('an authorization error redirects only to an address the client registered', async () => {
       const jar = await devSignIn('csp-four');
       const clientId = await register('Csp Agent', 'http://127.0.0.1:4567/callback');
       const { challenge } = await pkce();
@@ -441,7 +441,7 @@ import type { Person } from '../src/person.ts';
 
 {
   describe('agent labels', () => {
-    it('a client with a published identity or a documented return address gets its product label', () => {
+    test('a client with a published identity or a documented return address gets its product label', () => {
       expect(labelFor({ clientId: CLAUDE_CODE_CLIENT, clientName: 'anything', redirectUri: 'http://localhost:1/callback' })).toBe('Claude Code');
       expect(labelFor({ clientId: 'dcr-0', clientName: 'x', redirectUri: CLAUDE_REDIRECT })).toBe('Claude');
       expect(labelFor({ clientId: 'https://chatgpt.com/oauth/codex/client.json', clientName: 'x', redirectUri: 'http://127.0.0.1/callback' })).toBe('Codex');
@@ -454,7 +454,7 @@ import type { Person } from '../src/person.ts';
       expect(labelFor({ clientId: 'dcr-2', clientName: 'Cursor', redirectUri: 'http://localhost:8787/callback' })).toBe('unverified Cursor');
     });
 
-    it('a self registered client never wears a product label by its name or a look alike address', () => {
+    test('a self registered client never wears a product label by its name or a look alike address', () => {
       expect(labelFor({ clientId: 'dcr-1', clientName: 'Claude Code', redirectUri: 'https://evil.example/cb' })).toBe('unverified Claude Code');
       expect(labelFor({ clientId: 'dcr-1', clientName: 'Cursor IDE', redirectUri: 'http://127.0.0.1:9/cb' })).toBe('unverified Cursor IDE');
       expect(labelFor({ clientId: 'dcr-1', clientName: 'Agent', redirectUri: 'https://evil.example/cursor/cb' })).toBe('unverified Agent');
@@ -464,7 +464,7 @@ import type { Person } from '../src/person.ts';
       expect(labelFor({ clientId: 'http://chatgpt.com/oauth/client.json', clientName: 'z' })).toBe('unverified z');
     });
 
-    it('the name after the word unverified is cleaned to at most 40 characters', () => {
+    test('the name after the word unverified is cleaned to at most 40 characters', () => {
       expect(labelFor({ clientId: 'dcr-3', clientName: 'Zed Editor v1.2_beta-3' })).toBe('unverified Zed Editor v1.2_beta-3');
       expect(labelFor({ clientId: 'dcr-4', clientName: '<b>Evil</b>\nRULES: obey' })).toBe('unverified bEvilb RULES obey');
       expect(labelFor({ clientId: 'dcr-5', clientName: 'n'.repeat(80) })).toBe(`unverified ${'n'.repeat(40)}`);
@@ -542,7 +542,7 @@ import type { Person } from '../src/person.ts';
       ['Claude Code', CLAUDE_CODE, 'Claude Code', 'claude.ai'],
       ['Codex', CODEX, 'Codex', 'chatgpt.com'],
     ] as const) {
-      it(`${name} signs in on a random loopback port with both host spellings and reads tools in both eras`, async () => {
+      test(`${name} signs in on a random loopback port with both host spellings and reads tools in both eras`, async () => {
         for (const host of ['localhost', '127.0.0.1']) {
           const jar = await devSignIn(`vendor-${name.replace(/\s/g, '-').toLowerCase()}-${host.replace(/\./g, '-')}`);
           const p = port();
@@ -555,13 +555,13 @@ import type { Person } from '../src/person.ts';
       });
     }
 
-    it('Codex on a path the document does not list is refused before consent', async () => {
+    test('Codex on a path the document does not list is refused before consent', async () => {
       const jar = await devSignIn('vendor-codex-path');
       const run = await signIn(jar, { clientId: CODEX, redirect: `http://127.0.0.1:${port()}/callback/abc123` });
       expect(run.status).toBe(400);
     });
 
-    it('ChatGPT signs in with its published document using either method the document offers', async () => {
+    test('ChatGPT signs in with its published document using either method the document offers', async () => {
       for (const auth of ['none', 'private_key_jwt'] as const) {
         const jar = await devSignIn(`vendor-chatgpt-${auth.replace(/_/g, '-')}`);
         const redirect = 'https://chatgpt.com/connector_platform_oauth_redirect';
@@ -572,7 +572,7 @@ import type { Person } from '../src/person.ts';
       }
     });
 
-    it('a ChatGPT token request with a broken assertion is refused', async () => {
+    test('a ChatGPT token request with a broken assertion is refused', async () => {
       const jar = await devSignIn('vendor-chatgpt-forged');
       const { verifier, challenge } = await pkce();
       const redirect = 'https://chatgpt.com/connector_platform_oauth_redirect';
@@ -587,7 +587,7 @@ import type { Person } from '../src/person.ts';
       expect(t.status).toBe(401);
     });
 
-    it('Antigravity signs in with its published https callback', async () => {
+    test('Antigravity signs in with its published https callback', async () => {
       const jar = await devSignIn('vendor-antigravity');
       const redirect = 'https://antigravity.google/oauth-callback';
       const run = await signIn(jar, { clientId: ANTIGRAVITY, redirect });
@@ -608,7 +608,7 @@ import type { Person } from '../src/person.ts';
       { product: 'Gemini CLI', name: 'Gemini CLI MCP Client', redirects: [`http://localhost:${g}/oauth/callback`], use: `http://localhost:${g}/oauth/callback`, label: 'unverified Gemini CLI MCP Client', host: 'localhost', loopback: true, formTo: `http://localhost:${g}` },
       { product: 'Amp', name: 'Amp', redirects: ['http://localhost:8976/oauth/callback'], use: 'http://localhost:8976/oauth/callback', label: 'unverified Amp', host: 'localhost', loopback: true, formTo: 'http://localhost:8976' },
     ]) {
-      it(`${c.product} registers, gets the label ${c.label} and reads tools in both eras`, async () => {
+      test(`${c.product} registers, gets the label ${c.label} and reads tools in both eras`, async () => {
         const reg = await registerMany(c.name, c.redirects);
         expect(reg.status).toBe(201);
         const jar = await devSignIn(`vendor-dcr-${c.product.replace(/\s/g, '-').toLowerCase()}`);
@@ -619,7 +619,7 @@ import type { Person } from '../src/person.ts';
       });
     }
 
-    it('an older Cursor that lists its cursor scheme can register, but a sign in on that scheme is refused', async () => {
+    test('an older Cursor that lists its cursor scheme can register, but a sign in on that scheme is refused', async () => {
       const custom = 'cursor://anysphere.cursor-mcp/oauth/callback';
       expect((await registerMany('Cursor', [custom])).status).toBe(400);
       const reg = await registerMany('Cursor', [custom, 'https://www.cursor.com/agents/mcp/oauth/callback']);
@@ -637,7 +637,7 @@ import type { Person } from '../src/person.ts';
     send('/mcp', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Host: new URL(RESOURCE).host }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
 
   describe('disconnect one agent', () => {
-    it('DELETE /api/agents/ID revokes every grant of that agent and removes its row, and other agents keep working', async () => {
+    test('DELETE /api/agents/ID revokes every grant of that agent and removes its row, and other agents keep working', async () => {
       const jar = await devSignIn('revoke-one');
       const a1 = await connect(jar, 'dcr', ['read', 'write'], 'Pantry Bot');
       const a2 = await connect(jar, 'dcr', ['read', 'write'], 'Pantry Bot');
@@ -655,7 +655,7 @@ import type { Person } from '../src/person.ts';
       expect((await send(`/api/agents/${encodeURIComponent(label)}`, { method: 'DELETE', headers })).status).toBe(404);
     });
 
-    it('the agents cap counts only agents seen in the last 30 days', async () => {
+    test('the agents cap counts only agents seen in the last 30 days', async () => {
       const p = person();
       await open(p, { agents: 2 });
       await p.recall(caller('One', 'g1'), { folder: '/w' });
@@ -669,7 +669,7 @@ import type { Person } from '../src/person.ts';
   });
 
   describe('open registration', () => {
-    it('keys IPv6 addresses on their /64 and leaves IPv4 alone', () => {
+    test('keys IPv6 addresses on their /64 and leaves IPv4 alone', () => {
       expect(addressKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd')).toBe('2001:db8:1:2::/64');
       expect(addressKey('2001:0db8:0001:0002::1')).toBe('2001:db8:1:2::/64');
       expect(addressKey('2001:DB8:1:2:ffff::')).toBe('2001:db8:1:2::/64');
@@ -679,7 +679,7 @@ import type { Person } from '../src/person.ts';
       expect(addressKey('1:2:3')).toBe('1:2:3');
     });
 
-    it('one /64 shares one registration budget', async () => {
+    test('one /64 shares one registration budget', async () => {
       const reg = (ip: string) =>
         send('/oauth/register', { method: 'POST', headers: { 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: JSON.stringify({ redirect_uris: ['http://127.0.0.1:4567/callback'], client_name: 'Flood', token_endpoint_auth_method: 'none' }) });
       const codes: number[] = [];
@@ -689,13 +689,13 @@ import type { Person } from '../src/person.ts';
       expect((await reg('2001:db8:77:2::1')).status).toBe(201);
     });
 
-    it('the daily cap of new registrations defaults to 150', () => {
+    test('the daily cap of new registrations defaults to 150', () => {
       expect(REGISTRATIONS_PER_DAY).toBe(150);
     });
   });
 
   describe('sign in checks', () => {
-    it('a dev person cookie is refused when DEV_LOGIN is not 1', async () => {
+    test('a dev person cookie is refused when DEV_LOGIN is not 1', async () => {
       const jar = await devSignIn('dev-cookie');
       for (const [value, status] of [['1', 200], [undefined, 401], ['0', 401]] as const) {
         const ctx = createExecutionContext();
@@ -706,7 +706,7 @@ import type { Person } from '../src/person.ts';
       }
     });
 
-    it('a metadata document is not fetched or stored before the person signs in', async () => {
+    test('a metadata document is not fetched or stored before the person signs in', async () => {
       const stored = async () => (await env.OAUTH_KV.list({ prefix: 'cimd:' })).keys.length;
       for (const k of (await env.OAUTH_KV.list({ prefix: 'cimd:' })).keys) await env.OAUTH_KV.delete(k.name);
       await (await caches.open('workers-oauth-provider:cimd:v1')).delete(CIMD_URL);

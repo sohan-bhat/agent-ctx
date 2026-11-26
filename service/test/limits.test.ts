@@ -1,5 +1,5 @@
 import { evictDurableObject, runInDurableObject } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import type { Caller, Person } from '../src/person.ts';
 import { MAX, RESERVE, SAY } from '../src/limits.ts';
 import { awayFromMinuteEdge, caller, KILN, open, person, sql } from './helpers.ts';
@@ -26,7 +26,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
   }
 
   describe('limits', () => {
-    it('the 61st call in a minute gets the plain sentence and stores nothing', async () => {
+    test('the 61st call in a minute gets the plain sentence and stores nothing', async () => {
       const p = person();
       await awayFromMinuteEdge();
       for (let i = 0; i < MAX.perMinute; i++) expect((await p.recall(A, KILN)).ok).toBe(true);
@@ -35,7 +35,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(await count(p)).toBe(0);
     });
 
-    it('the 501st stored item in a day gets the plain sentence', async () => {
+    test('the 501st stored item in a day gets the plain sentence', async () => {
       const p = person();
       await open(p, { storedPerDay: MAX.storedPerDay });
       for (let i = 0; i < MAX.storedPerDay; i++) expect((await p.checkpoint(A, { ...KILN, goal: `card ${i}` })).ok).toBe(true);
@@ -43,13 +43,13 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(await count(p)).toBe(MAX.storedPerDay);
     });
 
-    it('a 50 KB checkpoint gets the plain sentence and stores nothing', async () => {
+    test('a 50 KB checkpoint gets the plain sentence and stores nothing', async () => {
       const p = person();
       expect(await p.checkpoint(A, { ...KILN, goal: filler(1, 50 * 1024) })).toEqual({ ok: false, text: SAY.size });
       expect(await count(p)).toBe(0);
     });
 
-    it('a 6 KB checkpoint is fitted to 2 KB', async () => {
+    test('a 6 KB checkpoint is fitted to 2 KB', async () => {
       const p = person();
       const r = await p.checkpoint(A, { ...KILN, goal: 'Fit me', open: Array.from({ length: 30 }, (_, i) => filler(i, 200)) });
       expect(r.ok).toBe(true);
@@ -57,13 +57,13 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(bytes).toBeLessThanOrEqual(2048);
     });
 
-    it('the 21st agent gets the plain sentence', async () => {
+    test('the 21st agent gets the plain sentence', async () => {
       const p = person();
       for (let i = 0; i < MAX.agents; i++) expect((await p.recall(caller(`Agent ${i}`, `g-${i}`), KILN)).ok).toBe(true);
       expect(await p.recall(caller('Agent 20', 'g-20'), KILN)).toEqual({ ok: false, text: SAY.agents });
     });
 
-    it('a store pushed past 10 MB with pinned items is refused and stays under 10 MB', async () => {
+    test('a store pushed past 10 MB with pinned items is refused and stays under 10 MB', async () => {
       const p = person();
       const out = await runInDurableObject(p, async (x: Person) => {
         x.limits.max = { ...x.limits.max, perMinute: 1e9, perDay: 1e9, storedPerDay: 1e9 };
@@ -85,7 +85,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(out.sum).toBeGreaterThan(TEN_MB - 4096);
     });
 
-    it('30 MB of checkpoints never leave more than 10 MB stored at any step', async () => {
+    test('30 MB of checkpoints never leave more than 10 MB stored at any step', async () => {
       const p = person();
       const out = await runInDurableObject(p, async (x: Person) => {
         x.limits.max = { ...x.limits.max, perMinute: 1e9, perDay: 1e9, storedPerDay: 1e9 };
@@ -144,7 +144,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
   }
 
   describe('rows kept low without changing behaviour', () => {
-    it('a restart never loses a call and counts at most the reserve more', async () => {
+    test('a restart never loses a call and counts at most the reserve more', async () => {
       const p = person();
       await awayFromMinuteEdge();
       for (let i = 0; i < 10; i++) expect((await p.recall(A, KILN)).ok).toBe(true);
@@ -160,7 +160,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(await p.recall(A, KILN)).toEqual({ ok: false, text: SAY.minute });
     });
 
-    it('a stored item writes the counters with it', async () => {
+    test('a stored item writes the counters with it', async () => {
       const p = person();
       await awayFromMinuteEdge();
       for (let i = 0; i < 5; i++) await p.recall(A, KILN);
@@ -173,7 +173,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(me.bytes).toBeGreaterThan(0);
     });
 
-    it('a call that crashes the object mid way is still counted, so crashing calls reach the minute limit', async () => {
+    test('a call that crashes the object mid way is still counted, so crashing calls reach the minute limit', async () => {
       const id = person().id;
       await awayFromMinuteEdge();
       let crashes = 0;
@@ -204,7 +204,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(crashes).toBeLessThanOrEqual(MAX.perMinute);
     });
 
-    it('the pool cache matches the store after every kind of write', async () => {
+    test('the pool cache matches the store after every kind of write', async () => {
       const p = person();
       await open(p);
       await runInDurableObject(p, (x: Person) => {
@@ -235,7 +235,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(read).toBe(0);
     });
 
-    it('a cold first recall prints exactly what a warm one prints', async () => {
+    test('a cold first recall prints exactly what a warm one prints', async () => {
       for (const shape of [0, 1, 2, 3, 4]) {
         const cold = person();
         const warm = person();
@@ -330,7 +330,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
     return '';
   }
 
-  it('a base person a year in, in ten sittings that each start cold, stays under 300 rows written and 6,000 rows read a day', async () => {
+  test('a base person a year in, in ten sittings that each start cold, stays under 300 rows written and 6,000 rows read a day', async () => {
     const stub = person('day');
     await seed(stub);
     await evictDurableObject(stub);
@@ -403,7 +403,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
   }
 
   describe('measured numbers', () => {
-    it('rows per call and local recall time on a person with 400 items', async () => {
+    test('rows per call and local recall time on a person with 400 items', async () => {
       const stub = person('measure');
       await open(stub);
       await runInDurableObject(stub, async (p: Person) => {

@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, runInDurableObject, waitOnExecutionContext } from 'cloudflare:test';
-import { expect, it } from 'vitest';
+import { expect, test } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import worker from '../src/index.ts';
@@ -156,7 +156,7 @@ function request(p: Who, i: number): { name: string; args: Record<string, unknow
   }
 }
 
-it('1,000 people with 100 requests each never read another person and the sweep finds no foreign marker', async () => {
+test('1,000 people with 100 requests each never read another person and the sweep finds no foreign marker', async () => {
   const started = Date.now();
   const loads = [await loadavg('start')];
   const people: Who[] = [];
