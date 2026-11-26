@@ -4,6 +4,7 @@ import { recall } from '../src/recall.ts';
 import type { Item } from '../src/model.ts';
 import * as one from './corpus.ts';
 import * as two from './corpus2.ts';
+import * as twoB from './corpus2b.ts';
 import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
 
@@ -16,6 +17,8 @@ export const SETS: Record<'set1' | 'set2', TestSet> = {
   set1: { items: one.ITEMS, queries: one.QUERIES, projects: one.PROJECTS, now: one.NOW },
   set2: { items: two.ITEMS, queries: two.QUERIES, projects: two.PROJECTS, now: two.NOW },
 };
+
+export const SET2B: TestSet = { items: two.ITEMS, queries: twoB.QUERIES, projects: two.PROJECTS, now: two.NOW };
 
 export const SET3: TestSet = { items: three.ITEMS, queries: three.QUERIES, projects: three.PROJECTS, now: three.NOW };
 
@@ -63,7 +66,7 @@ function isMain(): boolean {
 }
 
 if (isMain()) {
-  const all: [string, TestSet][] = [['set1', SETS.set1], ['set2', SETS.set2], ['set3', SET3], ['set4', SET4]];
+  const all: [string, TestSet][] = [['set1', SETS.set1], ['set2', SETS.set2], ['set3', SET3], ['set4', SET4], ['set2b', SET2B]];
   for (const [name, set] of all) {
     const s = measure(run(set));
     console.log(`${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
