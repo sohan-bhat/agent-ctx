@@ -13,7 +13,7 @@ export function AgentMenu({ agent, seen, onDisconnect }: { agent: Agent; seen: s
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button ref={trigger} type="button" className="-mx-1 inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-sm px-1 text-left hover:bg-accent sm:min-h-7" aria-label={`${agent.label}, seen ${seen}`}>
+          <button ref={trigger} type="button" className="-mx-1 inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-sm px-1 text-left hover:bg-accent sm:min-h-7">
             <span translate="no" className="truncate">
               {agent.label}
             </span>
