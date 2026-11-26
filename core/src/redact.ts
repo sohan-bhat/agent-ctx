@@ -1,5 +1,5 @@
 const PATTERNS: RegExp[] = [
-  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g,
+  /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----|$)/g,
   /\b(?:sk|pk|rk)[-_](?:live|test|proj|ant|svcacct)[-_][A-Za-z0-9_-]{12,}/g,
   /\bsk-[A-Za-z0-9_-]{20,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
@@ -12,7 +12,7 @@ const PATTERNS: RegExp[] = [
   /\bhf_[A-Za-z0-9]{30,}/g,
   /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
-  /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@/g,
+  /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/]+:[^\s@/]+@/g,
 ];
 
 const KEYED = /\b(bearer|authorization|token|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey|secret|client[_-]?secret|password|passwd|pwd|private[_-]?key)\b(["'`]?\s*[:=]\s*["'`]?|\s+)([^\s"'`,;]{6,})/gi;

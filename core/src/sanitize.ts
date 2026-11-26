@@ -12,12 +12,12 @@ const TAGS = /[\u{E0000}-\u{E007F}]/gu;
 const CONTROL = /[\u0000-\u0008\u000B-\u001F]/g;
 
 const ROLE_LINE = /^([ \t>*_]*)(system|assistant|developer|user|tool|human)[ \t]*:/gim;
-const ROLE_TAG = /<[ \t]*(\/?)[ \t]*((?:system(?:[-_][a-z0-9]+)*|instructions?|important|developer|assistant|human)(?:[ \t][^<>\n]{0,200})?)[ \t]*(\/?)[ \t]*>/gi;
-const LOWER_TAG = /<[ \t]*(\/?)[ \t]*((?:user|tool(?:[-_](?:call|calls|result|results|use))?|function[-_](?:calls|results)|invoke|parameter)(?:[ \t][^<>\n]{0,200})?)[ \t]*(\/?)[ \t]*>/g;
+const ROLE_TAG = /<[ \t]*(?:(\/)[ \t]*)?((?:system(?:[-_][a-z0-9]+){0,4}|instructions?|important|developer|assistant|human)(?:[ \t\/][^<>\n]{0,200})?)>/gi;
+const LOWER_TAG = /<[ \t]*(?:(\/)[ \t]*)?((?:user|tool(?:[-_](?:call|calls|result|results|use))?|function[-_](?:calls|results)|invoke|parameter)(?:[ \t\/][^<>\n]{0,200})?)>/g;
 const PIPE_TAG = /<[|\uFF5C][ \t]*([a-z_\u2581]{1,30})[ \t]*[|\uFF5C]>/gi;
-const SQUARE_TAG = /\[[ \t]*(\/?)[ \t]*(INST|SYS|SYSTEM)[ \t]*\]/gi;
-const DOUBLE_TAG = /<<[ \t]*(\/?)[ \t]*(SYS|SYSTEM)[ \t]*>>/gi;
-const HEADING = /^([ \t]*)#{1,6}[ \t]*((?:new[ \t]+|system[ \t]+|important[ \t]+)?(?:instructions?|system[ \t]+prompt|prompt)[ \t]*:?[ \t]*)$/gim;
+const SQUARE_TAG = /\[[ \t]*(?:(\/)[ \t]*)?(INST|SYS|SYSTEM)[ \t]*\]/gi;
+const DOUBLE_TAG = /<<[ \t]*(?:(\/)[ \t]*)?(SYS|SYSTEM)[ \t]*>>/gi;
+const HEADING = /^([ \t]*)#{1,6}[ \t]*((?:new[ \t]+|system[ \t]+|important[ \t]+)?(?:instructions?|system[ \t]+prompt|prompt)(?:[ \t]*:)?[ \t]*)$/gim;
 
 const OVERRIDE: RegExp[] = [
   /\bignore\s+(?:all\s+|any\s+)?(?:of\s+)?(?:the\s+|your\s+)?(?:previous|prior|above|earlier|preceding|former|original)\s+(?:instructions?|prompts?|rules?|messages?|directions?|context)\b/i,
@@ -36,17 +36,32 @@ const OVERRIDE: RegExp[] = [
 const INTERP = String.raw`(?:sudo\s+(?:-\S+\s+)*)?(?:env\s+)?(?:sh|bash|zsh|dash|ksh|fish|python[0-9.]*|node|perl|ruby|iex|invoke-expression|powershell|pwsh)\b`;
 
 const SHELL: RegExp[] = [
-  new RegExp(String.raw`\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*${INTERP}`, 'i'),
   /\b(?:source|(?:ba|z|da|k)?sh)\s+<\(\s*(?:curl|wget)\b/i,
   /\beval\s+["']?\$\(\s*(?:curl|wget)\b/i,
-  /\bbase64\s+(?:-d|-D|--decode)\b[^\n]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i,
   /\|\s*sudo\s+(?:-\S+\s+)*(?:ba|z|da|k)?sh\b/i,
   /\biex\s*\(\s*(?:iwr|irm|invoke-webrequest|invoke-restmethod|new-object\s+(?:system\.)?net\.webclient)\b/i,
 ];
 
+const DOWNLOAD = /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b/i;
+const DECODE = /\bbase64\s+(?:-d|-D|--decode)\b/i;
+const PIPE_INTERP = new RegExp(String.raw`\|\s*${INTERP}`, 'i');
+const PIPE_SH = /\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i;
+
+function after(line: string, first: RegExp, then: RegExp): boolean {
+  const m = first.exec(line);
+  return !!m && then.test(line.slice(m.index + m[0].length));
+}
+
+function piped(s: string): boolean {
+  for (const line of s.split('\n')) {
+    if (after(line, DOWNLOAD, PIPE_INTERP) || after(line, DECODE, PIPE_SH)) return true;
+  }
+  return false;
+}
+
 const COMMENT = /<!--[\s\S]*?(?:-->|$)/g;
-const BAD_LINK = /(!?\[[^\]\n]*\])\(\s*<?\s*(?:javascript|data|vbscript)\s*:(?:[^()\n]|\([^()\n]*\))*\)/gi;
-const BAD_REF = /^([ \t]*\[[^\]\n]+\]:)[ \t]*<?(?:javascript|data|vbscript)\s*:\S*/gim;
+const BAD_LINK = /(!?\[[^\[\]\n]{0,200}\])\(\s*(?:<\s*)?(?:javascript|data|vbscript)\s*:(?:[^()\n]|\([^()\n]*\))*\)/gi;
+const BAD_REF = /^([ \t]*\[[^\]\n]{1,200}\]:)[ \t]*(?:<[ \t]*)?(?:javascript|data|vbscript)\s*:\S*/gim;
 
 function count(s: string, re: RegExp): number {
   return s.match(re)?.length ?? 0;
@@ -77,7 +92,7 @@ export function sanitize(text: string): { text: string; flags: Flag[] } {
   if (count(s, TAGS) || count(s, BIDI) || count(s, ZERO_WIDTH) > 2) flags.add('hidden');
   s = s.replace(TAGS, '').replace(BIDI, '').replace(ZERO_WIDTH, '').replace(CONTROL, '');
   if (OVERRIDE.some((re) => re.test(s))) flags.add('override');
-  if (SHELL.some((re) => re.test(s))) flags.add('shell');
+  if (SHELL.some((re) => re.test(s)) || piped(s)) flags.add('shell');
   s = swap(s, COMMENT, '', 'markup', flags);
   s = swap(s, BAD_LINK, '$1', 'markup', flags);
   s = swap(s, BAD_REF, '$1', 'markup', flags);
