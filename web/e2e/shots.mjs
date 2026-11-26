@@ -1,7 +1,8 @@
 import fs from 'node:fs';
-import { browser, context, press, ready, server } from './lib.mjs';
+import path from 'node:path';
+import { browser, context, press, ready, server, web } from './lib.mjs';
 
-const out = process.env.OUT ?? '/Users/sohanb/code/projects/claude-ctx/.work/shots/build-c';
+const out = process.env.OUT ?? path.join(web, '..', '..', '..', 'shots', 'build-c');
 fs.mkdirSync(out, { recursive: true });
 const schemes = (process.env.SCHEMES ?? 'light,dark').split(',');
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
