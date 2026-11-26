@@ -102,10 +102,10 @@ A rule is one instruction from the person that holds in every agent.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `text` | string | yes | The rule as written down |
-| `words` | string | yes | The person's own words that the rule came from |
+| `words` | string | yes | The words agents read. When words is empty, agents read text |
 | `scope` | string | yes | `project` for the rule's own project or `all` for every project |
 | `status` | string | yes | `active`, `pending` or `off`. Only active rules reach agents |
-| `proof` | string | no | How the rule became active. `hook` when the words match a prompt the person typed, `elicit` when the person accepted it inside an agent, `page` when the person added it on the page |
+| `proof` | string | no | How the rule became active. `elicit` when the person accepted the exact line inside an agent, `page` when the person added or accepted it on the page. An older store may hold `hook`, and such a rule reads as pending |
 
 ## Body of a dropped item
 
@@ -178,7 +178,7 @@ These lines are made up. The card, handoff and dropped lines come from an `items
 ```jsonl
 {"id":"5f0c7a1e-2b9d-4e5a-9c41-0d8e6b3a7f21","project":"github.com/example/tide-tables","kind":"card","body":{"goal":"Cache the harbor tide table for offline use","changed":[{"path":"src/tides/cache.ts","what":"new store"}],"decisions":[{"what":"keep 14 days of predictions on the device","why":"boats lose signal past the breakwater"}],"commands":["npm test"],"dead_ends":["service worker cache filled up on old phones"],"open":["clear entries older than two weeks"]},"origin":{"agent":"codex","model":"m-1","machine":"desk","session":"s-41","via":"tool","source":"agent","at":1795132800000},"flags":[],"held":false,"pinned":false,"folded":false,"created":1795132800000}
 {"id":"9a3d2c4b-7e1f-4b6a-8d20-5c9e1f0a4b33","project":"github.com/example/tide-tables","kind":"handoff","body":{"goal":"Offline tide table","done":"Cache and expiry written","next":"Show the age of the cached table in the header","files":["src/tides/cache.ts","src/ui/Header.tsx"],"check":"npm test"},"origin":{"agent":"claude-code","session":"s-42","via":"tool","source":"agent","at":1795219200000},"flags":[],"held":false,"pinned":false,"folded":false,"created":1795219200000}
-{"id":"c41e8b2a-0f6d-4c3e-a9b7-2d5f8e1c6a90","project":"github.com/example/tide-tables","kind":"rule","body":{"text":"Use metres in every reading","words":"always show heights in metres","scope":"project","status":"active","proof":"hook"},"origin":{"agent":"cursor","session":"s-43","via":"hook","source":"person","at":1795305600000},"flags":[],"held":false,"pinned":false,"folded":false,"created":1795305600000}
+{"id":"c41e8b2a-0f6d-4c3e-a9b7-2d5f8e1c6a90","project":"github.com/example/tide-tables","kind":"rule","body":{"text":"Use metres in every reading","words":"always show heights in metres","scope":"project","status":"active","proof":"elicit"},"origin":{"agent":"cursor","session":"g-43","via":"tool","source":"person","at":1795305600000},"flags":[],"held":false,"pinned":false,"folded":false,"created":1795305600000}
 {"id":"e7b5a3c9-1d2f-4e8a-b6c0-9f3a2e7d5b14","project":"github.com/example/tide-tables","kind":"dropped","body":{"label":"file","text":"src/tides/cache.ts","size":18},"origin":{"agent":"claude-code","session":"s-42","via":"hook","source":"agent","at":1795222800000},"flags":[],"held":false,"pinned":false,"folded":false,"created":1795222800000}
 ```
 
