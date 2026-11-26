@@ -12,6 +12,24 @@ test('stem folds plural and verb endings', () => {
   assert.equal(stem('bus'), 'bus');
 });
 
+test('each word family gives one stem', () => {
+  const families = [
+    ['compute', 'computed', 'computing', 'computes'],
+    ['cache', 'cached', 'caching', 'caches'],
+    ['parse', 'parsed', 'parsing'],
+    ['migrate', 'migrated', 'migrating'],
+    ['release', 'released', 'releases'],
+  ];
+  for (const f of families) assert.equal(new Set(f.map(stem)).size, 1, f.join(' '));
+  assert.equal(stem('compute'), 'comput');
+});
+
+test('short words and words ending in ee keep their e', () => {
+  for (const w of ['file', 'code', 'name', 'tree', 'agree', 'degree']) assert.equal(stem(w), w);
+  assert.equal(stem('files'), 'file');
+  assert.equal(stem('codes'), 'code');
+});
+
 test('tokens split camel case, drop stop words, short words and long numbers', () => {
   assert.deepEqual(tokens('The windGust filter in src/WindVane.ts'), ['wind', 'gust', 'filter', 'wind', 'vane', 'ts']);
   assert.deepEqual(tokens('a 1 22 123456 x'), ['22']);
@@ -20,5 +38,5 @@ test('tokens split camel case, drop stop words, short words and long numbers', (
 });
 
 test('fileTokens reads the base name and the parent folder', () => {
-  assert.deepEqual(fileTokens('/w/station/firmware/rainGauge.c'), ['rain', 'gauge', 'firmware']);
+  assert.deepEqual(fileTokens('/w/station/firmware/rainGauge.c'), ['rain', 'gaug', 'firmwar']);
 });

@@ -5,14 +5,20 @@ const STOP = new Set(
   ).split(' '),
 );
 
-export function stem(w: string): string {
-  if (w.length <= 3) return w;
+function suffix(w: string): string {
   if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y';
   if (w.endsWith('sses')) return w.slice(0, -2);
   if (w.endsWith('ing') && w.length > 5) return w.slice(0, -3);
   if (w.endsWith('ed') && w.length > 4 && !w.endsWith('eed')) return w.slice(0, -2);
   if (w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us') && !w.endsWith('is')) return w.slice(0, -1);
   return w;
+}
+
+export function stem(w: string): string {
+  if (w.length <= 3) return w;
+  const s = suffix(w);
+  if (s.length > 4 && s.endsWith('e') && !s.endsWith('ee')) return s.slice(0, -1);
+  return s;
 }
 
 export function tokens(text: string): string[] {
