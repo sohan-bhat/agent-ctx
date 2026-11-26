@@ -41,6 +41,15 @@ try {
       await ready(page);
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `${out}/space-${tag}.png` });
+      if (!process.env.ONLY) {
+        await page.locator('header').screenshot({ path: `${out}/top-bar-${tag}.png` });
+        await page.locator('[data-agent] button').first().click();
+        await page.getByRole('menuitem', { name: 'Disconnect' }).waitFor();
+        await page.waitForTimeout(200);
+        await page.screenshot({ path: `${out}/agent-menu-${tag}.png` });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      }
       if (process.env.ONLY) {
         const gl = await page.evaluate(() => {
           const c = document.createElement('canvas');
