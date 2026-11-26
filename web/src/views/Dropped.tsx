@@ -118,7 +118,7 @@ export function DroppedList({ session, root, c, queued, pins, onDone }: Props) {
             </button>
           )}
           <p aria-live="polite" className="mt-2 text-sm text-destructive">
-            {failed ? 'Saving failed, maybe because the claude-ctx server stopped.' : ''}
+            {failed ? 'Saving failed, maybe because the agent-ctx server stopped.' : ''}
           </p>
         </>
       )}

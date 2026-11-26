@@ -119,7 +119,7 @@ export function Session({ id }: { id: string }) {
           setData((prev) => merge(since ? prev : null, d));
           setError(null);
         })
-        .catch((e: Error) => setError(e.message === '404' ? 'The transcript for this session is no longer on disk.' : 'The claude-ctx server stopped, so run claude-ctx again to reopen this page.')),
+        .catch((e: Error) => setError(e.message === '404' ? 'The transcript for this session is no longer on disk.' : 'The agent-ctx server stopped, so run agent-ctx again to reopen this page.')),
     [id],
   );
 

@@ -1,5 +1,5 @@
 {
-  "name": "claude-ctx-web",
+  "name": "agent-ctx-web",
   "private": true,
   "type": "module",
   "scripts": {

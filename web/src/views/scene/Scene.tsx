@@ -432,7 +432,7 @@ export default function Scene({ line, call, total, cut, plate, peak, last, label
                 </Button>
               ))}
             {gone && pinnedIds.has(open.id) && <p className="text-xs font-semibold">Pinned for the next compaction</p>}
-            {failed && <p className="text-xs text-destructive">Saving failed, maybe because the claude-ctx server stopped.</p>}
+            {failed && <p className="text-xs text-destructive">Saving failed, maybe because the agent-ctx server stopped.</p>}
           </PopoverContent>
         )}
       </Popover>

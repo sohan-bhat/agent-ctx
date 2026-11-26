@@ -56,7 +56,7 @@ export function Sessions() {
           setList(r);
           setError(null);
         })
-        .catch(() => alive && setError('The claude-ctx server stopped, so run claude-ctx again to reopen this page.'));
+        .catch(() => alive && setError('The agent-ctx server stopped, so run agent-ctx again to reopen this page.'));
     load();
     const stop = events(null, (e) => e === 'sessions' && load());
     return () => {
@@ -97,7 +97,7 @@ export function Sessions() {
           <p className="font-semibold">{list?.indexing ? 'Reading past sessions' : 'No sessions yet'}</p>
           {!list?.indexing && (
             <p>
-              Run <code className="num text-[0.8125rem]">claude-ctx index</code> in a terminal
+              Run <code className="num text-[0.8125rem]">agent-ctx index</code> in a terminal
             </p>
           )}
         </div>

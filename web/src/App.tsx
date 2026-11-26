@@ -8,7 +8,7 @@ type Theme = 'light' | 'dark';
 
 function initialTheme(): Theme {
   try {
-    const saved = localStorage.getItem('claude-ctx-theme');
+    const saved = localStorage.getItem('agent-ctx-theme');
     if (saved === 'light' || saved === 'dark') return saved;
   } catch {}
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -38,7 +38,7 @@ export function App() {
     }
     meta.setAttribute('content', bg);
     try {
-      localStorage.setItem('claude-ctx-theme', theme);
+      localStorage.setItem('agent-ctx-theme', theme);
     } catch {}
   }, [theme]);
   const m = route.match(/^#\/s\/([^?]+)/);
@@ -62,8 +62,8 @@ export function App() {
           Skip to the content
         </a>
         <header className="flex h-8 max-w-[58rem] items-center justify-between">
-          <a href="#/" translate="no" className="text-[0.9375rem] font-bold tracking-[-0.01em] no-underline" aria-label="claude-ctx, all sessions">
-            claude-ctx
+          <a href="#/" translate="no" className="text-[0.9375rem] font-bold tracking-[-0.01em] no-underline" aria-label="agent-ctx, all sessions">
+            agent-ctx
           </a>
           <button
             type="button"
