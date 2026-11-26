@@ -23,12 +23,14 @@ async function check() {
   const b = await connect(jar, 'Real Probe Two', 42102);
   if (a.scope !== 'read write' || b.scope !== 'read write') throw new Error(`Scopes were ${a.scope} and ${b.scope}.`);
   const one = await open(a.access);
+  const loaded = (await one.list()).filter((t) => t._meta?.['anthropic/alwaysLoad'] === true).map((t) => t.name).sort();
+  if (loaded.join(' ') !== 'checkpoint recall') throw new Error(`tools/list marked ${loaded.join(' and ') || 'no tool'} to load without a search.`);
   const saved = await one.call('checkpoint', { folder: '/work/real-run', goal: 'Real runtime probe card' });
   if (saved.isError || saved.error) throw new Error(`The checkpoint call failed with ${saved.text || JSON.stringify(saved.error)}.`);
   const two = await open(b.access);
   const read = await two.call('recall', { folder: '/work/real-run' });
   if (!read.text.includes('Real runtime probe card')) throw new Error(`The recall call did not return the card, it gave ${read.text.slice(0, 200)}.`);
-  return `Two dynamic clients signed in as ${a.label} and ${b.label}, one saved a checkpoint and the other read it back.`;
+  return `Two dynamic clients signed in as ${a.label} and ${b.label}, tools/list marked ${loaded.join(' and ')} to load without a search, one saved a checkpoint and the other read it back.`;
 }
 
 const dir = mkdtempSync(join(tmpdir(), 'agent-ctx-real-'));
