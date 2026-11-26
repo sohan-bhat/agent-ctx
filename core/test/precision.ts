@@ -9,6 +9,7 @@ import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
 import { loadVectors, missing, runHybrid } from './vectors.ts';
 import type { LooseSettings } from '../src/topics.ts';
+import * as lang from './corpus-lang.ts';
 
 export interface Labelled { q: string; project: string; kind: string; want: string[] }
 export interface TestSet { items: Item[]; queries: Labelled[]; projects: { key: string; names: string[] }[]; now: number }
@@ -59,6 +60,8 @@ export function measure(rows: Row[] = run()): Score {
   };
 }
 
+export const SET_LANG: TestSet = { items: lang.ITEMS, queries: lang.QUERIES, projects: lang.PROJECTS, now: lang.NOW };
+
 export const TOOL_KINDS = new Set(['short', 'other', 'cross']);
 
 export function reachable(set: TestSet, loose: Partial<LooseSettings> = {}): number {
@@ -104,4 +107,13 @@ if (isMain()) {
   }
   const tool: [string, TestSet][] = [['set2', SETS.set2], ['set2b', SET2B], ['set3', SET3], ['set4', SET4]];
   for (const [name, set] of tool) console.log(`tool_${name}_reachable ${reachable(set).toFixed(2)}`);
+  const rows = run(SET_LANG);
+  const s = measure(rows);
+  console.log(`lang_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
+  console.log(`lang_empty_correct ${s.empty_correct.toFixed(2)}`);
+  console.log(`lang_found ${s.found.toFixed(2)}`);
+  for (const code of lang.LANGS) {
+    const own = rows.filter((r) => (r.query as lang.LangQuery).lang === code);
+    console.log(`lang_${code}_found ${measure(own).found.toFixed(2)}`);
+  }
 }
