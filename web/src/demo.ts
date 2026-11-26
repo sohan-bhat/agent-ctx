@@ -1,4 +1,4 @@
-import type { Agent, CardBody, HandoffBody, Item, Kind, Origin, Project, RuleBody } from '@/lib/types';
+import type { Agent, CardBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/types';
 
 const MIN = 60_000;
 const start = new Date(2026, 9, 14, 8, 0, 0, 0).getTime();
@@ -88,3 +88,5 @@ export const DEMO_ITEMS: Item[] = ROWS.map(([m, agent, project, kind, body, extr
     ...extra,
   };
 });
+
+export const DEMO_READS: Read[] = DEMO_ITEMS.filter((i) => i.kind === 'handoff').map((i) => ({ item: i.id, agent: 'Codex', at: i.created + 7 * MIN }));

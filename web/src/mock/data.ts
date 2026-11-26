@@ -1,4 +1,4 @@
-import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, Project, RuleBody } from '@/lib/types';
+import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/types';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -142,6 +142,7 @@ export interface World {
   agents: Agent[];
   items: Item[];
   queue: string[];
+  reads: Read[];
 }
 
 export function seed(now: number): World {
@@ -163,11 +164,15 @@ export function seed(now: number): World {
       }
     }
   }
+  const reads: Read[] = [];
   for (const [name, list] of Object.entries(HANDOFFS)) {
     list.forEach((h, i) => {
       const writer = AGENT_SEED[i % 2];
       const at = workHour(2 + i * 4 + (name === 'lantern' ? 1 : 0), r, now);
-      items.push(make('handoff', keyOf(name), h, writer.label, at, writer.via));
+      const it = make('handoff', keyOf(name), h, writer.label, at, writer.via);
+      items.push(it);
+      const reader = AGENT_SEED.find((a) => a.label !== writer.label && a.projects.includes(name));
+      if (reader) reads.push({ item: it.id, agent: reader.label, at: Math.min(now - 60_000, at + (20 + Math.floor(r() * 90)) * 60_000) });
     });
   }
   for (const rule of RULES) {
@@ -190,7 +195,7 @@ export function seed(now: number): World {
   cards[4].pinned = true;
   cards[cards.length - 9].pinned = true;
   const dropped = items.filter((i) => i.kind === 'dropped');
-  return { agents, items, queue: [dropped[1].id] };
+  return { agents, items, queue: [dropped[1].id], reads };
 }
 
 let liveTurn = 0;

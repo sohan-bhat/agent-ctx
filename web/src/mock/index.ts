@@ -32,7 +32,7 @@ let world: World | null = null;
 const listeners = new Set<(m: Live) => void>();
 
 function state(): World {
-  if (!world) world = flag('empty') === '1' ? { agents: [], items: [], queue: [] } : seed(Date.now());
+  if (!world) world = flag('empty') === '1' ? { agents: [], items: [], queue: [], reads: [] } : seed(Date.now());
   return world;
 }
 
@@ -80,7 +80,7 @@ export const transport: Transport = {
     if (flag('fail') === 'space') throw new Error('offline');
     const w = state();
     const projects = PROJECTS.map((p) => ({ ...p, items: w.items.filter((i) => i.project === p.key).length })).filter((p) => p.items > 0);
-    return clone({ projects, agents: w.agents, items: w.items, queue: w.queue, now: Date.now() });
+    return clone({ projects, agents: w.agents, items: w.items, queue: w.queue, reads: w.reads, now: Date.now() });
   },
   async pin(id, on) {
     await wait();
@@ -104,6 +104,7 @@ export const transport: Transport = {
     const w = state();
     w.items = w.items.filter((i) => i.id !== id);
     w.queue = w.queue.filter((q) => q !== id);
+    w.reads = w.reads.filter((x) => x.item !== id);
     send({ type: 'remove', id });
   },
   async addRule(rule: NewRule) {
@@ -141,7 +142,7 @@ export const transport: Transport = {
   },
   async deleteAccount() {
     await wait();
-    world = { agents: [], items: [], queue: [] };
+    world = { agents: [], items: [], queue: [], reads: [] };
     signIn(false);
   },
   live(on, open) {

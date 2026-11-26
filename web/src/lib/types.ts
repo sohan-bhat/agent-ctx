@@ -33,11 +33,18 @@ export interface Agent {
   last: number;
 }
 
+export interface Read {
+  item: string;
+  agent: string;
+  at: number;
+}
+
 export interface Space {
   projects: Project[];
   agents: Agent[];
   items: Item[];
   queue: string[];
+  reads: Read[];
   now: number;
 }
 
