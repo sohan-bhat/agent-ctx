@@ -37,7 +37,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       expect(t.item?.project).toBe('folder:unrelated');
     });
 
-    test('a handoff reaches another agent once and its own grant only after twenty minutes', async () => {
+    test('a handoff reaches another agent once and the writer only after twenty minutes', async () => {
       const p = person();
       const h = await p.handoff(A, { ...KILN, goal: 'Ship the ramp', done: 'Curve fitted', next: 'Wire the hold timer', question: 'Should the hold be per glaze?' });
       expect(h.ok).toBe(true);
@@ -237,7 +237,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
   });
 
   describe('handoff body', () => {
-    test('a handoff keeps its question and the tool result is a plain sentence', async () => {
+    test('a handoff keeps the question and the tool result is a plain sentence', async () => {
       const p = person();
       const h = await p.handoff(A, { ...KILN, goal: 'g', next: 'n', question: 'q?' });
       expect((h.item!.body as HandoffBody).question).toBe('q?');
@@ -333,7 +333,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       ]);
     });
 
-    test('events for its own tools are never stored', async () => {
+    test('events for the agent-ctx tools are never stored', async () => {
       const p = person();
       for (const tool of ['mcp__agent-ctx__checkpoint', 'mcp__plugin_agent-ctx_agent-ctx__recall', 'agent_ctx.recall']) {
         await p.event(CC, ev('s1', 'PostToolUse', { tool, command: 'x y z', file: 'a.ts' }));
@@ -556,7 +556,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       expect(r.text).toContain('> next: Stopped by an error. Migrate the shelf table to bins');
     });
 
-    test('the first prompt of a session gets the handoff even when it is one short word', async () => {
+    test('the first prompt of a session gets the handoff even when the prompt is one short word', async () => {
       const cc = await agent('hooks-four', 'claude-code');
       const send = (event: string, more: Record<string, unknown>) => call(cc.client, 'event', { host: 'claude-code', event, session: 'cc-4', cwd: CWD, ...more });
       await send('UserPromptSubmit', { prompt: 'Write step one of the three step pantry job' });
@@ -992,7 +992,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       expect(await unknownRows(p)).toBe(0);
     });
 
-    test('a store that already holds a folder:unknown project never serves its items to a call that names no project', async () => {
+    test('a store that already holds a folder:unknown project never serves the items of that project to a call that names no project', async () => {
       const p = person();
       await runInDurableObject(p, (x: Person) => {
         x.store.q("INSERT INTO projects(key, name, created) VALUES('folder:unknown', 'unknown', 1)");
@@ -1104,7 +1104,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       expect((await cards(p))[0].origin.agent).toBe('Codex');
     });
 
-    test('a reworded repeat adds its new line to the same card, named after the newest writer', async () => {
+    test('a reworded repeat adds the new line to the same card, named after the newest writer', async () => {
       const p = person();
       const first = await p.checkpoint(A, { ...W, ...WORK });
       const again = await p.checkpoint(B, { ...W, ...REWORDED });
@@ -1119,7 +1119,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       expect(card.created).toBe(first.item!.created);
     });
 
-    test('a hook reader gets a card again once a line was added to it', async () => {
+    test('a hook reader gets a card again once a line was added to the card', async () => {
       const p = person();
       const first = await p.checkpoint(A, { ...W, ...WORK });
       const ev = (e: Partial<EventArgs>) => p.event(B, { host: 'claude-code', session: 'reader-1', cwd: W.folder, ...e });
@@ -1206,7 +1206,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       expect(agent.item!.id).not.toBe(auto.id);
     });
 
-    test('a later session of the same work merges its auto card and keeps the lines of the first session', async () => {
+    test('a later session of the same work merges the new auto card and keeps the lines of the first session', async () => {
       const p = person();
       const run = async (sid: string, who: typeof A, extra: string) => {
         const ev = (e: Partial<EventArgs>) => p.event(who, { host: 'codex', session: sid, cwd: W.folder, ...e });

@@ -199,7 +199,7 @@ async function run(b, w, h, dir) {
 
     const res = await page.goto(ORIGIN);
     const hdr = res.headers();
-    check(`${tag} the page arrives with its security headers`, /script-src 'self'/.test(hdr['content-security-policy'] ?? '') && hdr['x-content-type-options'] === 'nosniff' && hdr['referrer-policy'] === 'no-referrer' && hdr['x-frame-options'] === 'DENY');
+    check(`${tag} the page arrives with the security headers`, /script-src 'self'/.test(hdr['content-security-policy'] ?? '') && hdr['x-content-type-options'] === 'nosniff' && hdr['referrer-policy'] === 'no-referrer' && hdr['x-frame-options'] === 'DENY');
     await page.getByRole('link', { name: 'Sign in with GitHub' }).waitFor();
     await signInPage(page, name);
     const signedIn = await waitFor(() => page.getByRole('button', { name: 'Add agent' }).count(), 8000);
@@ -259,7 +259,7 @@ async function run(b, w, h, dir) {
     const p1 = await a.call('event', { ...hook, event: 'UserPromptSubmit', prompt: 'pick up the booking work where it stopped and check the refund tests' });
     const p2 = await a.call('event', { ...hook, event: 'UserPromptSubmit', prompt: 'now look at the booking form errors on small phones' });
     const viaHook = p1.text.includes(GOALS.taps) && !p2.text.includes(GOALS.taps);
-    check(`${tag} Put back queues an item and the next recall returns it once`, queued && (viaTool || viaHook), `recall tool ${viaTool ? 'once' : `first ${r1.text.includes(GOALS.taps)} second ${r2.text.includes(GOALS.taps)}`}, prompt hook ${viaHook ? 'once' : `first ${p1.text.includes(GOALS.taps)} second ${p2.text.includes(GOALS.taps)}`}`);
+    check(`${tag} Put back queues an item and the next recall returns the item once`, queued && (viaTool || viaHook), `recall tool ${viaTool ? 'once' : `first ${r1.text.includes(GOALS.taps)} second ${r2.text.includes(GOALS.taps)}`}, prompt hook ${viaHook ? 'once' : `first ${p1.text.includes(GOALS.taps)} second ${p2.text.includes(GOALS.taps)}`}`);
 
     s = await space(page);
     await openItem(page, GOALS.held);
@@ -300,7 +300,7 @@ async function run(b, w, h, dir) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
     const later = await bb.call('recall', LANTERN);
-    check(`${tag} the Rules sheet adds a rule and a later recall carries it`, added && ((later.text.split('\nRULES\n')[1] ?? '').split('\n\n')[0]).includes(rule));
+    check(`${tag} the Rules sheet adds a rule and a later recall carries the rule`, added && ((later.text.split('\nRULES\n')[1] ?? '').split('\n\n')[0]).includes(rule));
 
     step = 'merge';
     const lanternKey = sp.projects.find((p) => p.name === 'lantern')?.key;
@@ -330,7 +330,7 @@ async function run(b, w, h, dir) {
     await page.getByRole('alertdialog').getByRole('button', { name: 'Disconnect' }).click();
     const left = await waitFor(async () => (await page.locator(`[data-agent="${labelA}"]`).count()) === 0, 4000);
     const cut = await (await agent(A)).call('recall', HARBOR);
-    check(`${tag} Disconnect removes the agent and its token gets 401`, left && cut.status === 401, `token ${cut.status}`);
+    check(`${tag} Disconnect removes the agent and the agent token gets 401`, left && cut.status === 401, `token ${cut.status}`);
 
     step = 'signout';
     await page.getByRole('button', { name: 'Menu' }).click();

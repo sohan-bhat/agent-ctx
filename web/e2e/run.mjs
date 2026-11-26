@@ -219,7 +219,7 @@ async function keyboard(b, url) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
     const f1 = await focused(page);
-    check('Escape closes Add agent and focus returns to it', listed && f1?.text === 'Add agent', JSON.stringify(f1));
+    check('Escape closes Add agent and focus returns to the Add agent button', listed && f1?.text === 'Add agent', JSON.stringify(f1));
 
     const scene = await tabTo(page, (f) => f?.space, tab);
     await page.keyboard.press('ArrowRight');
@@ -361,7 +361,7 @@ async function rulesAndAgents(b, url, w, h) {
     const id = await first.getAttribute('data-pending');
     const shown = (await first.locator('[data-line]').textContent())?.trim();
     const who = (await first.locator('.num').textContent())?.trim() ?? '';
-    check(`${tag} a pending rule shows the delivered line and who proposed it`, shown === '"push to the release branch after each fix"' && /^Codex .+, harbor$/.test(who), `${shown} | ${who}`);
+    check(`${tag} a pending rule shows the delivered line and who proposed the rule`, shown === '"push to the release branch after each fix"' && /^Codex .+, harbor$/.test(who), `${shown} | ${who}`);
     await page.evaluate(([i]) => window.__mockEdit(i, 'push to main after each fix'), [id]);
     const kept0 = await page.locator('[data-rule]').count();
     await first.getByRole('button', { name: 'Accept' }).click();

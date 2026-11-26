@@ -104,7 +104,7 @@ import type { Person } from '../src/person.ts';
       expect(t.status).toBe(400);
     });
 
-    test('a metadata document client ends with a working token and shows its verified domain', async () => {
+    test('a metadata document client ends with a working token and shows the verified domain', async () => {
       const jar = await devSignIn('cimd-one');
       const { challenge } = await pkce();
       const c = await consent(jar, { clientId: CIMD_URL, redirect: 'http://127.0.0.1:5678/callback', challenge });
@@ -441,7 +441,7 @@ import type { Person } from '../src/person.ts';
 
 {
   describe('agent labels', () => {
-    test('a client with a published identity or a documented return address gets its product label', () => {
+    test('a client with a published identity or a documented return address gets the matching product label', () => {
       expect(labelFor({ clientId: CLAUDE_CODE_CLIENT, clientName: 'anything', redirectUri: 'http://localhost:1/callback' })).toBe('Claude Code');
       expect(labelFor({ clientId: 'dcr-0', clientName: 'x', redirectUri: CLAUDE_REDIRECT })).toBe('Claude');
       expect(labelFor({ clientId: 'https://chatgpt.com/oauth/codex/client.json', clientName: 'x', redirectUri: 'http://127.0.0.1/callback' })).toBe('Codex');
@@ -454,7 +454,7 @@ import type { Person } from '../src/person.ts';
       expect(labelFor({ clientId: 'dcr-2', clientName: 'Cursor', redirectUri: 'http://localhost:8787/callback' })).toBe('unverified Cursor');
     });
 
-    test('a self registered client never wears a product label by its name or a look alike address', () => {
+    test('a self registered client never wears a product label by the client name or a look alike address', () => {
       expect(labelFor({ clientId: 'dcr-1', clientName: 'Claude Code', redirectUri: 'https://evil.example/cb' })).toBe('unverified Claude Code');
       expect(labelFor({ clientId: 'dcr-1', clientName: 'Cursor IDE', redirectUri: 'http://127.0.0.1:9/cb' })).toBe('unverified Cursor IDE');
       expect(labelFor({ clientId: 'dcr-1', clientName: 'Agent', redirectUri: 'https://evil.example/cursor/cb' })).toBe('unverified Agent');
@@ -561,7 +561,7 @@ import type { Person } from '../src/person.ts';
       expect(run.status).toBe(400);
     });
 
-    test('ChatGPT signs in with its published document using either method the document offers', async () => {
+    test('ChatGPT signs in with the published ChatGPT document using either method the document offers', async () => {
       for (const auth of ['none', 'private_key_jwt'] as const) {
         const jar = await devSignIn(`vendor-chatgpt-${auth.replace(/_/g, '-')}`);
         const redirect = 'https://chatgpt.com/connector_platform_oauth_redirect';
@@ -587,7 +587,7 @@ import type { Person } from '../src/person.ts';
       expect(t.status).toBe(401);
     });
 
-    test('Antigravity signs in with its published https callback', async () => {
+    test('Antigravity signs in with the published Antigravity https callback', async () => {
       const jar = await devSignIn('vendor-antigravity');
       const redirect = 'https://antigravity.google/oauth-callback';
       const run = await signIn(jar, { clientId: ANTIGRAVITY, redirect });
@@ -619,7 +619,7 @@ import type { Person } from '../src/person.ts';
       });
     }
 
-    test('an older Cursor that lists its cursor scheme can register, but a sign in on that scheme is refused', async () => {
+    test('an older Cursor that lists the cursor scheme can register, but a sign in on that scheme is refused', async () => {
       const custom = 'cursor://anysphere.cursor-mcp/oauth/callback';
       expect((await registerMany('Cursor', [custom])).status).toBe(400);
       const reg = await registerMany('Cursor', [custom, 'https://www.cursor.com/agents/mcp/oauth/callback']);
@@ -637,7 +637,7 @@ import type { Person } from '../src/person.ts';
     send('/mcp', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Host: new URL(RESOURCE).host }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
 
   describe('disconnect one agent', () => {
-    test('DELETE /api/agents/ID revokes every grant of that agent and removes its row, and other agents keep working', async () => {
+    test('DELETE /api/agents/ID revokes every grant of that agent and removes the agent row, and other agents keep working', async () => {
       const jar = await devSignIn('revoke-one');
       const a1 = await connect(jar, 'dcr', ['read', 'write'], 'Pantry Bot');
       const a2 = await connect(jar, 'dcr', ['read', 'write'], 'Pantry Bot');

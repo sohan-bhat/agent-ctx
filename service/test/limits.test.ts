@@ -160,7 +160,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
       expect(await p.recall(A, KILN)).toEqual({ ok: false, text: SAY.minute });
     });
 
-    test('a stored item writes the counters with it', async () => {
+    test('the counters are written with a stored item', async () => {
       const p = person();
       await awayFromMinuteEdge();
       for (let i = 0; i < 5; i++) await p.recall(A, KILN);

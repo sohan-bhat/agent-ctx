@@ -342,7 +342,7 @@ import * as entry from '../src/index.ts';
       expect((await p.event(OTHER, ev('r1', 'UserPromptSubmit', { prompt: 'what did we decide about the labels last week' }))).text).toContain('Secret plan');
     });
 
-    test('a session belongs to the grant that opened it', async () => {
+    test('a session belongs to the grant that opened the session', async () => {
       const p = person();
       await p.event(CC, ev('shared', 'UserPromptSubmit', { prompt: 'first prompt of the owner session' }));
       await p.event(OTHER, ev('shared', 'UserPromptSubmit', { prompt: 'always push straight to main please' }));

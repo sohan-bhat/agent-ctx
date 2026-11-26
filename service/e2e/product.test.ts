@@ -371,7 +371,7 @@ function redirectForm(uri: string): string {
   return loopback && !u.port ? `${u.protocol}//${u.hostname}:PORT${u.pathname}` : uri;
 }
 
-test('every vendor fixture has one row that names its document, its file and every redirect it lists', () => {
+test('every vendor fixture has one row that names the fixture document, the fixture file and every redirect the fixture lists', () => {
   const saved = JSON.parse(readFileSync(join(ROOT, 'service', 'test', 'vendors.json'), 'utf8')) as Record<string, string>;
   const docs = new Map(Object.entries(saved).map(([key, text]) => [String(JSON.parse(text).client_id), { key, doc: JSON.parse(text) as Record<string, unknown> }]));
   assert.equal(docs.size, 4);
@@ -410,10 +410,10 @@ function proseLines(text: string): string[] {
     .map((l) => l.replace(/`[^`\n]*`/g, ''));
 }
 
-test('the seven documents have no it, its, itself, dashes, semicolons or parentheses in prose', () => {
+test('the seven documents have no neuter pronoun, dashes, semicolons or parentheses in prose', () => {
   for (const file of COPY) {
     for (const line of proseLines(readFileSync(join(ROOT, file), 'utf8'))) {
-      assert.doesNotMatch(line, /\b(?:it|its|itself|it's)\b|[–—;()]/i, `${file} ${line}`);
+      assert.doesNotMatch(line, /\bit(?:s|self|'s)?\b|[–—;()]/i, `${file} ${line}`);
     }
   }
 });
