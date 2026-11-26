@@ -13,3 +13,4 @@ export * from './topics.ts';
 export * from './hooks.ts';
 export { redact, hasSecret, DROPPED } from './redact.ts';
 export { tokens } from './text.ts';
+export * from './merge.ts';
