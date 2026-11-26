@@ -5,8 +5,18 @@ const STOP = new Set(
   ).split(' '),
 );
 
+export const STOP_LISTS: Readonly<Record<'es' | 'de' | 'fr' | 'pt' | 'it', readonly string[]>> = {
+  es: 'que los unos unas por desde hacia durante segun cuando donde porque aunque mientras pues entonces tambien muy esta estos estas esto eso otro otra otros otras mismo tanto todas cual quien ellos siempre nunca ahora fue estan sido puede'.split(' '),
+  de: 'ein eine einen einem einer eines nicht kein keine sich auch sie ich wir ihr wird werden wurde sind haben kann noch nur wie wenn dann aber weil dass durch nach zum zur beim unter ohne mehr sehr diese dieser'.split(' '),
+  fr: 'que quoi donc avec depuis selon parmi elles leur leurs notre votre vos lui aussi alors ainsi puis toujours jamais souvent tous toute toutes comme quand puisque lorsque jusqu ceux celui cette chaque quelques etre etait sont ont peut peuvent'.split(' '),
+  pt: 'uma umas uns quando porque enquanto embora porem desde durante apenas isso isto essa esta aquele aquela ela eles elas seus nosso nossa quem tambem muito muitos ainda sempre nunca depois entao aqui estao sido podem deve toda todas mesmo'.split(' '),
+  it: 'gli tra dello degli dalla dagli nel nella negli nelle sulla sulle essere hanno questo questa questi queste quello quella quelli molto molti gia piu quindi cosi tutto tutte ogni qualche alcuni senza mentre invece oppure dopo cui quale puo'.split(' '),
+};
+
+const ALL_STOP = new Set([...STOP, ...Object.values(STOP_LISTS).flat()]);
+
 export function isStop(w: string): boolean {
-  return STOP.has(w);
+  return ALL_STOP.has(w);
 }
 
 function suffix(w: string): string {
@@ -43,7 +53,7 @@ function word(w: string, out: string[]): void {
   if (ASCII.test(w)) {
     if (w.length < 2 || w.length > 30) return;
     if (/^\d+$/.test(w) && w.length > 4) return;
-    if (STOP.has(w)) return;
+    if (ALL_STOP.has(w)) return;
     out.push(stem(w));
     return;
   }
