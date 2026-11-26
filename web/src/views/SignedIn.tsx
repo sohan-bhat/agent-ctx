@@ -9,6 +9,7 @@ import type { Agent, Item, Live, Me, RuleBody, Space as SpaceData } from '@/lib/
 import { navigate } from '@/router';
 import { AddAgent } from './AddAgent';
 import { DeleteAccount } from './DeleteAccount';
+import { Merge } from './Merge';
 import type { Actions } from './Panel';
 import { Rules, type RuleActions } from './Rules';
 import { Space } from './Space';
@@ -34,6 +35,7 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
   const [adding, setAdding] = useState(false);
   const [rules, setRules] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [merging, setMerging] = useState(false);
   const addingRef = useRef(false);
   addingRef.current = adding;
   const meTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,6 +109,7 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
   const time = scrub ?? end;
   const queue = useMemo(() => new Set(data?.queue ?? []), [data?.queue]);
   const projects = data?.projects ?? [];
+  const reads = useMemo(() => data?.reads ?? [], [data?.reads]);
 
   const patch = (id: string, f: (i: Item) => Item) => setData((d) => (d ? { ...d, items: d.items.map((i) => (i.id === id ? f(i) : i)) } : d));
 
@@ -199,6 +202,11 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
               <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => setRules(true)}>
                 Rules
               </DropdownMenuItem>
+              {projects.length > 1 && (
+                <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => setMerging(true)}>
+                  Merge projects
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => void api.exportAll()}>
                 Export
               </DropdownMenuItem>
@@ -221,6 +229,7 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
           projects={projects}
           agents={labels}
           items={items}
+          reads={reads}
           queue={queue}
           start={start}
           end={end}
@@ -234,6 +243,15 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
       </main>
       <AddAgent open={adding} onOpenChange={setAdding} />
       <Rules open={rules} onOpenChange={setRules} items={items} projects={projects} actions={ruleActions} />
+      <Merge
+        open={merging}
+        onOpenChange={setMerging}
+        projects={projects}
+        onMerge={async (from, into) => {
+          await api.merge(from, into);
+          await load();
+        }}
+      />
       <DeleteAccount
         open={deleting}
         onOpenChange={setDeleting}
