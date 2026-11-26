@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { paths, runClaude, spentSoFar } from './claude.mjs';
 
+export const AGENTS_LINE = 'At the start of every task call the agent-ctx recall tool with the repo and folder. Before your final reply after any file change call the agent-ctx checkpoint tool.';
 const STOP = " That's it for today. I'm stopping here and will carry on tomorrow in another agent.";
 
 export const TASKS = [
@@ -52,7 +53,7 @@ export const TOOLS = [
   'Bash(node:*)',
 ];
 
-function project(root, t) {
+function project(root, t, agents) {
   const dir = join(root, t.name);
   mkdirSync(dir, { recursive: true });
   execFileSync('git', ['-C', dir, 'init', '-q']);
@@ -61,6 +62,7 @@ function project(root, t) {
     mkdirSync(dirname(join(dir, f)), { recursive: true });
     writeFileSync(join(dir, f), body);
   }
+  if (agents) writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_LINE}\n`);
   return dir;
 }
 
@@ -103,14 +105,17 @@ export function count(proofs) {
   const runs = readFileSync(join(proofs, 'runs.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const stops = new Set(TASKS.filter((t) => t.stop).map((t) => t.name));
   const rows = runs.map((r) => {
-    const base = r.name.replace(/^(haiku|sonnet)-/, '');
-    return { name: r.name, model: r.model, group: RULES.some((t) => t.name === base) ? 'rule' : 'task', stop: stops.has(base), cost: r.cost, ...analyse(join(proofs, `${r.name}.jsonl`)) };
+    const cond = /^([A-Z])-/.exec(r.name)?.[1] ?? '';
+    const base = r.name.replace(/^(?:[A-Z]-)?(haiku|sonnet)-/, '');
+    return { name: r.name, cond, model: r.model, group: RULES.some((t) => t.name === base) ? 'rule' : TASKS.some((t) => t.name === base) ? 'task' : 'other', stop: stops.has(base), cost: r.cost, ...analyse(join(proofs, `${r.name}.jsonl`)) };
   });
-  const tally = (model) => {
-    const tasks = rows.filter((r) => r.model === model && r.group === 'task');
-    const rules = rows.filter((r) => r.model === model && r.group === 'rule');
+  const tally = ([cond, model]) => {
+    const mine = rows.filter((r) => r.cond === cond && r.model === model);
+    const tasks = mine.filter((r) => r.group === 'task');
+    const rules = mine.filter((r) => r.group === 'rule');
     const stopped = tasks.filter((r) => r.stop);
     return {
+      cond,
       model,
       tasks: tasks.length,
       recallBeforeEdit: tasks.filter((r) => r.recallBeforeEdit).length,
@@ -119,19 +124,20 @@ export function count(proofs) {
       handoffOnStop: stopped.filter((r) => r.handoff).length,
       ruleRuns: rules.length,
       ruleCalled: rules.filter((r) => r.rule).length,
-      cost: Math.round(rows.filter((r) => r.model === model).reduce((n, r) => n + r.cost, 0) * 1e5) / 1e5,
+      cost: Math.round(mine.reduce((n, r) => n + r.cost, 0) * 1e5) / 1e5,
     };
   };
-  return { totals: [...new Set(rows.map((r) => r.model))].map(tally), rows };
+  const keys = [...new Set(rows.filter((r) => r.group !== 'other').map((r) => `${r.cond}|${r.model}`))].map((k) => k.split('|'));
+  return { totals: keys.map(tally), rows };
 }
 
-async function runSet(p, set, model, only) {
+async function runSet(p, set, model, only, cond) {
   const done = new Set(existsSync(p.ledger) ? readFileSync(p.ledger, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).name) : []);
-  const root = join(p.tmp, 'projects', model);
+  const root = join(process.env.E2E_PROJECTS ?? join(p.tmp, 'projects'), cond || 'base', model);
   for (const t of set.slice(0, only ?? set.length)) {
-    const name = `${model}-${t.name}`;
+    const name = `${cond ? `${cond}-` : ''}${model}-${t.name}`;
     if (done.has(name)) continue;
-    const cwd = project(root, t);
+    const cwd = project(root, t, cond === 'B');
     const prompt = t.ask + (t.stop ? STOP : '');
     const r = await runClaude(p, { name, side: 'A', cwd, prompts: [prompt], tools: TOOLS, layout: 'tools', model });
     const a = analyse(join(p.proofs, `${name}.jsonl`));
@@ -146,7 +152,7 @@ if (main) {
   const tmp = process.env.E2E_TMP;
   const proofs = process.env.E2E_PROOFS;
   if (!['tasks', 'rules', 'count'].includes(cmd) || !proofs || (cmd !== 'count' && !tmp)) {
-    console.log('Set E2E_PROOFS, and E2E_TMP to run, then give tasks or rules with an optional model and a count, or count to tally the transcripts.');
+    console.log('Set E2E_PROOFS, and E2E_TMP to run, with E2E_PROJECTS for a projects folder outside any session scratchpad, then give tasks or rules with an optional model, a count and a condition letter, where B adds an AGENTS.md line, or count to tally the transcripts.');
     process.exit(cmd ? 1 : 0);
   }
   if (cmd === 'count') {
@@ -157,7 +163,7 @@ if (main) {
     const model = rest[0] ?? 'haiku';
     const only = rest[1] ? Number(rest[1]) : undefined;
     try {
-      await runSet(paths(tmp, proofs), cmd === 'tasks' ? TASKS : RULES, model, only);
+      await runSet(paths(tmp, proofs), cmd === 'tasks' ? TASKS : RULES, model, only, rest[2] ?? '');
     } catch (e) {
       console.log(e instanceof Error ? e.message : String(e));
     }
