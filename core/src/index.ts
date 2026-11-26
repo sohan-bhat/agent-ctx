@@ -7,4 +7,3 @@ export * from './recall.ts';
 export * from './fold.ts';
 export { redact, hasSecret, DROPPED } from './redact.ts';
 export { GROUPS, joinPhrases, synonymsOf, tokens, vocabulary } from './text.ts';
-export * from './merge.ts';

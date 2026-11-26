@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ITEM_BYTES, itemBytes, newItem, type CardBody, type Item, type Origin } from '../src/model.ts';
-import { SAME_CONTAINS, SAME_JACCARD, SAME_MIN_TERMS, mergeCard, overlap, sameCard } from '../src/merge.ts';
+import { SAME_CONTAINS, SAME_JACCARD, SAME_MIN_TERMS, mergeCard, overlap, sameCard } from '../src/fold.ts';
 import { month, type Checkpoint } from './month.ts';
 
 const AT = Date.UTC(2026, 10, 1);
