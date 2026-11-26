@@ -51,13 +51,31 @@ function plain(status: number, text: string): Response {
   return new Response(text, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
-function html(body: string, title: string, headers?: Headers, status = 200): Response {
+const BLOCKED_SCHEMES = new Set(['javascript:', 'data:', 'blob:', 'file:', 'about:', 'vbscript:', 'filesystem:']);
+
+export function formTarget(redirectUri: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(redirectUri);
+  } catch {
+    return null;
+  }
+  if (u.protocol === 'https:' || u.protocol === 'http:') return /^[a-z0-9.-]+$/i.test(u.hostname) ? u.origin : null;
+  if (BLOCKED_SCHEMES.has(u.protocol)) return null;
+  return /^[a-z][a-z0-9+.-]*:$/i.test(u.protocol) ? u.protocol.toLowerCase() : null;
+}
+
+export function policy(formTo?: string): string {
+  return `default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'${formTo ? ` ${formTo}` : ''}; frame-ancestors 'none'`;
+}
+
+export function html(body: string, title: string, headers?: Headers, status = 200, formTo?: string): Response {
   const h = headers ?? new Headers();
   h.set('Content-Type', 'text/html; charset=utf-8');
   h.set('Cache-Control', 'no-store');
   h.set('X-Frame-Options', 'DENY');
-  h.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'");
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title></head><body>${body}</body></html>`, { status, headers: h });
+  h.set('Content-Security-Policy', policy(formTo));
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,"><title>${escape(title)}</title></head><body>${body}</body></html>`, { status, headers: h });
 }
 
 function returnPath(v: string | undefined | null): string {
@@ -204,8 +222,6 @@ function signOut(c: AppContext): Response {
   return c.redirect('/', 302);
 }
 
-auth.get('/logout', (c) => signOut(c));
-
 auth.post('/logout', (c) => (sameOrigin(c) ? signOut(c) : plain(403, 'This form only works from this site.')));
 
 auth.get('/authorize', async (c) => {
@@ -218,9 +234,11 @@ auth.get('/authorize', async (c) => {
       return c.redirect(`/login?return=${encodeURIComponent(url.pathname + url.search)}`, 302);
     }
     const details = await oauth.describeConsent(request);
+    const target = formTarget(request.redirectUri);
+    if (!target) return plain(400, 'This app gave a return address that this page cannot send you to.');
     const consent = await oauth.beginConsent(request);
     const label = labelFor({ clientId: details.clientId, clientName: details.clientName, redirectUri: details.redirectUri });
-    return html(consentPage(details, label, consent.handle), `Allow ${label}`, consent.headers);
+    return html(consentPage(details, label, consent.handle), `Allow ${label}`, consent.headers, 200, target);
   } catch (e) {
     return authFailure(e);
   }

@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { Hono } from 'hono';
 import { api } from './api.ts';
-import { auth, escape, who, type AppEnv } from './auth.ts';
+import { auth, escape, html, who, type AppEnv } from './auth.ts';
 import { mcpHandler } from './mcp.ts';
 import { CLIENT_TTL, REGISTRATIONS_FULL, SLOW_DOWN, limiterFor, registrationCap } from './open.ts';
 
@@ -17,9 +17,9 @@ app.route('/api', api);
 app.get('/', async (c) => {
   const me = await who(c);
   const body = me
-    ? `<h1>agent-ctx</h1><p>Signed in as ${escape(me.login)}.</p><p>Connect an agent to ${escape(c.env.MCP_RESOURCE)}</p><p><a href="/logout">Sign out</a></p>`
+    ? `<h1>agent-ctx</h1><p>Signed in as ${escape(me.login)}.</p><p>Connect an agent to ${escape(c.env.MCP_RESOURCE)}</p><form method="post" action="/logout"><button>Sign out</button></form>`
     : '<h1>agent-ctx</h1><p><a href="/login">Sign in</a></p>';
-  return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>agent-ctx</title></head><body>${body}</body></html>`);
+  return html(body, 'agent-ctx');
 });
 
 app.notFound((c) => c.text('Not found.', 404));
