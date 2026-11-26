@@ -5,6 +5,7 @@ import { FOOTER, HEADER, NO_MATCH, OTHERS_CHARS, TOPIC_CHARS, recall, type Recal
 import { TOPICS, looseMatches, resolveIds, shortIds, topicList } from '../src/topics.ts';
 import type { Body, Item, Kind } from '../src/model.ts';
 import { SETS, SET2B, SET3, SET4 } from './precision.ts';
+import * as lang from './corpus-lang.ts';
 
 const DAY = 86400000;
 const NOW = Date.parse('2026-11-20T12:00:00Z');
@@ -176,3 +177,27 @@ test('long goals and long agent names are cut so twelve topics still fit 1,400 c
   assert.equal(out.topics?.length, TOPICS);
   assert.match(out.text, /\n\n2 more topics are stored\.\n\n/);
 });
+
+const FAMILIES: [string, lang.Lang, string, string][] = [
+  ['Latin', 'es', 'tarjeta azul olvidada ayer', 'es-1'],
+  ['Devanagari', 'hi', 'भुगतान वाली पुरानी पर्ची', 'hi-1'],
+  ['Arabic', 'ar', 'الهوامش الزرقاء القديمة', 'ar-3'],
+  ['Japanese', 'ja', '在庫ゼロの棚', 'ja-1'],
+  ['Han', 'zh', '提醒铃声换掉', 'zh-3'],
+];
+
+for (const [family, code, query, first] of FAMILIES) {
+  test(`a ${family} query with no word hit still lists the project topics`, () => {
+    const base = { project: lang.KEYS[code], items: lang.ITEMS, projects: lang.PROJECTS, query, first: false, session: 's', seen: [], now: lang.NOW };
+    assert.deepEqual(recall(base), { text: '', delivered: [] });
+    const out = recall({ ...base, tool: true });
+    assert.ok(out.text.startsWith(NO_MATCH));
+    assert.deepEqual(out.delivered, []);
+    const own = lang.ITEMS.filter((i) => i.project === lang.KEYS[code]);
+    assert.equal(out.topics?.length, own.length);
+    assert.equal(out.topics?.[0], first);
+    const goal = (own.find((i) => i.id === first)!.body as { goal: string }).goal;
+    assert.ok(out.text.includes(goal), goal);
+    assert.ok(out.text.length <= TOPIC_CHARS);
+  });
+}
