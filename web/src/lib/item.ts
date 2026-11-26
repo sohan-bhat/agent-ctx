@@ -1,4 +1,5 @@
 import type { CardBody, DroppedBody, HandoffBody, Item, RuleBody } from './types';
+import { ruleLine } from '@core/rules.ts';
 import { count, stamp } from './format';
 
 export interface Line {
@@ -17,7 +18,7 @@ const first = (s: string | undefined) => {
 };
 
 export function headline(i: Item): string {
-  if (i.kind === 'rule') return bare((i.body as RuleBody).text);
+  if (i.kind === 'rule') return i.line ?? ruleLine(i.body as RuleBody);
   if (i.kind === 'dropped') return bare((i.body as DroppedBody).label);
   return bare((i.body as CardBody | HandoffBody).goal) || 'Untitled';
 }
@@ -48,7 +49,7 @@ export function lines(i: Item): Line[] {
     if (b.check) push(b.check, true);
   } else if (i.kind === 'rule') {
     const b = i.body as RuleBody;
-    push(b.proof === 'hook' ? `“${bare(b.words)}”` : first(b.text));
+    push(i.line ?? ruleLine(b));
     push(b.scope === 'all' ? 'All projects' : 'This project');
   } else {
     const b = i.body as DroppedBody;

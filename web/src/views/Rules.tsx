@@ -5,12 +5,18 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useNarrow } from '@/lib/hooks';
+import { ruleLine } from '@core/rules.ts';
+import { ApiError } from '@/lib/api';
+import { stamp } from '@/lib/format';
 import type { Item, NewRule, Project, RuleBody } from '@/lib/types';
 
 export interface RuleActions {
   add: (rule: NewRule) => Promise<void>;
-  set: (id: string, status: 'active' | 'off') => Promise<void>;
+  set: (id: string, status: 'active' | 'off', line?: string) => Promise<void>;
+  reload: () => Promise<void>;
 }
+
+export const lineOf = (i: Item) => i.line ?? ruleLine(i.body as RuleBody);
 
 const body = (i: Item) => i.body as RuleBody;
 const where = (i: Item, projects: Project[]) => (body(i).scope === 'all' ? 'all projects' : (projects.find((p) => p.key === i.project)?.name ?? 'this project'));
@@ -23,17 +29,22 @@ export function Rules({ open, onOpenChange, items, projects, actions, back }: { 
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const [failed, setFailed] = useState(false);
+  const [changed, setChanged] = useState(false);
   const rules = items.filter((i) => i.kind === 'rule').sort((a, b) => b.created - a.created);
   const pending = rules.filter((i) => body(i).status === 'pending').sort((a, b) => Number(later.has(a.id)) - Number(later.has(b.id)));
   const kept = rules.filter((i) => body(i).status !== 'pending');
   const run = async (f: () => Promise<void>) => {
     setBusy(true);
     setFailed(false);
+    setChanged(false);
     try {
       await f();
       return true;
-    } catch {
-      setFailed(true);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setChanged(true);
+        await actions.reload().catch(() => {});
+      } else setFailed(true);
       return false;
     } finally {
       setBusy(false);
@@ -67,19 +78,24 @@ export function Rules({ open, onOpenChange, items, projects, actions, back }: { 
         <SheetHeader className="p-4 pb-2 pr-12">
           <SheetTitle className="text-[0.9375rem] font-bold">Rules</SheetTitle>
         </SheetHeader>
+        <p role="status" className="px-4 pb-3 text-sm font-semibold empty:hidden" data-changed>
+          {changed ? 'This rule changed. Read it again before you accept.' : ''}
+        </p>
         {pending.length > 0 && (
           <ul className="grid gap-4 px-4 pb-5" aria-label="Pending">
             {pending.map((i) => (
               <li key={i.id} className="grid gap-2" data-pending={i.id}>
-                <p className="leading-snug">{`“${body(i).words}”`}</p>
+                <p className="break-words leading-snug" data-line>
+                  {lineOf(i)}
+                </p>
                 <p className="num text-xs">
-                  <span translate="no">{i.origin.agent}</span>, {where(i, projects)}
+                  <span translate="no">{i.origin.agent}</span> {stamp(i.created)}, {where(i, projects)}
                 </p>
                 {later.has(i.id) ? (
                   <p className="text-sm font-semibold">Later</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    <Button className="h-11 sm:h-8" disabled={busy} onClick={() => void run(() => actions.set(i.id, 'active'))}>
+                    <Button className="h-11 sm:h-8" disabled={busy} onClick={() => void run(() => actions.set(i.id, 'active', lineOf(i)))}>
                       Accept
                     </Button>
                     <Button variant="outline" className="h-11 sm:h-8" disabled={busy} onClick={() => void run(() => actions.set(i.id, 'off'))}>
@@ -98,10 +114,12 @@ export function Rules({ open, onOpenChange, items, projects, actions, back }: { 
           {kept.map((i) => (
             <li key={i.id} className="flex min-h-11 items-start justify-between gap-4 py-1" data-rule={i.id}>
               <label htmlFor={`rule-${i.id}`} className="grid gap-0.5">
-                <span className="leading-snug">{body(i).text}</span>
+                <span className="break-words leading-snug" data-line>
+                  {lineOf(i)}
+                </span>
                 <span className="num text-xs">{where(i, projects)}</span>
               </label>
-              <Switch id={`rule-${i.id}`} className="mt-0.5" checked={body(i).status === 'active'} disabled={busy} onCheckedChange={(on) => void run(() => actions.set(i.id, on ? 'active' : 'off'))} />
+              <Switch id={`rule-${i.id}`} className="mt-0.5" checked={body(i).status === 'active'} disabled={busy} onCheckedChange={(on) => void run(() => actions.set(i.id, on ? 'active' : 'off', lineOf(i)))} />
             </li>
           ))}
         </ul>
