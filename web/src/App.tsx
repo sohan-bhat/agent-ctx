@@ -54,6 +54,5 @@ export function App() {
       </Suspense>
     );
   if (isMock && path === '/login') return <MockSession on />;
-  if (isMock && path === '/logout') return <MockSession on={false} />;
   return <Home key={path} />;
 }

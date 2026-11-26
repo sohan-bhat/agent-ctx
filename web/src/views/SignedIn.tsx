@@ -11,6 +11,7 @@ import { AddAgent } from './AddAgent';
 import { DeleteAccount } from './DeleteAccount';
 import { Merge } from './Merge';
 import type { Actions } from './Panel';
+import { AgentMenu } from './AgentMenu';
 import { Rules, type RuleActions } from './Rules';
 import { Space } from './Space';
 
@@ -80,9 +81,10 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
           if (!d) return d;
           if (m.type === 'item') return { ...d, items: upsert(d.items, m.item) };
           if (m.type === 'remove') return { ...d, items: d.items.filter((i) => i.id !== m.id), queue: d.queue.filter((q) => q !== m.id) };
+          if (m.type === 'agent-removed') return { ...d, agents: d.agents.filter((a) => a.id !== m.id) };
           return { ...d, agents: upsert(d.agents, m.agent) };
         });
-        if (m.type !== 'agent') {
+        if (m.type !== 'agent' && m.type !== 'agent-removed') {
           setClockNow(Date.now());
           refreshMe();
         }
@@ -133,7 +135,7 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
     keep: async (id) => {
       const it = items.find((i) => i.id === id);
       if (it && isPending(it)) {
-        await api.setRule(id, 'active');
+        await api.setRule(id, 'active', it.line);
         patch(id, (i) => ({ ...i, body: { ...(i.body as RuleBody), status: 'active' } }));
       } else {
         await api.keep(id);
@@ -151,10 +153,16 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
       const it = await api.addRule(rule);
       setData((d) => (d ? { ...d, items: upsert(d.items, it) } : d));
     },
-    set: async (id, status) => {
-      await api.setRule(id, status);
+    set: async (id, status, line) => {
+      await api.setRule(id, status, line);
       patch(id, (i) => ({ ...i, body: { ...(i.body as RuleBody), status } }));
     },
+    reload: load,
+  };
+
+  const disconnect = async (a: Agent) => {
+    await api.removeAgent(a.id);
+    setData((d) => (d ? { ...d, agents: d.agents.filter((x) => x.id !== a.id) } : d));
   };
 
   const storage = `${megabytes(me.limits.bytes)} of ${megabytes(me.limits.max)}\u00a0MB`;
@@ -179,8 +187,8 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
           </h1>
           <ul className="order-last flex basis-full flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] sm:order-none sm:basis-auto" aria-label="Connected agents" data-agents>
             {agents.map((a: Agent) => (
-              <li key={a.id} className="max-w-full truncate" data-agent={a.label}>
-                <span translate="no">{a.label}</span> <span className="num inline-block min-w-[3ch] text-xs">{since(a.last, now)}</span>
+              <li key={a.id} className="max-w-full" data-agent={a.label}>
+                <AgentMenu agent={a} seen={since(a.last, now)} onDisconnect={disconnect} />
               </li>
             ))}
           </ul>
@@ -218,8 +226,18 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
                   Delete account
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild className="min-h-11 text-sm sm:min-h-8">
-                  <a href="/logout">Sign out</a>
+                <DropdownMenuItem
+                  className="min-h-11 text-sm sm:min-h-8"
+                  onSelect={async () => {
+                    try {
+                      await api.signOut();
+                    } finally {
+                      navigate('/', true);
+                      onSignedOut();
+                    }
+                  }}
+                >
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
