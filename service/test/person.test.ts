@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { FOOTER, type HandoffBody, type Item, type RuleBody } from '../../core/src/index.ts';
 import { SAY } from '../src/limits.ts';
-import { KILN, LOOM, caller, person, sql } from './helpers.ts';
+import { KILN, LOOM, caller, open, person, sql } from './helpers.ts';
 
 const A = caller('Codex', 'grant-a');
 const B = caller('Claude Code', 'grant-b');
@@ -89,6 +89,29 @@ describe('tools', () => {
     const out = await p.recall(B, { ...KILN, dropped: true });
     expect(out.text).toContain('PUT BACK');
     expect(out.text).toContain('Add the cone chart');
+  });
+});
+
+describe('reads', () => {
+  it('each handoff delivery is listed with the reading agent and only the newest 200 stay', async () => {
+    const p = person();
+    await open(p);
+    const h = await p.handoff(A, { ...KILN, goal: 'Ship the ramp', next: 'Wire the timer' });
+    expect((await p.space()).reads).toEqual([]);
+    await p.recall(B, KILN);
+    await p.recall(B, KILN);
+    await p.event(caller('Cursor', 'grant-c'), { host: 'claude-code', event: 'UserPromptSubmit', session: 'c-1', cwd: KILN.folder, prompt: 'carry on with the kiln ramp work' });
+    const reads = (await p.space()).reads;
+    expect(reads.map((r) => [r.item, r.agent])).toEqual([
+      [h.item!.id, 'Cursor'],
+      [h.item!.id, 'Claude Code'],
+    ]);
+    expect(reads[0].at).toBeGreaterThanOrEqual(reads[1].at);
+    for (let i = 0; i < 210; i++) await p.recall(caller('Codex', `grant-many-${i}`), KILN);
+    const many = (await p.space()).reads;
+    expect(many).toHaveLength(200);
+    expect(many.every((r) => r.agent === 'Codex')).toBe(true);
+    expect((await sql<{ n: number }>(p, 'SELECT COUNT(*) AS n FROM reads'))[0].n).toBe(200);
   });
 });
 

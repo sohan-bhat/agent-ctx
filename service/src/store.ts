@@ -14,9 +14,10 @@ const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS seen(reader TEXT, item TEXT, PRIMARY KEY(reader, item))',
   'CREATE TABLE IF NOT EXISTS queue(item TEXT PRIMARY KEY, at INTEGER)',
   'CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)',
+  'CREATE TABLE IF NOT EXISTS reads(at INTEGER, item TEXT, agent TEXT)',
 ];
 
-export const TABLES = ['items', 'events', 'sessions', 'projects', 'paths', 'aliases', 'agents', 'seen', 'queue', 'meta'];
+export const TABLES = ['items', 'events', 'sessions', 'projects', 'paths', 'aliases', 'agents', 'seen', 'queue', 'meta', 'reads'];
 
 export interface ItemRow {
   id: string;
@@ -35,6 +36,7 @@ export interface ItemRow {
 export interface EventRow { key: string; session: string; t: string; at: number; text: string | null; path: string | null; ok: number | null; flags: string | null }
 export interface SessionRow { id: string; agent: string; model: string | null; project: string; start: number; last: number; primed: number; grant_id: string }
 export interface AgentRow { id: string; label: string; first: number; last: number }
+export interface ReadRow { item: string; agent: string; at: number }
 
 export function toItem(r: ItemRow): Item {
   return {

@@ -39,7 +39,7 @@ import {
   type Source,
   type Via,
 } from '../../core/src/index.ts';
-import { Store, TABLES, type AgentRow, type EventRow, type SessionRow } from './store.ts';
+import { Store, TABLES, type AgentRow, type EventRow, type ReadRow, type SessionRow } from './store.ts';
 import { Limits, SAY } from './limits.ts';
 import { buildExport } from './export.ts';
 
@@ -51,7 +51,7 @@ export interface CheckpointArgs extends Where { goal: string; changed?: string[]
 export interface HandoffArgs extends Where { goal: string; done?: string; next: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; key?: string }
 export interface RuleArgs extends Where { text: string; words: string; scope: 'project' | 'all'; key?: string }
 export interface EventArgs { host?: string; event?: string; session?: string; cwd?: string; prompt?: string; tool?: string; file?: string; command?: string; message?: string; summary?: string; reason?: string; source?: string; model?: string }
-export interface Space { projects: { key: string; name: string; items: number }[]; agents: AgentRow[]; items: Item[]; queue: string[]; now: number }
+export interface Space { projects: { key: string; name: string; items: number }[]; agents: AgentRow[]; items: Item[]; queue: string[]; reads: ReadRow[]; now: number }
 export interface Me { bytes: number; max: number; callsToday: number; storedToday: number }
 
 const MINUTE = 60000;
@@ -63,6 +63,7 @@ const KEEP_EVENTS = 14 * DAY;
 const EVENTS_PER_SESSION = 400;
 const POOL = 400;
 const SPACE_ITEMS = 1500;
+const READS_KEPT = 200;
 const OWN_TOOL = /agent[-_]?ctx/i;
 const PLACEHOLDER = /^\$\{[^}]*\}$/;
 const FAILED = 'Memory could not be loaded. Do not assume that nothing is stored.';
@@ -285,7 +286,7 @@ export class Person extends DurableObject<Env> {
     return true;
   }
 
-  private memory(o: { project: string; reader: string; grant: string; query?: string; first: boolean; once: boolean; putBack: Item[]; rulesOnly?: boolean; now: number }): { text: string; delivered: string[] } {
+  private memory(o: { project: string; reader: string; grant: string; agent: string; query?: string; first: boolean; once: boolean; putBack: Item[]; rulesOnly?: boolean; now: number }): { text: string; delivered: string[] } {
     const query = (o.query ?? '').trim();
     const rules = this.store.rules();
     let items: Item[] = o.rulesOnly ? [] : this.store.projectItems(o.project, POOL);
@@ -317,6 +318,9 @@ export class Person extends DurableObject<Env> {
     });
     const record = o.once ? res.delivered : res.delivered.filter((id) => byId.get(id)?.kind === 'handoff');
     for (const id of record) this.store.q('INSERT INTO seen(reader, item) VALUES(?, ?) ON CONFLICT DO NOTHING', o.reader, id);
+    const handoffs = res.delivered.filter((id) => byId.get(id)?.kind === 'handoff');
+    for (const id of handoffs) this.store.q('INSERT INTO reads(at, item, agent) VALUES(?, ?, ?)', o.now, id, o.agent);
+    if (handoffs.length) this.store.q('DELETE FROM reads WHERE rowid IN (SELECT rowid FROM reads ORDER BY at DESC, rowid DESC LIMIT -1 OFFSET ?)', READS_KEPT);
     return res;
   }
 
@@ -342,7 +346,7 @@ export class Person extends DurableObject<Env> {
           const dropped = this.store.projectItems(project, POOL).filter((i) => i.kind === 'dropped' && !i.held);
           putBack = query ? rankItems(dropped, query, now).slice(0, 5).map((h) => h.item) : dropped.slice(0, 5);
         }
-        const res = this.memory({ project, reader: `g-${c.grant}`, grant: c.grant, query, first: !query, once: false, putBack, now });
+        const res = this.memory({ project, reader: `g-${c.grant}`, grant: c.grant, agent: c.agent, query, first: !query, once: false, putBack, now });
         return { ok: true, text: res.text };
       } catch {
         return { ok: false, text: FAILED };
@@ -502,7 +506,7 @@ export class Person extends DurableObject<Env> {
       const first = !s.primed;
       const putBack = this.queued(s.project);
       const query = first ? undefined : cleanText(kept).text;
-      const res = this.memory({ project: s.project, reader, grant: c.grant, query, first, once: true, putBack, now });
+      const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, query, first, once: true, putBack, now });
       this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
       if (first) this.store.q('UPDATE sessions SET primed = 1 WHERE id = ?', sid);
       const paused = first ? this.limits.paused(now) : null;
@@ -532,7 +536,7 @@ export class Person extends DurableObject<Env> {
       const source = val(a.source);
       if (source !== 'clear' && source !== 'compact') return '';
       const putBack = this.queued(s.project);
-      const res = this.memory({ project: s.project, reader, grant: c.grant, first: true, once: true, putBack, rulesOnly: true, now });
+      const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, first: true, once: true, putBack, rulesOnly: true, now });
       this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
       return hookOutput(host, name, res.text);
     }
@@ -638,6 +642,7 @@ export class Person extends DurableObject<Env> {
       agents: this.store.q<AgentRow>('SELECT * FROM agents ORDER BY first'),
       items: this.store.newest(SPACE_ITEMS),
       queue: this.store.q<{ item: string }>('SELECT item FROM queue ORDER BY at').map((r) => r.item),
+      reads: this.store.q<ReadRow>('SELECT item, agent, at FROM reads ORDER BY at DESC, rowid DESC LIMIT ?', READS_KEPT),
       now: Date.now(),
     };
   }

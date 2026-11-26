@@ -31,9 +31,20 @@ describe('page API', () => {
     const me = (await (await api('/api/me')).json()) as Record<string, unknown>;
     expect(me).toEqual({ person: { id: 'dev-api-shape', login: 'api-shape' }, limits: { bytes: expect.any(Number), max: 10 * 1024 * 1024, callsToday: 1, storedToday: 1 }, toolChars: TOOL_CHARS });
     const space = (await (await api('/api/space')).json()) as Record<string, unknown>;
-    expect(Object.keys(space).sort()).toEqual(['agents', 'items', 'now', 'projects', 'queue']);
+    expect(Object.keys(space).sort()).toEqual(['agents', 'items', 'now', 'projects', 'queue', 'reads']);
+    expect(space.reads).toEqual([]);
     expect(space.projects).toEqual([{ key: 'github.com/acme/kiln', name: 'kiln', items: 1 }]);
     expect((space.agents as { label: string }[]).map((a) => a.label)).toEqual(['Codex']);
+  });
+
+  it('space lists each handoff delivery with the reading agent label', async () => {
+    const { api, client, jar } = await setup('api-reads');
+    await call(client, 'handoff', { folder: '/w/kiln', goal: 'Kiln goal', next: 'Kiln next' });
+    const other = await mcp((await connect(jar, 'claude-code')).access);
+    await call(other, 'recall', { folder: '/w/kiln' });
+    const space = (await (await api('/api/space')).json()) as { items: Item[]; reads: { item: string; agent: string; at: number }[] };
+    const h = space.items.find((i) => i.kind === 'handoff')!;
+    expect(space.reads).toEqual([{ item: h.id, agent: 'Claude Code', at: expect.any(Number) }]);
   });
 
   it('pin, keep, put back, delete, rules and merge answer with items or plain errors', async () => {
