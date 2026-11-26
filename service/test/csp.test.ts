@@ -65,4 +65,18 @@ describe('form-action on the consent page', () => {
     expect(signedIn).not.toContain('href="/logout"');
     expect(ORIGIN.length).toBeGreaterThan(0);
   });
+
+  it('an authorization error redirects only to an address the client registered', async () => {
+    const jar = await devSignIn('csp-four');
+    const clientId = await register('Csp Agent', 'http://127.0.0.1:4567/callback');
+    const { challenge } = await pkce();
+    const ask = (redirect: string, type = 'code') =>
+      send(`/authorize?${new URLSearchParams({ response_type: type, client_id: clientId, redirect_uri: redirect, scope: 'read write', state: 's', code_challenge: challenge, code_challenge_method: 'S256', resource: RESOURCE })}`, { headers: { Cookie: jar.header() }, redirect: 'manual' });
+    const wrong = await ask('https://evil.example/cb', 'token');
+    expect(wrong.status).toBe(400);
+    expect(wrong.headers.get('Location')).toBe(null);
+    const matched = await ask('http://127.0.0.1:4567/callback', 'token');
+    expect(matched.status).toBe(302);
+    expect(matched.headers.get('Location')).toMatch(/^http:\/\/127\.0\.0\.1:4567\/callback\?error=/);
+  });
 });
