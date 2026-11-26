@@ -36,6 +36,9 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
   const [rules, setRules] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [merging, setMerging] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const backToMenu = () => menuButton.current?.focus();
+  const addButton = useRef<HTMLButtonElement>(null);
   const addingRef = useRef(false);
   addingRef.current = adding;
   const meTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,61 +172,63 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
       <a href="#space" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-sm focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground">
         Skip to the space
       </a>
-      <header className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-        <h1 translate="no" className="text-[1.125rem] font-bold leading-none tracking-[-0.01em]">
-          agent-ctx
-        </h1>
-        <ul className="order-last flex basis-full flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] sm:order-none sm:basis-auto" aria-label="Connected agents" data-agents>
-          {agents.map((a: Agent) => (
-            <li key={a.id} className="max-w-full truncate" data-agent={a.label}>
-              <span translate="no">{a.label}</span> <span className="num inline-block min-w-[3ch] text-xs">{since(a.last, now)}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="num hidden text-xs md:inline" data-storage>
-            {storage}
-          </span>
-          <Button className="h-11 rounded-full px-4 text-sm sm:h-9" onClick={() => setAdding(true)}>
-            Add agent
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="-mr-2 size-11 sm:size-9" aria-label="Menu">
-                <ListIcon className="size-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60 text-sm">
-              <DropdownMenuLabel className="num grid gap-1 text-xs text-foreground md:hidden">
-                <span>{storage}</span>
-                <span>{cost}</span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="md:hidden" />
-              <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => setRules(true)}>
-                Rules
-              </DropdownMenuItem>
-              {projects.length > 1 && (
-                <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => setMerging(true)}>
-                  Merge projects
+      <header>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+          <h1 translate="no" className="text-[1.125rem] font-bold leading-none tracking-[-0.01em]">
+            agent-ctx
+          </h1>
+          <ul className="order-last flex basis-full flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] sm:order-none sm:basis-auto" aria-label="Connected agents" data-agents>
+            {agents.map((a: Agent) => (
+              <li key={a.id} className="max-w-full truncate" data-agent={a.label}>
+                <span translate="no">{a.label}</span> <span className="num inline-block min-w-[3ch] text-xs">{since(a.last, now)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="num hidden text-xs md:inline" data-storage>
+              {storage}
+            </span>
+            <Button ref={addButton} className="h-11 rounded-full px-4 text-sm sm:h-9" onClick={() => setAdding(true)}>
+              Add agent
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button ref={menuButton} variant="ghost" size="icon" className="-mr-2 size-11 sm:size-9" aria-label="Menu">
+                  <ListIcon className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60 text-sm">
+                <DropdownMenuLabel className="num grid gap-1 text-xs text-foreground md:hidden">
+                  <span>{storage}</span>
+                  <span>{cost}</span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="md:hidden" />
+                <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => setRules(true)}>
+                  Rules
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => void api.exportAll()}>
-                Export
-              </DropdownMenuItem>
-              <DropdownMenuItem className="min-h-11 text-sm text-destructive focus:text-destructive sm:min-h-8" onSelect={() => setDeleting(true)}>
-                Delete account
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild className="min-h-11 text-sm sm:min-h-8">
-                <a href="/logout">Sign out</a>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {projects.length > 1 && (
+                  <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => setMerging(true)}>
+                    Merge projects
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => void api.exportAll()}>
+                  Export
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-11 text-sm text-destructive focus:text-destructive sm:min-h-8" onSelect={() => setDeleting(true)}>
+                  Delete account
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="min-h-11 text-sm sm:min-h-8">
+                  <a href="/logout">Sign out</a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+        <p className="num mt-1 hidden text-xs md:block" data-cost>
+          {cost}
+        </p>
       </header>
-      <p className="num mt-1 hidden text-xs md:block" data-cost>
-        {cost}
-      </p>
       <main className="relative mt-3 min-h-0 flex-1">
         <Space
           projects={projects}
@@ -241,9 +246,10 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
           onTime={(t) => setScrub(t >= end - (end - start) / 600 ? null : t)}
         />
       </main>
-      <AddAgent open={adding} onOpenChange={setAdding} />
-      <Rules open={rules} onOpenChange={setRules} items={items} projects={projects} actions={ruleActions} />
+      <AddAgent open={adding} onOpenChange={setAdding} back={() => addButton.current?.focus()} />
+      <Rules open={rules} onOpenChange={setRules} items={items} projects={projects} actions={ruleActions} back={backToMenu} />
       <Merge
+        back={backToMenu}
         open={merging}
         onOpenChange={setMerging}
         projects={projects}
@@ -253,6 +259,7 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
         }}
       />
       <DeleteAccount
+        back={backToMenu}
         open={deleting}
         onOpenChange={setDeleting}
         onDelete={async () => {

@@ -90,6 +90,7 @@ export function Space({ projects, agents, items, reads, queue, start, end, time,
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<'scene' | 'list'>('scene');
   const [broken, setBroken] = useState(false);
+  const opener = useRef<HTMLElement | null>(null);
   const item = selected ? items.find((i) => i.id === selected) : undefined;
   const chose = useRef(false);
   useEffect(() => {
@@ -113,7 +114,7 @@ export function Space({ projects, agents, items, reads, queue, start, end, time,
   }, []);
   const span = Math.max(end - start, 60 * 60_000);
   const sheet = !!item && (narrow || mode === 'list' || !webgl || broken);
-  const panel = item ? <Panel item={item} queued={queue.has(item.id)} actions={actions} /> : null;
+  const panel = item ? <Panel item={item} queued={queue.has(item.id)} actions={actions} headingId="panel-title" /> : null;
   const list = (visible: boolean) => (
     <ItemList
       projects={projects}
@@ -122,6 +123,7 @@ export function Space({ projects, agents, items, reads, queue, start, end, time,
       time={time}
       visible={visible}
       onOpen={(id) => {
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setMode('list');
         setSelected(id);
       }}
@@ -209,6 +211,13 @@ export function Space({ projects, agents, items, reads, queue, start, end, time,
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => {
             if (window.matchMedia('(pointer: coarse)').matches) e.preventDefault();
+          }}
+          onCloseAutoFocus={(e) => {
+            const el = opener.current;
+            opener.current = null;
+            if (!el || !document.contains(el)) return;
+            e.preventDefault();
+            el.focus();
           }}
         >
           <SheetTitle className="sr-only">{item ? headline(item) : 'Item'}</SheetTitle>

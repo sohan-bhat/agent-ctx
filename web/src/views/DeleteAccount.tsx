@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export function DeleteAccount({ open, onOpenChange, onDelete }: { open: boolean; onOpenChange: (o: boolean) => void; onDelete: () => Promise<void> }) {
+export function DeleteAccount({ open, onOpenChange, onDelete, back }: { open: boolean; onOpenChange: (o: boolean) => void; onDelete: () => Promise<void>; back?: () => void }) {
   const [word, setWord] = useState('');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -20,7 +20,15 @@ export function DeleteAccount({ open, onOpenChange, onDelete }: { open: boolean;
         onOpenChange(o);
       }}
     >
-      <AlertDialogContent className="text-sm" aria-describedby={undefined}>
+      <AlertDialogContent
+        className="text-sm"
+        aria-describedby={undefined}
+        onCloseAutoFocus={(e) => {
+          if (!back) return;
+          e.preventDefault();
+          back();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="text-[0.9375rem] font-bold">Delete account?</AlertDialogTitle>
         </AlertDialogHeader>

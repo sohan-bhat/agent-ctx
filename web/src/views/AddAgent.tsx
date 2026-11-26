@@ -86,7 +86,7 @@ function Path({ product, onBack }: { product: Product; onBack: () => void }) {
   );
 }
 
-export function AddAgent({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function AddAgent({ open, onOpenChange, back }: { open: boolean; onOpenChange: (open: boolean) => void; back?: () => void }) {
   const [chosen, setChosen] = useState<Product | null>(null);
   useEffect(() => {
     if (!open) setChosen(null);
@@ -98,6 +98,11 @@ export function AddAgent({ open, onOpenChange }: { open: boolean; onOpenChange: 
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
           if (window.matchMedia('(pointer: coarse)').matches) e.preventDefault();
+        }}
+        onCloseAutoFocus={(e) => {
+          if (!back) return;
+          e.preventDefault();
+          back();
         }}
       >
         {chosen ? (

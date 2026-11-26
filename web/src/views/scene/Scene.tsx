@@ -290,6 +290,7 @@ export default function Scene({ projects, agents, items, reads, time, span, focu
           </PopoverAnchor>
           {selected && anchor && (
             <PopoverContent
+              aria-labelledby="panel-title"
               side="top"
               align="center"
               collisionPadding={12}

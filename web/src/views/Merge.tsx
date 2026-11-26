@@ -27,7 +27,7 @@ function Pick({ id, label, value, onChange, projects, other }: { id: string; lab
   );
 }
 
-export function Merge({ open, onOpenChange, projects, onMerge }: { open: boolean; onOpenChange: (o: boolean) => void; projects: Project[]; onMerge: (from: string, into: string) => Promise<void> }) {
+export function Merge({ open, onOpenChange, projects, onMerge, back }: { open: boolean; onOpenChange: (o: boolean) => void; projects: Project[]; onMerge: (from: string, into: string) => Promise<void>; back?: () => void }) {
   const [from, setFrom] = useState('');
   const [into, setInto] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,7 +41,15 @@ export function Merge({ open, onOpenChange, projects, onMerge }: { open: boolean
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-4 p-4 text-sm sm:max-w-sm" aria-describedby={undefined}>
+      <DialogContent
+        className="gap-4 p-4 text-sm sm:max-w-sm"
+        aria-describedby={undefined}
+        onCloseAutoFocus={(e) => {
+          if (!back) return;
+          e.preventDefault();
+          back();
+        }}
+      >
         <DialogTitle className="text-[0.9375rem] font-bold">Merge projects</DialogTitle>
         <Pick id="merge-from" label="From" value={from} onChange={setFrom} projects={projects} other={into} />
         <Pick id="merge-into" label="Into" value={into} onChange={setInto} projects={projects} other={from} />

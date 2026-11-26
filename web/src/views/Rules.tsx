@@ -15,7 +15,7 @@ export interface RuleActions {
 const body = (i: Item) => i.body as RuleBody;
 const where = (i: Item, projects: Project[]) => (body(i).scope === 'all' ? 'all projects' : (projects.find((p) => p.key === i.project)?.name ?? 'this project'));
 
-export function Rules({ open, onOpenChange, items, projects, actions }: { open: boolean; onOpenChange: (o: boolean) => void; items: Item[]; projects: Project[]; actions: RuleActions }) {
+export function Rules({ open, onOpenChange, items, projects, actions, back }: { open: boolean; onOpenChange: (o: boolean) => void; items: Item[]; projects: Project[]; actions: RuleActions; back?: () => void }) {
   const narrow = useNarrow();
   const [text, setText] = useState('');
   const [scope, setScope] = useState('all');
@@ -57,6 +57,11 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
           if (window.matchMedia('(pointer: coarse)').matches) e.preventDefault();
+        }}
+        onCloseAutoFocus={(e) => {
+          if (!back) return;
+          e.preventDefault();
+          back();
         }}
       >
         <SheetHeader className="p-4 pb-2 pr-12">
