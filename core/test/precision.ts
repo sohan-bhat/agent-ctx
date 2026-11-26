@@ -7,6 +7,7 @@ import * as two from './corpus2.ts';
 import * as twoB from './corpus2b.ts';
 import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
+import { loadVectors, missing, runHybrid } from './vectors.ts';
 
 export interface Labelled { q: string; project: string; kind: string; want: string[] }
 export interface TestSet { items: Item[]; queries: Labelled[]; projects: { key: string; names: string[] }[]; now: number }
@@ -72,5 +73,17 @@ if (isMain()) {
     console.log(`${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
     console.log(`${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
     console.log(`${name}_found ${s.found.toFixed(2)}`);
+  }
+  const file = loadVectors();
+  for (const [name, set] of all) {
+    const lack = missing(file, set);
+    if (!file || lack) {
+      console.log(`hybrid_${name} incomplete, vectors.json lacks ${lack} texts`);
+      continue;
+    }
+    const s = measure(runHybrid(set, file));
+    console.log(`hybrid_${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
+    console.log(`hybrid_${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
+    console.log(`hybrid_${name}_found ${s.found.toFixed(2)}`);
   }
 }
