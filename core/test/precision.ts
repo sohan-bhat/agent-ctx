@@ -1,13 +1,12 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { recall } from '../src/recall.ts';
+import { recall, type LooseSettings } from '../src/recall.ts';
 import type { Item } from '../src/model.ts';
 import * as one from './corpus.ts';
 import * as two from './corpus2.ts';
 import * as twoB from './corpus2b.ts';
 import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
-import type { LooseSettings } from '../src/topics.ts';
 import * as lang from './corpus-lang.ts';
 import * as lang2 from './corpus-lang2.ts';
 

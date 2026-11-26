@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hookOutput, quietPrompt } from '../src/hooks.ts';
+import { hookOutput, quietPrompt } from '../src/recall.ts';
 import { FIRST_CHARS } from '../src/model.ts';
 
 test('a short prompt or one that starts with a slash, a bang or a hash is quiet', () => {

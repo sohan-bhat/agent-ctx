@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { FOOTER, HEADER, NO_MATCH, OTHERS_CHARS, TOPIC_CHARS, recall, type RecallInput } from '../src/recall.ts';
-import { TOPICS, looseMatches, resolveIds, shortIds, topicList } from '../src/topics.ts';
+import { FOOTER, HEADER, NO_MATCH, OTHERS_CHARS, TOPICS, TOPIC_CHARS, looseMatches, recall, resolveIds, shortIds, topicList, type RecallInput } from '../src/recall.ts';
 import type { Body, Item, Kind } from '../src/model.ts';
 import { SETS, SET2B, SET3, SET4 } from './precision.ts';
 import * as lang from './corpus-lang.ts';

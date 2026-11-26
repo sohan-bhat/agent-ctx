@@ -5,8 +5,6 @@ export * from './rules.ts';
 export * from './rank.ts';
 export * from './recall.ts';
 export * from './fold.ts';
-export * from './topics.ts';
-export * from './hooks.ts';
 export { redact, hasSecret, DROPPED } from './redact.ts';
 export { GROUPS, joinPhrases, synonymsOf, tokens, vocabulary } from './text.ts';
 export * from './merge.ts';
