@@ -2,12 +2,9 @@ import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, use
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Slider } from '@/components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { clock, stamp } from '@/lib/utils';
-import { headline } from '@/lib/utils';
 import type { Item, Project, Read } from '@/lib/api';
-import { useNarrow } from '@/lib/utils';
-import { ItemList } from './ItemList';
-import { Panel, type Actions } from './Panel';
+import { clock, headline, stamp, useNarrow } from '@/lib/utils';
+import { ItemList, Panel, type Actions } from './Panel';
 
 const loadScene = () => import('./scene/Scene');
 const Scene = lazy(loadScene);

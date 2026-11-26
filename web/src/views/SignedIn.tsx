@@ -2,16 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ListIcon } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { api } from '@/lib/api';
-import { count, megabytes, since } from '@/lib/utils';
-import { isPending } from '@/lib/utils';
-import type { Agent, Item, Live, Me, RuleBody, Space as SpaceData } from '@/lib/api';
+import { api, type Agent, type Item, type Live, type Me, type RuleBody, type Space as SpaceData } from '@/lib/api';
+import { count, isPending, megabytes, since } from '@/lib/utils';
 import { navigate } from '@/router';
 import { AddAgent } from './AddAgent';
-import { DeleteAccount } from './DeleteAccount';
-import { Merge } from './Merge';
+import { AgentMenu, DeleteAccount, Merge } from './Dialogs';
 import type { Actions } from './Panel';
-import { AgentMenu } from './AgentMenu';
 import { Rules, type RuleActions } from './Rules';
 import { Space } from './Space';
 
@@ -133,9 +129,9 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
       setData((d) => (d ? { ...d, queue: [...new Set([...d.queue, id])] } : d));
     },
     keep: async (id) => {
-      const it = items.find((i) => i.id === id);
-      if (it && isPending(it)) {
-        await api.setRule(id, 'active', it.line);
+      const item = items.find((i) => i.id === id);
+      if (item && isPending(item)) {
+        await api.setRule(id, 'active', item.line);
         patch(id, (i) => ({ ...i, body: { ...(i.body as RuleBody), status: 'active' } }));
       } else {
         await api.keep(id);
@@ -150,8 +146,8 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
 
   const ruleActions: RuleActions = {
     add: async (rule) => {
-      const it = await api.addRule(rule);
-      setData((d) => (d ? { ...d, items: upsert(d.items, it) } : d));
+      const added = await api.addRule(rule);
+      setData((d) => (d ? { ...d, items: upsert(d.items, added) } : d));
     },
     set: async (id, status, line) => {
       await api.setRule(id, status, line);
