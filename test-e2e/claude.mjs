@@ -7,11 +7,18 @@ import { stamp } from '../scripts/stamp.mjs';
 import { ORIGIN } from './service.mjs';
 
 export const BIN = process.env.E2E_CLAUDE_BIN ?? join(homedir(), '.local', 'bin', 'claude');
-export const MAX_RUNS = 25;
+export const MAX_RUNS = Number(process.env.E2E_MAX_RUNS ?? 25);
+export const MAX_COST = Number(process.env.E2E_MAX_COST ?? 0.4);
+const COST_BEFORE = Number(process.env.E2E_COST_BEFORE ?? 0);
 const HERE = fileURLToPath(import.meta.url);
 
 export function paths(tmp, proofs) {
   return { tmp, proofs, secrets: join(tmp, 'secrets.json'), ledger: join(proofs, 'runs.jsonl') };
+}
+
+export function spentSoFar(ledger) {
+  if (!existsSync(ledger)) return 0;
+  return readFileSync(ledger, 'utf8').split('\n').filter(Boolean).reduce((n, l) => n + (JSON.parse(l).cost ?? 0), 0);
 }
 
 export function runsSoFar(ledger) {
@@ -51,6 +58,10 @@ function setup(p, side, layout) {
     writeFileSync(file, JSON.stringify({ autoMemoryEnabled: false, hooks: JSON.parse(hooks).hooks }));
     return { mcp, settings: file, plugin: null };
   }
+  if (layout === 'tools') {
+    writeFileSync(mcp, JSON.stringify(server('agent-ctx')));
+    return { mcp, settings, plugin: null };
+  }
   writeFileSync(mcp, JSON.stringify(server(SCOPED)));
   return { mcp, settings, plugin };
 }
@@ -62,13 +73,16 @@ function userLine(text) {
 export async function runClaude(p, o) {
   const used = runsSoFar(p.ledger);
   if (used >= MAX_RUNS) throw new Error(`The budget of ${MAX_RUNS} runs is spent.`);
+  const spent = COST_BEFORE + spentSoFar(p.ledger);
+  if (spent >= MAX_COST) throw new Error(`The cost cap of ${MAX_COST} dollars is reached, ${spent.toFixed(4)} spent.`);
+  const model = o.model ?? 'haiku';
   const layout = o.layout ?? 'scoped';
   const c = setup(p, o.side, layout);
   const debug = join(p.tmp, `${o.name}.debug.log`);
   const multi = o.prompts.length > 1;
   const args = ['-p'];
   if (!multi) args.push(o.prompts[0]);
-  args.push('--model', 'haiku', '--output-format', 'stream-json', '--verbose', '--include-hook-events', '--no-session-persistence');
+  args.push('--model', model, '--output-format', 'stream-json', '--verbose', '--include-hook-events', '--no-session-persistence');
   args.push('--strict-mcp-config', '--mcp-config', c.mcp, '--settings', c.settings, '--setting-sources', 'project', '--debug-file', debug);
   if (multi) args.push('--input-format', 'stream-json');
   if (c.plugin) args.push('--plugin-dir', c.plugin);
@@ -125,6 +139,7 @@ export async function runClaude(p, o) {
     side: o.side,
     label: o.side === 'A' ? 'Claude Code' : o.side === 'B' ? 'Codex' : 'none',
     layout: o.side === 'none' ? 'none' : layout,
+    model,
     cwd: scrub(o.cwd, secrets, p.tmp),
     prompts: o.prompts,
     code,
@@ -168,13 +183,14 @@ if (main) {
   };
   const tools = (flag('--tools') ?? '').split(',').filter(Boolean);
   const layout = flag('--layout') ?? 'scoped';
+  const model = flag('--model') ?? 'haiku';
   const prompts = rest;
   if (!name || !['A', 'B', 'none'].includes(side) || !cwd || !prompts.length || !tmp || !proofs) {
-    console.log('Set E2E_TMP and E2E_PROOFS, then give a name, a side of A, B or none, a project folder and one or more prompts, with --tools LIST to allow tools.');
+    console.log('Set E2E_TMP and E2E_PROOFS, then give a name, a side of A, B or none, a project folder and one or more prompts, with --tools LIST to allow tools, --layout scoped, settings or tools, and --model NAME.');
     process.exit(name ? 1 : 0);
   }
   const p = paths(tmp, proofs);
-  const r = await runClaude(p, { name, side, cwd, prompts, tools, layout });
+  const r = await runClaude(p, { name, side, cwd, prompts, tools, layout, model });
   console.log(JSON.stringify(r.row, null, 1));
   console.log(JSON.stringify(summary(r.events), null, 1).slice(0, 6000));
   if (r.stderr.trim()) console.log('stderr', r.stderr.slice(0, 1500));
