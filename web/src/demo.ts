@@ -1,4 +1,4 @@
-import type { Agent, CardBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/types';
+import type { Agent, CardBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/api';
 
 const MIN = 60_000;
 const start = new Date(2026, 9, 14, 8, 0, 0, 0).getTime();

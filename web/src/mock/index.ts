@@ -1,7 +1,7 @@
 import { itemBytes } from '@core/model.ts';
 import { ruleLine } from '@core/rules.ts';
 import { ApiError } from '@/lib/api';
-import type { Agent, Item, Live, Me, NewRule, RuleBody, Space, Transport } from '@/lib/types';
+import type { Agent, Item, Live, Me, NewRule, RuleBody, Space, Transport } from '@/lib/api';
 import { liveCard, PROJECTS, ruleItem, seed, type World } from './data';
 
 const KEY = 'agent-ctx-mock';

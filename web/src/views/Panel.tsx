@@ -3,8 +3,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { canPutBack, isPending, lines, originLine } from '@/lib/item';
-import type { Item } from '@/lib/types';
+import { canPutBack, isPending, lines, originLine } from '@/lib/utils';
+import type { Item } from '@/lib/api';
 
 export interface Actions {
   pin: (id: string, on: boolean) => Promise<void>;

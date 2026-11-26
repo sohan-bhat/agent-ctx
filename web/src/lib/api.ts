@@ -1,5 +1,82 @@
-import { socket } from './live';
-import type { Item, Me, NewRule, Space, Transport } from './types';
+import type { CardBody, DroppedBody, HandoffBody, Item as Stored, Kind, Origin, RuleBody } from '@core/model.ts';
+
+export type { CardBody, DroppedBody, HandoffBody, Kind, Origin, RuleBody };
+
+export type Item = Stored & { line?: string };
+
+export interface Person {
+  id: string;
+  login: string;
+}
+
+export interface Limits {
+  bytes: number;
+  max: number;
+  callsToday: number;
+  storedToday: number;
+}
+
+export interface Me {
+  person: Person;
+  limits: Limits;
+  toolChars: number;
+}
+
+export interface Project {
+  key: string;
+  name: string;
+  items: number;
+}
+
+export interface Agent {
+  id: string;
+  label: string;
+  first: number;
+  last: number;
+}
+
+export interface Read {
+  item: string;
+  agent: string;
+  at: number;
+}
+
+export interface Space {
+  projects: Project[];
+  agents: Agent[];
+  items: Item[];
+  queue: string[];
+  reads: Read[];
+  now: number;
+}
+
+export type Live = { type: 'item'; item: Item } | { type: 'remove'; id: string } | { type: 'agent'; agent: Agent } | { type: 'agent-removed'; id: string } | { type: 'reset' };
+
+export type RuleScope = 'project' | 'all';
+
+export interface NewRule {
+  text: string;
+  scope: RuleScope;
+  project?: string;
+}
+
+export interface Transport {
+  me(): Promise<Me | null>;
+  space(): Promise<Space>;
+  pin(id: string, on: boolean): Promise<void>;
+  keep(id: string): Promise<void>;
+  putBack(id: string): Promise<void>;
+  remove(id: string): Promise<void>;
+  addRule(rule: NewRule): Promise<Item>;
+  setRule(id: string, status: 'active' | 'off', line?: string): Promise<void>;
+  removeAgent(id: string): Promise<void>;
+  signOut(): Promise<void>;
+  merge(from: string, into: string): Promise<void>;
+  exportAll(): Promise<void>;
+  deleteAccount(): Promise<void>;
+  live(on: (m: Live) => void, state: (open: boolean) => void): () => void;
+  hint(product: string): void;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -7,6 +84,62 @@ export class ApiError extends Error {
     super(`status ${status}`);
     this.status = status;
   }
+}
+
+const STEPS = [1000, 2000, 4000, 8000, 15000];
+
+function parse(raw: unknown): Live | null {
+  if (typeof raw !== 'string') return null;
+  try {
+    const m = JSON.parse(raw) as Live;
+    if (m && (m.type === 'item' || m.type === 'remove' || m.type === 'agent' || m.type === 'agent-removed' || m.type === 'reset')) return m;
+  } catch {}
+  return null;
+}
+
+function socket(on: (m: Live) => void, state: (open: boolean) => void): () => void {
+  let ws: WebSocket | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let tries = 0;
+  let stopped = false;
+  let dropped = false;
+  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/live`;
+  const open = () => {
+    if (stopped) return;
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      tries = 0;
+      state(true);
+      if (dropped) on({ type: 'reset' });
+      dropped = false;
+    };
+    ws.onmessage = (e) => {
+      const m = parse(e.data);
+      if (m) on(m);
+    };
+    ws.onclose = () => {
+      ws = null;
+      if (stopped) return;
+      dropped = true;
+      state(false);
+      timer = setTimeout(open, STEPS[Math.min(tries++, STEPS.length - 1)]);
+    };
+  };
+  const wake = () => {
+    if (document.visibilityState === 'visible' && !ws && timer) {
+      clearTimeout(timer);
+      timer = null;
+      open();
+    }
+  };
+  document.addEventListener('visibilitychange', wake);
+  open();
+  return () => {
+    stopped = true;
+    document.removeEventListener('visibilitychange', wake);
+    if (timer) clearTimeout(timer);
+    ws?.close();
+  };
 }
 
 async function call(method: string, path: string, body?: unknown): Promise<Response> {

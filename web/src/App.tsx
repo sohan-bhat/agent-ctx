@@ -1,6 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { api, isMock } from '@/lib/api';
-import type { Me } from '@/lib/types';
+import { api, isMock, type Me } from '@/lib/api';
 import { navigate, usePath } from '@/router';
 import { SignedOut } from '@/views/SignedOut';
 import { preloadScene } from '@/views/Space';

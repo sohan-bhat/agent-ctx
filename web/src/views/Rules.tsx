@@ -4,11 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useNarrow } from '@/lib/hooks';
 import { ruleLine } from '@core/rules.ts';
-import { ApiError } from '@/lib/api';
-import { stamp } from '@/lib/format';
-import type { Item, NewRule, Project, RuleBody } from '@/lib/types';
+import { ApiError, type Item, type NewRule, type Project, type RuleBody } from '@/lib/api';
+import { stamp, useNarrow } from '@/lib/utils';
 
 export interface RuleActions {
   add: (rule: NewRule) => Promise<void>;

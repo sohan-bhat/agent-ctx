@@ -2,7 +2,7 @@ import { hierarchy, treemap, treemapDice, treemapSquarify, type HierarchyRectang
 import { Box3, Matrix4, Quaternion, Vector3, type OrthographicCamera } from 'three';
 import type { CameraControlsImpl } from '@react-three/drei';
 import { itemBytes } from '@core/model.ts';
-import type { Item, Read, RuleBody } from '@/lib/types';
+import type { Item, Read, RuleBody } from '@/lib/api';
 
 export const H_MIN = 0.08;
 export const H_MAX = 1.6;

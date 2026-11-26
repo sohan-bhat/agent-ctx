@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { Project } from '@/lib/types';
+import type { Project } from '@/lib/api';
 
 function Pick({ id, label, value, onChange, projects, other }: { id: string; label: string; value: string; onChange: (v: string) => void; projects: Project[]; other: string }) {
   return (

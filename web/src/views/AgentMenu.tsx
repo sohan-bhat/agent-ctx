@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import type { Agent } from '@/lib/types';
+import type { Agent } from '@/lib/api';
 
 export function AgentMenu({ agent, seen, onDisconnect }: { agent: Agent; seen: string; onDisconnect: (a: Agent) => Promise<void> }) {
   const [asking, setAsking] = useState(false);

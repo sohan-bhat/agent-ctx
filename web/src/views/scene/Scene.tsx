@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import type { Item, Read } from '@/lib/types';
-import { headline } from '@/lib/item';
-import { useReduced } from '@/lib/hooks';
+import type { Item, Read } from '@/lib/api';
+import { headline } from '@/lib/utils';
+import { useReduced } from '@/lib/utils';
 import { usePalette } from './palette';
 import { at, layout as plan, type Layout, type Placed } from './layout';
 import { World, type WorldApi } from './World';

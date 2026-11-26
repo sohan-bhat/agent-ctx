@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DEMO_AGENTS, DEMO_END, DEMO_ITEMS, DEMO_PROJECTS, DEMO_READS, DEMO_START } from '@/demo';
 import { Link } from '@/router';
-import { useReduced } from '@/lib/hooks';
+import { useReduced } from '@/lib/utils';
 import { Space } from './Space';
 
 const PLAY_MS = 30_000;

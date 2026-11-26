@@ -1,4 +1,4 @@
-import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/types';
+import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/api';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
