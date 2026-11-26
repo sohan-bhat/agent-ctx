@@ -60,6 +60,7 @@ export interface Me { bytes: number; max: number; callsToday: number; storedToda
 const MINUTE = 60000;
 const DAY = 86400000;
 const LIVE = 3 * MINUTE;
+const AGENT_LIVE = 30 * DAY;
 const SAME_GRANT_WAIT = 20 * MINUTE;
 const KEEP_EVENTS = 14 * DAY;
 const EVENTS_PER_SESSION = 400;
@@ -279,7 +280,7 @@ export class Person extends DurableObject<Env> {
       this.agentLast.set(label, row.last);
       return null;
     }
-    const n = this.store.q<{ n: number }>('SELECT COUNT(*) AS n FROM agents')[0]?.n ?? 0;
+    const n = this.store.q<{ n: number }>('SELECT COUNT(*) AS n FROM agents WHERE last >= ?', now - AGENT_LIVE)[0]?.n ?? 0;
     if (n >= this.limits.max.agents) return { ok: false, text: SAY.agents };
     const agent: AgentRow = { id: label, label, first: now, last: now };
     this.store.q('INSERT INTO agents(id, label, first, last) VALUES(?, ?, ?, ?)', agent.id, agent.label, agent.first, agent.last);
@@ -1105,7 +1106,19 @@ export class Person extends DurableObject<Env> {
     });
   }
 
+  async generation(): Promise<number> {
+    return this.store.meta<number>('generation', 0);
+  }
+
+  async removeAgent(label: string): Promise<boolean> {
+    const gone = this.store.q<{ id: string }>('DELETE FROM agents WHERE id = ? RETURNING id', label).length > 0;
+    this.agentLast.delete(label);
+    if (gone) this.push({ type: 'agent-removed', id: label });
+    return gone;
+  }
+
   async wipe(): Promise<void> {
+    const generation = this.store.meta<number>('generation', 0) + 1;
     this.push({ type: 'reset' });
     for (const ws of this.ctx.getWebSockets()) {
       try {
@@ -1116,6 +1129,7 @@ export class Person extends DurableObject<Env> {
     }
     await this.ctx.storage.deleteAll();
     this.store.init();
+    this.store.setMeta('generation', generation);
     this.forget();
     this.limits.reset();
   }

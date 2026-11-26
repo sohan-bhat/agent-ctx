@@ -200,7 +200,8 @@ describe('export and wipe', () => {
       .sort();
     expect(exported).toEqual(all);
     await p.wipe();
-    expect(await p.rowCount()).toBe(0);
+    expect(await p.rowCount()).toBe(1);
+    expect(await p.generation()).toBe(1);
     expect((await p.recall(B, KILN)).text).toBe('');
   });
 });

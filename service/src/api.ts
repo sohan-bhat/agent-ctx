@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { deleteCookie } from 'hono/cookie';
+import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import { serviceOrigin, who, type AppEnv, type Who } from './auth.ts';
 import { TOOL_CHARS } from './mcp.ts';
 
@@ -96,16 +97,33 @@ api.get('/export', async (c) => {
   return new Response(zip, { headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="agent-ctx.zip"', 'Cache-Control': 'no-store' } });
 });
 
-api.delete('/account', async (c) => {
-  const me = c.get('me');
-  await person(c).wipe();
-  const oauth = c.env.OAUTH_PROVIDER;
+async function revoke(oauth: OAuthHelpers, person: string, match: (label: unknown) => boolean): Promise<number> {
+  let n = 0;
   let cursor: string | undefined;
   do {
-    const page = await oauth.listUserGrants(me.person, { cursor });
-    for (const g of page.items) await oauth.revokeGrant(g.id, me.person);
+    const page = await oauth.listUserGrants(person, { cursor });
+    for (const g of page.items) {
+      if (!match((g.metadata as { label?: unknown } | undefined)?.label)) continue;
+      await oauth.revokeGrant(g.id, person);
+      n++;
+    }
     cursor = page.cursor;
   } while (cursor);
+  return n;
+}
+
+api.delete('/agents/:id', async (c) => {
+  const label = id(c.req.param('id'));
+  if (!label) return err(400, 'Send the agent to disconnect.');
+  const revoked = await revoke(c.env.OAUTH_PROVIDER, c.get('me').person, (l) => l === label);
+  const removed = await person(c).removeAgent(label);
+  return revoked || removed ? new Response(null, { status: 204 }) : err(404, 'No such agent.');
+});
+
+api.delete('/account', async (c) => {
+  const me = c.get('me');
+  await revoke(c.env.OAUTH_PROVIDER, me.person, () => true);
+  await person(c).wipe();
   deleteCookie(c, 'session', { path: '/', secure: true, prefix: 'host' });
   return c.json({ ok: true });
 });

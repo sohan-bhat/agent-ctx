@@ -1,7 +1,9 @@
 import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import type { Item } from '../../core/src/index.ts';
+import type { Person } from '../src/person.ts';
 import { ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
 
 describe('export and delete', () => {
@@ -29,7 +31,7 @@ describe('export and delete', () => {
       .filter(([k]) => k.endsWith('.jsonl') && !k.endsWith('agents.jsonl'))
       .flatMap(([, v]) => strFromU8(v).split('\n').filter(Boolean).map((l) => (JSON.parse(l) as Item).id));
     expect(ids.sort()).toEqual(space.items.map((i) => i.id).sort());
-    expect(strFromU8(files['agent-ctx/agents.jsonl'])).toContain('"label":"Codex"');
+    expect(strFromU8(files['agent-ctx/agents.jsonl'])).toContain('"label":"unverified Codex"');
   });
 
   it('after the account is deleted the object holds nothing, every grant fails and a fresh sign in recalls nothing', async () => {
@@ -42,10 +44,25 @@ describe('export and delete', () => {
     await call(b, 'event', { host: 'claude-code', event: 'UserPromptSubmit', session: 's-1', cwd: '/w/kiln', prompt: 'a prompt that will be deleted' });
     const before = await env.OAUTH_KV.list({ prefix: 'grant:dev-delete-one:' });
     expect(before.keys.length).toBe(2);
-    const del = await send('/api/account', { method: 'DELETE', headers: { Cookie: jar.header(), Origin: ORIGIN } });
+    const copied = jar.header();
+    let grantsAtWipe = -1;
+    const proto = await runInDurableObject(env.PERSON.getByName('dev-delete-one'), (x: Person) => Object.getPrototypeOf(x) as Person);
+    const wipe = proto.wipe;
+    proto.wipe = async function (this: Person) {
+      grantsAtWipe = (await env.OAUTH_KV.list({ prefix: 'grant:dev-delete-one:' })).keys.length;
+      return wipe.call(this);
+    };
+    let del: Response;
+    try {
+      del = await send('/api/account', { method: 'DELETE', headers: { Cookie: jar.header(), Origin: ORIGIN } });
+    } finally {
+      proto.wipe = wipe;
+    }
+    expect(grantsAtWipe).toBe(0);
+    expect((await send('/api/me', { headers: { Cookie: copied } })).status).toBe(401);
     expect(del.status).toBe(200);
     expect(del.headers.getSetCookie().some((c) => c.startsWith('__Host-session=') && /max-age=0/i.test(c))).toBe(true);
-    expect(await env.PERSON.getByName('dev-delete-one').rowCount()).toBe(0);
+    expect(await env.PERSON.getByName('dev-delete-one').rowCount()).toBe(1);
     expect((await env.OAUTH_KV.list({ prefix: 'grant:dev-delete-one:' })).keys.length).toBe(0);
     expect((await env.OAUTH_KV.list({ prefix: 'token:dev-delete-one:' })).keys.length).toBe(0);
     for (const t of [t1, t2]) {

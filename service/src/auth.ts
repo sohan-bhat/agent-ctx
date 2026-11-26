@@ -84,16 +84,20 @@ function returnPath(v: string | undefined | null): string {
 }
 
 export async function who(c: Context): Promise<Who | null> {
-  const v = await getSignedCookie(c, (c.env as Env).COOKIE_KEY, SESSION, 'host');
+  const e = c.env as Env;
+  const v = await getSignedCookie(c, e.COOKIE_KEY, SESSION, 'host');
   if (!v) return null;
+  let s: { p?: unknown; l?: unknown; t?: unknown; g?: unknown };
   try {
-    const s = JSON.parse(v) as { p?: unknown; l?: unknown; t?: unknown };
-    if (typeof s.p !== 'string' || !PERSON.test(s.p) || typeof s.l !== 'string' || typeof s.t !== 'number') return null;
-    if (Date.now() - s.t > SESSION_AGE * 1000) return null;
-    return { person: s.p, login: s.l };
+    s = JSON.parse(v);
   } catch {
     return null;
   }
+  if (typeof s.p !== 'string' || !PERSON.test(s.p) || typeof s.l !== 'string' || typeof s.t !== 'number' || typeof s.g !== 'number') return null;
+  if (s.p.startsWith('dev-') && e.DEV_LOGIN !== '1') return null;
+  if (Date.now() - s.t > SESSION_AGE * 1000) return null;
+  if ((await e.PERSON.getByName(s.p).generation()) !== s.g) return null;
+  return { person: s.p, login: s.l };
 }
 
 export function locationHint(cf: IncomingRequestCfProperties | undefined): DurableObjectLocationHint | undefined {
@@ -116,8 +120,8 @@ export function locationHint(cf: IncomingRequestCfProperties | undefined): Durab
 async function signIn(c: AppContext, who: Who, to: string): Promise<Response> {
   const hint = locationHint(c.req.raw.cf as IncomingRequestCfProperties | undefined);
   const stub = c.env.PERSON.getByName(who.person, hint ? { locationHint: hint } : undefined);
-  await stub.me();
-  await setSignedCookie(c, SESSION, JSON.stringify({ p: who.person, l: who.login, t: Date.now() }), c.env.COOKIE_KEY, cookieOptions(SESSION_AGE));
+  const g = await stub.generation();
+  await setSignedCookie(c, SESSION, JSON.stringify({ p: who.person, l: who.login, t: Date.now(), g }), c.env.COOKIE_KEY, cookieOptions(SESSION_AGE));
   return c.redirect(returnPath(to), 302);
 }
 
@@ -227,12 +231,12 @@ auth.post('/logout', (c) => (sameOrigin(c) ? signOut(c) : plain(403, 'This form 
 auth.get('/authorize', async (c) => {
   const oauth = c.env.OAUTH_PROVIDER;
   try {
-    const request: AuthRequest = await oauth.parseAuthRequest(c.req.raw);
     const me = await who(c);
     if (!me) {
       const url = new URL(c.req.url);
       return c.redirect(`/login?return=${encodeURIComponent(url.pathname + url.search)}`, 302);
     }
+    const request: AuthRequest = await oauth.parseAuthRequest(c.req.raw);
     const details = await oauth.describeConsent(request);
     const target = formTarget(request.redirectUri);
     if (!target) return plain(400, 'This app gave a return address that this page cannot send you to.');
