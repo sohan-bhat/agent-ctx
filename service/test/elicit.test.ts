@@ -76,4 +76,31 @@ describe('a rule the person confirms inside the agent', () => {
       expect((await rules(jar))[0]).toMatchObject({ status: 'pending' });
     }
   });
+
+  it('refuses a requestState that was changed or that another connection minted, and keeps the rule out', async () => {
+    const jar = await devSignIn('elicit-state');
+    const a = (await connect(jar)).access;
+    const b = (await connect(jar)).access;
+    const raw = async (token: string, params: Record<string, unknown>) => {
+      const r = await send(RESOURCE, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Host: new URL(RESOURCE).host, 'Mcp-Method': 'tools/call', 'Mcp-Name': 'rule', 'MCP-Protocol-Version': '2026-07-28' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'rule', arguments: { text: 't', words: WORDS, scope: 'all' }, ...params, _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 'raw', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': { elicitation: { form: {} } } } } }),
+      });
+      const text = await r.text();
+      const line = text.split('\n').find((l) => l.startsWith('data: '));
+      return JSON.parse(line ? line.slice(6) : text) as { result?: { resultType?: string; requestState?: string; inputRequests?: Record<string, unknown> }; error?: { code: number } };
+    };
+    const first = await raw(a, {});
+    expect(first.result?.resultType).toBe('input_required');
+    const state = first.result!.requestState!;
+    expect(state).not.toContain(WORDS);
+    const yes = { inputResponses: { keep: { action: 'accept', content: { keep: true } } } };
+    expect((await raw(a, { ...yes, requestState: `${state}-TAMPERED` })).error?.code).toBe(-32602);
+    expect((await raw(a, { ...yes, requestState: `"${WORDS}"` })).error?.code).toBe(-32602);
+    expect((await raw(b, { ...yes, requestState: state })).error?.code).toBe(-32602);
+    expect(await rules(jar)).toEqual([]);
+    expect((await raw(a, { ...yes, requestState: state })).result?.resultType).toBe('complete');
+    expect((await rules(jar))[0]).toMatchObject({ status: 'active', proof: 'elicit' });
+  });
 });

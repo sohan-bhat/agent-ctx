@@ -68,6 +68,17 @@ describe('both protocol eras', () => {
     expect(text).toContain('"recall"');
   });
 
+  it('neither era claims list change notifications, since the tool and prompt lists never change', async () => {
+    for (const era of ['legacy', 'modern'] as Era[]) {
+      const a = await agent(`era-caps-${era}`, 'dcr', ['read', 'write'], era);
+      const caps = a.client.getServerCapabilities() as { tools?: { listChanged?: boolean }; prompts?: { listChanged?: boolean } };
+      expect(caps.tools, era).toBeDefined();
+      expect(caps.prompts, era).toBeDefined();
+      expect(caps.tools?.listChanged === true, era).toBe(false);
+      expect(caps.prompts?.listChanged === true, era).toBe(false);
+    }
+  });
+
   it('the instructions are the exact text and fit in 512 characters', () => {
     expect(INSTRUCTIONS.length).toBeLessThanOrEqual(512);
     expect(INSTRUCTIONS).toBe(

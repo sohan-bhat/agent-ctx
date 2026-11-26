@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { McpServer, inputRequired, inputResponse } from '@modelcontextprotocol/server';
+import { McpServer, createRequestStateCodec, inputRequired, inputResponse, type RequestStateCodec } from '@modelcontextprotocol/server';
 import { createMcpHandler, getMcpAuthContext } from 'agents/mcp/server';
 import { z } from 'zod';
 import { EMPTY_RECALL, FIRST_CHARS } from '../../core/src/index.ts';
@@ -72,6 +72,20 @@ type Ctx = { http?: { authInfo?: { scopes?: string[] } }; mcpReq?: { inputRespon
 
 const CONFIRM = 'keep';
 const CONFIRM_SCHEMA = { type: 'object' as const, properties: { keep: { type: 'boolean' as const, title: 'Keep this standing rule', default: true } }, required: ['keep'] };
+
+let codec: RequestStateCodec<string> | null = null;
+
+function stateCodec(): RequestStateCodec<string> {
+  codec ??= createRequestStateCodec<string>({
+    key: `agent-ctx request state ${env.COOKIE_KEY ?? ''}`,
+    ttlSeconds: 600,
+    bind: () => {
+      const props = getMcpAuthContext()?.props as Partial<Props> | undefined;
+      return `${props?.person ?? ''}\u0000${props?.grant ?? ''}`;
+    },
+  });
+  return codec;
+}
 
 function confirmed(ctx: Ctx): { asked: boolean; seen?: string } {
   const answer = inputResponse(ctx.mcpReq?.inputResponses, CONFIRM);
@@ -192,7 +206,10 @@ function user(text: string) {
 export const TOOL_CHARS = JSON.stringify(toolList()).length;
 
 export function createServer(): McpServer {
-  const server = new McpServer({ name: 'agent-ctx', version: '0.1.0' }, { instructions: INSTRUCTIONS, maxToolInputElements: 400 });
+  const server = new McpServer(
+    { name: 'agent-ctx', version: '0.1.0' },
+    { instructions: INSTRUCTIONS, maxToolInputElements: 400, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, requestState: { verify: (state, ctx) => stateCodec().verify(state, ctx) } },
+  );
   server.registerTool('recall', { description: DESCRIBE.recall, inputSchema: SCHEMA.recall, annotations: ANNOTATIONS.recall, _meta: META.recall }, (args, ctx) =>
     run(ctx, (s, who) => s.recall(who, args), EMPTY_RECALL, args),
   );
@@ -208,7 +225,8 @@ export function createServer(): McpServer {
       const draft = await stub(c.props.person).ruleDraft(c.who, args);
       if (!draft.ok) return reply(draft.text, true);
       if (!draft.line || draft.held) return run(ctx, (s, who) => s.rule(who, args));
-      return inputRequired({ inputRequests: { [CONFIRM]: inputRequired.elicit({ message: askText(draft.line, args.scope), requestedSchema: CONFIRM_SCHEMA }) }, requestState: draft.line });
+      const state = await stateCodec().mint(draft.line, ctx as never);
+      return inputRequired({ inputRequests: { [CONFIRM]: inputRequired.elicit({ message: askText(draft.line, args.scope), requestedSchema: CONFIRM_SCHEMA }) }, requestState: state });
     } catch {
       return reply(FAILED, true);
     }
