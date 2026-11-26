@@ -310,6 +310,7 @@ export function Marks({ placed, palette, selected }: { placed: Placed[]; palette
   const sel = selected ? placed.find((p) => p.id === selected && p.shown) : undefined;
   const pins = placed.filter((p) => p.shown && p.item.pinned && p.look !== 'cap');
   const ring = new Color(palette.ring);
+  const ink = new Color(palette.foreground);
   const pad = 0.03;
   const top = (p: Placed) => p.y0 + p.h + (p.item.kind === 'handoff' && !p.item.held ? 0.07 : 0);
   return (
@@ -321,15 +322,16 @@ export function Marks({ placed, palette, selected }: { placed: Placed[]; palette
           ))}
         </Segments>
       )}
-      {pins.map((p) => {
-        const r = Math.min(0.09, Math.min(p.w, p.d) * 0.3);
-        return (
-          <mesh key={p.id} position={[p.cx, top(p) + 0.02, p.cz]} castShadow>
-            <cylinderGeometry args={[r, r, 0.04, 24]} />
-            <meshStandardMaterial color={palette.foreground} roughness={0.7} />
-          </mesh>
-        );
-      })}
+      {pins.length > 0 && (
+        <Segments key={`pins${pins.length}`} limit={pins.length * 4} lineWidth={1.75}>
+          {pins.flatMap((p) => {
+            const g = 0.025;
+            return edges({ cx: p.cx, cz: p.cz, w: p.w + g * 2, d: p.d + g * 2 }, 0, top(p) + 0.004)
+              .filter((_, i) => i % 3 === 0)
+              .map(([a, b], i) => <Segment key={`${p.id}${i}`} start={a} end={b} color={ink} />);
+          })}
+        </Segments>
+      )}
     </group>
   );
 }
