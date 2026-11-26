@@ -78,9 +78,18 @@ export function html(body: string, title: string, headers?: Headers, status = 20
   return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,"><title>${escape(title)}</title></head><body>${body}</body></html>`, { status, headers: h });
 }
 
-function returnPath(v: string | undefined | null): string {
-  if (!v || !v.startsWith('/') || v.startsWith('//') || v.startsWith('/\\')) return '/';
-  return v;
+const SAFE_PATH = /^\/(?![/\\])[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/;
+
+export function returnPath(v: string | undefined | null): string {
+  if (typeof v !== 'string' || v.length > 2048 || !SAFE_PATH.test(v)) return '/';
+  try {
+    const base = 'https://agent-ctx.invalid';
+    const u = new URL(v, base);
+    if (u.origin !== base || u.pathname.startsWith('//')) return '/';
+    return v;
+  } catch {
+    return '/';
+  }
 }
 
 export async function who(c: Context): Promise<Who | null> {
