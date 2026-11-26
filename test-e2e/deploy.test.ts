@@ -5,10 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PAGE, PLUGINS_OUT, SAY, SERVICE } from '../scripts/deploy.mjs';
+import { PAGE, PLUGINS_OUT, SAY, SERVICE } from '../service/deploy.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const SCRIPT = join(ROOT, 'scripts', 'deploy.mjs');
+const SCRIPT = join(ROOT, 'service', 'deploy.mjs');
 const WRANGLER = join(SERVICE, 'node_modules', '.bin', 'wrangler');
 const KV = '0123456789abcdef0123456789abcdef';
 const ORIGIN = 'https://agent-ctx.example';

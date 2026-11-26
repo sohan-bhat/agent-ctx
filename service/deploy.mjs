@@ -14,7 +14,7 @@ const DEPLOY_CONFIG = 'wrangler.deploy.jsonc';
 const LOCAL = /^(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)$|\.localhost$/i;
 
 export const SAY = {
-  usage: 'Give --origin and --kv, as in node scripts/deploy.mjs --origin https://agent-ctx.example --kv KV_ID, and add --dry-run to build without uploading.',
+  usage: 'Give --origin and --kv, as in node service/deploy.mjs --origin https://agent-ctx.example --kv KV_ID, and add --dry-run to build without uploading.',
   page: 'Build the page first, because service/public/index.html is missing.',
   https: 'The origin must start with https and must not be a local address.',
   kv: 'The KV namespace id must be the 32 letter and digit id that wrangler kv namespace create printed.',
