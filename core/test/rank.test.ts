@@ -194,3 +194,28 @@ test('a card must stand out from the median of every card with any match', () =>
   const strong = card('strong', `${groups.flat().join(' ')} obsidian lantern all in one`, 1);
   assert.deepEqual(rankItems([...even, strong], `${q} obsidian lantern`, NOW).map((h) => h.item.id), ['strong']);
 });
+
+test('rankItems on 400 items and a 60 word prompt runs under 5 ms as a median of 200 runs', (t) => {
+  let seed = 11;
+  const rand = (n: number) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  const vocab = Array.from({ length: 700 }, (_, k) => `term${(k * 7919) % 100003}`);
+  const pick = (n: number) => Array.from({ length: n }, () => vocab[rand(vocab.length)]).join(' ');
+  const pool = Array.from({ length: 400 }, (_, k) => card(`p${k}`, pick(10), k % 60, { decisions: [{ what: pick(12), why: pick(10) }], open: [pick(8)], changed: [{ path: `src/${vocab[rand(700)]}.ts` }] }));
+  const unknown = Array.from({ length: 30 }, (_, k) => `zq${k}${'xyzwv'.slice(0, 1 + (k % 5))}k`);
+  const words = [...pick(30).split(' '), ...unknown];
+  const prompt = words.sort(() => rand(3) - 1).join(' ');
+  assert.equal(prompt.split(' ').length, 60);
+  const times: number[] = [];
+  for (let k = 0; k < 200; k++) {
+    const t0 = performance.now();
+    rankItems(pool, prompt, NOW);
+    times.push(performance.now() - t0);
+  }
+  times.sort((a, b) => a - b);
+  const median = times[100];
+  t.diagnostic(`median ${median.toFixed(2)} ms`);
+  assert.ok(median < 5, `median ${median} ms`);
+});

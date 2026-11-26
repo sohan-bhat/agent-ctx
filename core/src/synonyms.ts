@@ -80,10 +80,13 @@ export const GROUPS: string[][] = [
   ['e2e', 'playwright', 'cypress'],
 ];
 
+const ALL = new RegExp(PHRASES.map(([re]) => `(${re.source})`).join('|'), 'gi');
+
 export function joinPhrases(text: string): string {
-  let s = text ?? '';
-  for (const [re, to] of PHRASES) s = s.replace(re, to);
-  return s;
+  return (text ?? '').replace(ALL, (...m: unknown[]) => {
+    for (let k = 0; k < PHRASES.length; k++) if (m[k + 1] !== undefined) return PHRASES[k][1];
+    return m[0] as string;
+  });
 }
 
 const INDEX = new Map<string, string[]>();

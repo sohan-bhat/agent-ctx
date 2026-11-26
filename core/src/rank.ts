@@ -1,4 +1,4 @@
-import { B, K1, buildBm25, idf, view, type Bm25View } from './bm25.ts';
+import { B, K1, idf } from './bm25.ts';
 import { itemText, type CardBody, type Item } from './model.ts';
 import { projectName } from './project.ts';
 import { joinPhrases, synonymsOf } from './synonyms.ts';
@@ -37,14 +37,51 @@ export function recency(at: number, now: number): number {
   return 0.4 + 0.6 * Math.exp(-age / 21);
 }
 
-const cached = new WeakMap<Item, { body: unknown; toks: string[] }>();
+interface Pool { items: Item[]; bodies: unknown[]; postings: Map<string, number[]>; lens: number[]; avg: number; vocab: Map<number, string[]> | null }
 
-function docTokens(i: Item): string[] {
-  const hit = cached.get(i);
-  if (hit && hit.body === i.body) return hit.toks;
-  const toks = tokens(joinPhrases(itemText(i)));
-  cached.set(i, { body: i.body, toks });
-  return toks;
+const pools: Pool[] = [];
+const KEEP_POOLS = 8;
+
+function same(p: Pool, items: Item[]): boolean {
+  if (p.items.length !== items.length) return false;
+  for (let k = 0; k < items.length; k++) if (p.items[k] !== items[k] || p.bodies[k] !== items[k].body) return false;
+  return true;
+}
+
+function poolOf(items: Item[]): Pool {
+  const hit = pools.find((p) => same(p, items));
+  if (hit) return hit;
+  const postings = new Map<string, number[]>();
+  const lens: number[] = [];
+  let sum = 0;
+  items.forEach((item, doc) => {
+    const toks = tokens(joinPhrases(itemText(item)));
+    const tf = new Map<string, number>();
+    for (const t of toks) tf.set(t, (tf.get(t) ?? 0) + 1);
+    for (const [t, c] of tf) {
+      const list = postings.get(t);
+      if (list) list.push(doc, c);
+      else postings.set(t, [doc, c]);
+    }
+    lens.push(toks.length);
+    sum += toks.length;
+  });
+  const p: Pool = { items, bodies: items.map((i) => i.body), postings, lens, avg: items.length ? sum / items.length : 0, vocab: null };
+  pools.unshift(p);
+  if (pools.length > KEEP_POOLS) pools.length = KEEP_POOLS;
+  return p;
+}
+
+function vocabOf(p: Pool): Map<number, string[]> {
+  if (p.vocab) return p.vocab;
+  const v = new Map<number, string[]>();
+  for (const t of p.postings.keys()) {
+    const list = v.get(t.length) ?? [];
+    list.push(t);
+    v.set(t.length, list);
+  }
+  p.vocab = v;
+  return v;
 }
 
 export function oneEdit(a: string, b: string): boolean {
@@ -65,13 +102,16 @@ export function oneEdit(a: string, b: string): boolean {
   return s.slice(i) === l.slice(i + 1);
 }
 
-export function typoOf(term: string, vocab: string[]): string | null {
+export function typoOf(term: string, vocab: string[] | Map<number, string[]>): string | null {
   if (term.length < TYPO_MIN) return null;
+  const pools = Array.isArray(vocab) ? [vocab] : [vocab.get(term.length - 1) ?? [], vocab.get(term.length) ?? [], vocab.get(term.length + 1) ?? []];
   let found: string | null = null;
-  for (const v of vocab) {
-    if (Math.abs(v.length - term.length) > 1 || !oneEdit(term, v)) continue;
-    if (found) return null;
-    found = v;
+  for (const list of pools) {
+    for (const v of list) {
+      if (Math.abs(v.length - term.length) > 1 || !oneEdit(term, v)) continue;
+      if (found && found !== v) return null;
+      found = v;
+    }
   }
   return found;
 }
@@ -80,8 +120,9 @@ interface Alt { term: string; factor: number; df: number }
 interface Term { alts: Alt[]; weight: number }
 interface Acc { score: number; matched: number; evidence: number; rare: number }
 
-function queryTerms(query: string, index: Bm25View, vocab: () => string[], n: number): Term[] {
-  const dfOf = (t: string) => (index.get(t)?.length ?? 0) / 2;
+function queryTerms(query: string, p: Pool, n: number): Term[] {
+  const dfOf = (t: string) => (p.postings.get(t)?.length ?? 0) / 2;
+  const byLength = () => vocabOf(p);
   const common = (df: number) => n >= 4 && df / n > COMMON;
   const out: Term[] = [];
   const seen = new Set<string>();
@@ -89,8 +130,8 @@ function queryTerms(query: string, index: Bm25View, vocab: () => string[], n: nu
     if (CHAT.has(raw)) continue;
     let t = raw;
     let df = dfOf(t);
-    if (!df) {
-      const fix = typoOf(t, vocab());
+    if (!df && t.length >= TYPO_MIN) {
+      const fix = typoOf(t, byLength());
       if (fix && !CHAT.has(fix)) {
         t = fix;
         df = dfOf(t);
@@ -100,8 +141,9 @@ function queryTerms(query: string, index: Bm25View, vocab: () => string[], n: nu
     seen.add(t);
     const alts: Alt[] = df ? [{ term: t, factor: 1, df }] : [];
     for (const s of synonymsOf(t)) {
+      if (CHAT.has(s) || alts.some((a) => a.term === s)) continue;
       const d = dfOf(s);
-      if (d && !CHAT.has(s) && !common(d) && !alts.some((a) => a.term === s)) alts.push({ term: s, factor: SYN, df: d });
+      if (d && !common(d)) alts.push({ term: s, factor: SYN, df: d });
     }
     out.push({ alts, weight: idf(n, df) * (df ? 1 : UNKNOWN) });
   }
@@ -117,12 +159,10 @@ function median(xs: number[]): number {
 export function rankItems(items: Item[], query: string, now: number): Hit[] {
   const pool = (items ?? []).filter((i) => !i.held && i.kind !== 'rule');
   if (!pool.length || !(query ?? '').trim()) return [];
-  const data = buildBm25(pool.map(docTokens));
-  const index = view(data);
+  const p = poolOf(pool);
   const n = pool.length;
-  const avg = data.avgdl || 1;
-  let vocab: string[] | null = null;
-  const terms = queryTerms(query, index, () => (vocab ??= Object.keys(data.terms)), n);
+  const avg = p.avg || 1;
+  const terms = queryTerms(query, p, n);
   if (!terms.length || !terms.some((t) => t.alts.length)) return [];
   const long = terms.length > SHORT_TERMS;
   const total = terms.reduce((a, t) => a + t.weight, 0);
@@ -133,12 +173,12 @@ export function rankItems(items: Item[], query: string, now: number): Hit[] {
   for (const t of terms) {
     const top = new Map<number, { c: number; w: number; rare: boolean }>();
     for (const a of t.alts) {
-      const p = index.get(a.term) as number[];
+      const list = p.postings.get(a.term) as number[];
       const w = a.factor * idf(n, a.df);
-      for (let k = 0; k < p.length; k += 2) {
-        const doc = p[k];
-        const tf = p[k + 1];
-        const c = (w * tf * (K1 + 1)) / (tf + K1 * (1 - B + (B * data.dl[doc]) / avg));
+      for (let k = 0; k < list.length; k += 2) {
+        const doc = list[k];
+        const tf = list[k + 1];
+        const c = (w * tf * (K1 + 1)) / (tf + K1 * (1 - B + (B * p.lens[doc]) / avg));
         const prev = top.get(doc);
         if (!prev || c > prev.c) top.set(doc, { c, w, rare: a.df <= rareMax });
       }
