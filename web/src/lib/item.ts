@@ -9,7 +9,11 @@ export interface Line {
 const bare = (s: string | undefined) => (s ?? '').trim().replace(/[.!?\s]+$/, '');
 const sentence = (s: string | undefined) => {
   const b = bare(s);
-  return b ? `${b.charAt(0).toUpperCase()}${b.slice(1)}.` : '';
+  return b ? `${b}.` : '';
+};
+const first = (s: string | undefined) => {
+  const b = sentence(s);
+  return b ? `${b.charAt(0).toUpperCase()}${b.slice(1)}` : '';
 };
 
 export function headline(i: Item): string {
@@ -25,7 +29,7 @@ export function lines(i: Item): Line[] {
   };
   if (i.kind === 'card') {
     const b = i.body as CardBody;
-    push(sentence(b.goal));
+    push(first(b.goal));
     if (i.folded) return out;
     for (const d of b.decisions ?? []) push(d.why ? `Decided ${bare(d.what)} because ${sentence(d.why)}` : `Decided ${sentence(d.what)}`);
     for (const d of b.dead_ends ?? []) push(`Dead end ${sentence(d)}`);
@@ -36,7 +40,7 @@ export function lines(i: Item): Line[] {
     if (b.last) push(`Agent said ${b.last}`);
   } else if (i.kind === 'handoff') {
     const b = i.body as HandoffBody;
-    push(sentence(b.goal));
+    push(first(b.goal));
     if (b.done) push(`Done ${sentence(b.done)}`);
     push(`Next ${sentence(b.next)}`);
     if (b.blockers?.length) push(`Blocked by ${b.blockers.map(bare).join(', ')}.`);
@@ -44,12 +48,12 @@ export function lines(i: Item): Line[] {
     if (b.check) push(b.check, true);
   } else if (i.kind === 'rule') {
     const b = i.body as RuleBody;
-    push(b.proof === 'hook' ? `“${bare(b.words)}”` : sentence(b.text));
+    push(b.proof === 'hook' ? `“${bare(b.words)}”` : first(b.text));
     push(b.scope === 'all' ? 'All projects' : 'This project');
   } else {
     const b = i.body as DroppedBody;
-    push(sentence(b.label));
-    push(sentence(b.text));
+    push(first(b.label));
+    push(first(b.text));
     push(`${Number(b.size || 0).toLocaleString('en-US')} characters`, true);
   }
   return out;

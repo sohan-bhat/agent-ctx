@@ -107,7 +107,7 @@ function cardBody(c: Card, auto: boolean, r: () => number): CardBody {
   if (auto) {
     b.auto = true;
     b.prompts = [PROMPTS[Math.floor(r() * PROMPTS.length)]];
-    b.last = c.said ?? `Done with ${c.goal.toLowerCase()}. Tests pass.`;
+    b.last = c.said ?? 'The change is in and the tests pass.';
   }
   return b;
 }
