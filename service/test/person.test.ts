@@ -54,6 +54,21 @@ describe('tools', () => {
     expect(out.text).not.toContain('push straight to main');
   });
 
+  it('a rule of scope all belongs to no project and a project rule needs a repo or a folder', async () => {
+    const p = person();
+    const all = await p.rule(A, { text: 'Short commit subjects', words: 'keep commit subjects short', scope: 'all' });
+    expect(all.ok).toBe(true);
+    expect(all.item!.project).toBe('');
+    const withFolder = await p.rule(A, { ...KILN, text: 'Metric units', words: 'use metric units always', scope: 'all' });
+    expect(withFolder.item!.project).toBe('');
+    expect((await p.space()).projects).toEqual([]);
+    expect(await p.rule(A, { text: 'Tabs', words: 'indent with tabs here', scope: 'project' })).toEqual({ ok: false, text: SAY.where });
+    expect(await p.rule(A, { repo: ' ', folder: '', text: 'Tabs', words: 'indent with tabs here', scope: 'project' })).toEqual({ ok: false, text: SAY.where });
+    const scoped = await p.rule(A, { ...KILN, text: 'Tabs', words: 'indent with tabs here', scope: 'project' });
+    expect(scoped.item!.project).toBe('github.com/acme/kiln');
+    expect((await p.space()).projects.map((x) => x.key)).toEqual(['github.com/acme/kiln']);
+  });
+
   it('the same key or the same body within ten minutes stores nothing new', async () => {
     const p = person();
     const a = await p.checkpoint(A, { ...KILN, goal: 'One card', key: 'k-1' });

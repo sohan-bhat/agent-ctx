@@ -410,8 +410,10 @@ export class Person extends DurableObject<Env> {
       const now = Date.now();
       const stop = this.gate(c, now, 'write', a);
       if (stop) return stop;
-      const project = this.project(a, now);
       const scope = a.scope === 'project' ? 'project' : 'all';
+      const named = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+      if (scope === 'project' && !named(a.repo) && !named(a.folder)) return { ok: false, text: SAY.where };
+      const project = scope === 'all' ? '' : this.project(a, now);
       const memo = this.remembered(c, 'rule', project, [a.text, a.words, scope], a.key, now);
       if (memo.hit) return memo.hit;
       let words: string;

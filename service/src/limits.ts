@@ -14,6 +14,7 @@ export const SAY = {
   clean: 'This text could not be cleaned, so nothing was stored.',
   scope: 'This connection may only read. Connect again with write access to save.',
   noread: 'This connection has no read access.',
+  where: 'A project rule needs the repo or the folder of that project.',
 };
 
 interface Counters { minute: number; minuteN: number; day: string; dayN: number; storedDay: string; storedN: number }

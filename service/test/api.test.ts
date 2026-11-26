@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, RuleBody } from '../../core/src/index.ts';
+import { strFromU8, unzipSync } from 'fflate';
 import { TOOL_CHARS } from '../src/mcp.ts';
+import { SAY } from '../src/limits.ts';
 import { ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
 
 async function setup(name: string) {
@@ -35,6 +37,18 @@ describe('page API', () => {
     expect(space.reads).toEqual([]);
     expect(space.projects).toEqual([{ key: 'github.com/acme/kiln', name: 'kiln', items: 1 }]);
     expect((space.agents as { label: string }[]).map((a) => a.label)).toEqual(['Codex']);
+  });
+
+  it('a rule of scope all with no folder makes no project and still shows in space and export', async () => {
+    const { api, client } = await setup('api-allrule');
+    expect((await call(client, 'rule', { text: 'Short subjects', words: 'keep commit subjects short', scope: 'all' })).isError).toBe(false);
+    expect(await call(client, 'rule', { text: 'Tabs', words: 'indent with tabs here', scope: 'project' })).toEqual({ text: SAY.where, isError: true });
+    const space = (await (await api('/api/space')).json()) as { items: Item[]; projects: unknown[] };
+    expect(space.projects).toEqual([]);
+    expect(space.items.map((i) => [i.kind, i.project])).toEqual([['rule', '']]);
+    const zip = unzipSync(new Uint8Array(await (await api('/api/export')).arrayBuffer()));
+    expect(Object.keys(zip).sort()).toEqual(['agent-ctx/README.md', 'agent-ctx/agents.jsonl', 'agent-ctx/rules.jsonl']);
+    expect((JSON.parse(strFromU8(zip['agent-ctx/rules.jsonl']).trim()) as Item).id).toBe(space.items[0].id);
   });
 
   it('space lists each handoff delivery with the reading agent label', async () => {
