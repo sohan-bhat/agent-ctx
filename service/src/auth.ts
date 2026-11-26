@@ -108,7 +108,7 @@ function sameOrigin(c: AppContext): boolean {
 }
 
 function devForm(to: string): string {
-  return `<h1>Sign in for local work</h1><form method="post" action="/login/dev"><input type="hidden" name="return" value="${escape(to)}"><p><label>Name <input name="name" required pattern="[a-z0-9-]{1,40}" autocomplete="username"></label></p><p><button>Sign in</button></p></form>`;
+  return `<h1>Sign in for local work</h1><form method="post" action="/login/dev"><input type="hidden" name="return" value="${escape(to)}"><p><label>Name <input name="name" required pattern="[a-z0-9\\-]{1,40}" autocomplete="username"></label></p><p><button>Sign in</button></p></form>`;
 }
 
 function authFailure(e: unknown): Response {

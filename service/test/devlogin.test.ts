@@ -49,6 +49,15 @@ describe('dev sign in', () => {
     expect(r.headers.getSetCookie().some((c) => c.startsWith('__Host-session=') && /HttpOnly/i.test(c) && /Secure/i.test(c) && /SameSite=Lax/i.test(c))).toBe(true);
   });
 
+  it('the name pattern on the form compiles under the v flag browsers use and still checks the name', async () => {
+    const page = await (await hit('/login', {}, '1')).text();
+    const raw = /pattern="([^"]+)"/.exec(page)![1].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+    const re = new RegExp(`^(?:${raw})$`, 'v');
+    expect(re.test('kiln-team-2')).toBe(true);
+    expect(re.test('Bad:Name')).toBe(false);
+    expect(re.test('')).toBe(false);
+  });
+
   it('refuses a form from another site or a bad name', async () => {
     expect((await hit('/login/dev', { ...form(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, '1')).status).toBe(403);
     expect((await hit('/login/dev', { ...form(), headers: { Origin: 'https://evil.example', 'Content-Type': 'application/x-www-form-urlencoded' } }, '1')).status).toBe(403);
