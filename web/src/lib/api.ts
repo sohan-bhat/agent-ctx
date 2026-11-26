@@ -39,7 +39,12 @@ const http: Transport = {
   putBack: async (id) => void (await call('POST', `${item(id)}/putback`)),
   remove: async (id) => void (await call('DELETE', item(id))),
   addRule: (rule: NewRule) => json<Item>('POST', '/api/rules', rule),
-  setRule: async (id, status) => void (await call('POST', `/api/rules/${encodeURIComponent(id)}`, { status })),
+  setRule: async (id, status, line) => void (await call('POST', `/api/rules/${encodeURIComponent(id)}`, line === undefined ? { status } : { status, line })),
+  removeAgent: async (id) => void (await call('DELETE', `/api/agents/${encodeURIComponent(id)}`)),
+  async signOut() {
+    const res = await fetch('/logout', { method: 'POST', credentials: 'same-origin', redirect: 'manual' });
+    if (res.type !== 'opaqueredirect' && !res.ok) throw new ApiError(res.status);
+  },
   merge: async (from, into) => void (await call('POST', '/api/projects/merge', { from, into })),
   async exportAll() {
     const a = document.createElement('a');
@@ -64,7 +69,9 @@ export const api = {
   putBack: (id: string) => load.then((t) => t.putBack(id)),
   remove: (id: string) => load.then((t) => t.remove(id)),
   addRule: (rule: NewRule) => load.then((t) => t.addRule(rule)),
-  setRule: (id: string, status: 'active' | 'off') => load.then((t) => t.setRule(id, status)),
+  setRule: (id: string, status: 'active' | 'off', line?: string) => load.then((t) => t.setRule(id, status, line)),
+  removeAgent: (id: string) => load.then((t) => t.removeAgent(id)),
+  signOut: () => load.then((t) => t.signOut()),
   merge: (from: string, into: string) => load.then((t) => t.merge(from, into)),
   exportAll: () => load.then((t) => t.exportAll()),
   deleteAccount: () => load.then((t) => t.deleteAccount()),

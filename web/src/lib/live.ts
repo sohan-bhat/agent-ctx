@@ -6,7 +6,7 @@ function parse(raw: unknown): Live | null {
   if (typeof raw !== 'string') return null;
   try {
     const m = JSON.parse(raw) as Live;
-    if (m && (m.type === 'item' || m.type === 'remove' || m.type === 'agent' || m.type === 'reset')) return m;
+    if (m && (m.type === 'item' || m.type === 'remove' || m.type === 'agent' || m.type === 'agent-removed' || m.type === 'reset')) return m;
   } catch {}
   return null;
 }

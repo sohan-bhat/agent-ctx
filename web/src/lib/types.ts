@@ -1,6 +1,8 @@
-import type { CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, RuleBody } from '@core/model.ts';
+import type { CardBody, DroppedBody, HandoffBody, Item as Stored, Kind, Origin, RuleBody } from '@core/model.ts';
 
-export type { CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, RuleBody };
+export type { CardBody, DroppedBody, HandoffBody, Kind, Origin, RuleBody };
+
+export type Item = Stored & { line?: string };
 
 export interface Person {
   id: string;
@@ -48,7 +50,7 @@ export interface Space {
   now: number;
 }
 
-export type Live = { type: 'item'; item: Item } | { type: 'remove'; id: string } | { type: 'agent'; agent: Agent } | { type: 'reset' };
+export type Live = { type: 'item'; item: Item } | { type: 'remove'; id: string } | { type: 'agent'; agent: Agent } | { type: 'agent-removed'; id: string } | { type: 'reset' };
 
 export type RuleScope = 'project' | 'all';
 
@@ -66,7 +68,9 @@ export interface Transport {
   putBack(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   addRule(rule: NewRule): Promise<Item>;
-  setRule(id: string, status: 'active' | 'off'): Promise<void>;
+  setRule(id: string, status: 'active' | 'off', line?: string): Promise<void>;
+  removeAgent(id: string): Promise<void>;
+  signOut(): Promise<void>;
   merge(from: string, into: string): Promise<void>;
   exportAll(): Promise<void>;
   deleteAccount(): Promise<void>;
