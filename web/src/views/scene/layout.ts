@@ -1,4 +1,4 @@
-import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
+import { hierarchy, treemap, treemapDice, treemapSquarify, type HierarchyRectangularNode } from 'd3-hierarchy';
 import { Box3, Matrix4, Quaternion, Vector3, type OrthographicCamera } from 'three';
 import type { CameraControlsImpl } from '@react-three/drei';
 import { itemBytes } from '@core/model.ts';
@@ -6,7 +6,7 @@ import type { Item, RuleBody } from '@/lib/types';
 
 export const H_MIN = 0.08;
 export const H_MAX = 1.6;
-export const POST = 1.25;
+export const POST = 1.9;
 export const POST_W = 0.09;
 export const CAP = 0.07;
 export const FLAT = 0.012;
@@ -18,8 +18,7 @@ const FILL = 0.72;
 const MIN_SIDE = 3.2;
 const GAP = 0.04;
 const STREET = 0.24;
-const RIM = 0.4;
-const TAU = 10 * 60_000;
+export const RIM = 0.4;
 
 export type Look = 'solid' | 'cap' | 'post' | 'flat' | 'outline';
 
@@ -81,7 +80,7 @@ export interface LayoutInput {
 
 export function heightAt(age: number, span: number): number {
   if (age <= 0) return H_MIN;
-  const share = Math.log1p(age / TAU) / Math.log1p(Math.max(span, 60 * 60_000) / TAU);
+  const share = Math.sqrt(age / Math.max(span, 60 * 60_000));
   return H_MIN + Math.min(1, share) * (H_MAX - H_MIN);
 }
 
@@ -133,7 +132,8 @@ function tile(items: Item[], agents: string[]): { leaves: Map<string, { x0: numb
   )
     .sum((d) => (d.children ? 0 : d.area))
     .sort((a, b) => (a.depth === 1 ? 0 : a.data.created - b.data.created));
-  const laid = treemap<Leaf>().tile(treemapSquarify.ratio(1.3)).size([inner, inner]).paddingInner((n) => (n.depth === 0 ? STREET : 0)).round(false)(root);
+  const tiler = (n: HierarchyRectangularNode<Leaf>, x0: number, y0: number, x1: number, y1: number) => (n.depth === 0 ? treemapDice(n, x0, y0, x1, y1) : treemapSquarify.ratio(1.3)(n, x0, y0, x1, y1));
+  const laid = treemap<Leaf>().tile(tiler).size([inner, inner]).paddingInner((n) => (n.depth === 0 ? STREET : 0)).round(false)(root);
   const leaves = new Map<string, { x0: number; z0: number; x1: number; z1: number }>();
   const districts: Omit<District, 'plate'>[] = [];
   const o = -side / 2 + RIM;
@@ -153,7 +153,7 @@ function arrange(sides: number[], narrow: boolean): [number, number][] {
     const out: [number, number][] = [];
     let t = 0;
     sides.forEach((s, i) => {
-      if (i > 0) t += ((sides[i - 1] + s) * Math.SQRT2) / 2 + 1.3;
+      if (i > 0) t += ((sides[i - 1] + s) * Math.SQRT2) / 2 + 3;
       out.push([t * Math.SQRT1_2, t * Math.SQRT1_2]);
     });
     return out;

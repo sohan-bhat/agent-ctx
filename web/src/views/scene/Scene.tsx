@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import type { Item } from '@/lib/types';
 import { headline } from '@/lib/item';
+import { useReduced } from '@/lib/hooks';
 import { usePalette } from './palette';
 import { at, layout as plan, type Layout, type Placed } from './layout';
 import { World, type WorldApi } from './World';
@@ -24,18 +25,6 @@ export interface SceneProps {
   onPlate: (key: string) => void;
   onHold: (holding: boolean) => void;
   onReady: () => void;
-}
-
-function useReduced(): boolean {
-  const q = '(prefers-reduced-motion: reduce)';
-  const [r, setR] = useState(() => window.matchMedia?.(q).matches ?? false);
-  useEffect(() => {
-    const m = window.matchMedia(q);
-    const on = () => setR(m.matches);
-    m.addEventListener('change', on);
-    return () => m.removeEventListener('change', on);
-  }, []);
-  return r;
 }
 
 export default function Scene({ projects, agents, items, time, span, narrow, focusKey, selected, panel, inline, label, onSelect, onPlate, onHold, onReady }: SceneProps) {
@@ -251,7 +240,7 @@ export default function Scene({ projects, agents, items, time, span, narrow, foc
         {hovered && (
           <>
             <p className="line-clamp-2 text-[0.8125rem] font-semibold leading-snug">{headline(hovered.item)}</p>
-            <p className="num mt-0.5 text-[0.6875rem] text-muted-foreground">{hovered.item.origin.agent === 'page' ? 'you' : hovered.item.origin.agent}</p>
+            <p className="num mt-0.5 text-[0.6875rem]">{hovered.item.origin.agent === 'page' ? 'you' : hovered.item.origin.agent}</p>
           </>
         )}
       </div>

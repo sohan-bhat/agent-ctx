@@ -30,5 +30,5 @@ export function stamp(t: number): string {
 
 export function megabytes(bytes: number): string {
   const v = bytes / (1024 * 1024);
-  return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+  return v >= 10 ? String(Math.round(v)) : v >= 0.1 || v === 0 ? v.toFixed(1) : v.toFixed(2);
 }

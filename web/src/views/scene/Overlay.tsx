@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { useThree } from '@react-three/fiber';
 import { Html, type CameraControlsImpl } from '@react-three/drei';
 import { Vector3 } from 'three';
-import { PLATE, type Plate } from './layout';
+import { PLATE, RIM, type Plate } from './layout';
 
 interface Tag {
   id: string;
@@ -21,7 +21,12 @@ export function Overlay({ plates, controls, portal }: { plates: Plate[]; control
   const tags: Tag[] = [];
   for (const p of plates) {
     if (p.name) tags.push({ id: `p:${p.key}`, text: p.name, at: [p.cx + p.side / 2, -PLATE, p.cz + p.side / 2], mono: false, plate: true });
-    for (const d of p.districts) tags.push({ id: `d:${p.key}:${d.agent}`, text: d.agent, at: [(d.x0 + d.x1) / 2, 0.004, d.z1 + 0.08], mono: true, plate: false });
+    const front = p.cz + p.side / 2 - RIM;
+    const right = p.cx + p.side / 2 - RIM;
+    for (const d of p.districts) {
+      const at: [number, number, number] = Math.abs(d.z1 - front) < 0.01 ? [(d.x0 + d.x1) / 2, 0.004, front + RIM / 2] : Math.abs(d.x1 - right) < 0.01 ? [right + RIM / 2, 0.004, (d.z0 + d.z1) / 2] : [(d.x0 + d.x1) / 2, 0.004, d.z1 + 0.1];
+      tags.push({ id: `d:${p.key}:${d.agent}`, text: d.agent, at, mono: true, plate: false });
+    }
   }
   const key = tags.map((t) => t.id + t.at.join()).join('|');
   const pick = useCallback(() => {
