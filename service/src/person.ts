@@ -40,6 +40,7 @@ import {
 } from '../../core/src/index.ts';
 import { Store, TABLES, type AgentRow, type EventRow, type SessionRow } from './store.ts';
 import { Limits, SAY } from './limits.ts';
+import { buildExport } from './export.ts';
 
 export interface Caller { agent: string; grant: string; scopes: string[] }
 export interface Result { ok: boolean; text: string; item?: Item }
@@ -416,5 +417,139 @@ export class Person extends DurableObject<Env> {
       this.remember(memo.marks, out, now);
       return out;
     });
+  }
+
+  async me(): Promise<Me> {
+    const now = Date.now();
+    const t = this.limits.today(now);
+    return { bytes: this.store.totalBytes(), max: this.limits.max.storeBytes, callsToday: t.calls, storedToday: t.stored };
+  }
+
+  async space(): Promise<Space> {
+    const counts = new Map(this.store.q<{ project: string; n: number }>('SELECT project, COUNT(*) AS n FROM items GROUP BY project').map((r) => [r.project, r.n]));
+    const projects = this.store.q<{ key: string; name: string }>('SELECT key, name FROM projects ORDER BY created').map((p) => ({ key: p.key, name: p.name, items: counts.get(p.key) ?? 0 }));
+    return {
+      projects,
+      agents: this.store.q<AgentRow>('SELECT * FROM agents ORDER BY first'),
+      items: this.store.newest(SPACE_ITEMS),
+      queue: this.store.q<{ item: string }>('SELECT item FROM queue ORDER BY at').map((r) => r.item),
+      now: Date.now(),
+    };
+  }
+
+  private change(id: string, fn: (i: Item) => Item | null): Item | null {
+    const i = this.store.item(id);
+    if (!i) return null;
+    const next = fn(i);
+    if (!next) return null;
+    this.store.put(next);
+    this.push({ type: 'item', item: next });
+    return next;
+  }
+
+  async pin(id: string, on: boolean): Promise<Item | null> {
+    return this.change(id, (i) => ({ ...i, pinned: !!on }));
+  }
+
+  async keep(id: string): Promise<Item | null> {
+    return this.change(id, (i) => ({ ...i, held: false }));
+  }
+
+  async putBack(id: string): Promise<Item | null> {
+    const i = this.store.item(id);
+    if (!i || i.kind === 'rule') return null;
+    this.store.q('INSERT INTO queue(item, at) VALUES(?, ?) ON CONFLICT(item) DO UPDATE SET at = excluded.at', id, Date.now());
+    this.push({ type: 'item', item: i });
+    return i;
+  }
+
+  async remove(id: string): Promise<boolean> {
+    const n = this.store.item(id) ? this.store.remove(id) : -1;
+    if (n < 0) return false;
+    this.store.setTotal(this.store.totalBytes() - n);
+    this.push({ type: 'remove', id });
+    return true;
+  }
+
+  async addRule(a: { text: string; scope: 'project' | 'all'; project?: string }): Promise<Result> {
+    const now = Date.now();
+    const text = typeof a.text === 'string' ? a.text.trim() : '';
+    if (!text) return { ok: false, text: 'A rule needs text.' };
+    if (text.length > 600) return { ok: false, text: SAY.size };
+    const scope = a.scope === 'project' ? 'project' : 'all';
+    const key = typeof a.project === 'string' ? a.project : '';
+    if (scope === 'project' && !this.store.q('SELECT key FROM projects WHERE key = ?', key).length) return { ok: false, text: 'That project is not in this memory.' };
+    const d = decideRule({ text, words: text, scope }, { via: 'page', prompts: [], activatedToday: 0 });
+    const body: RuleBody = { text, words: text, scope, status: d.status, proof: d.proof };
+    const origin: Origin = { agent: 'page', via: 'page', source: 'person', at: now };
+    return this.save(newItem('rule', key, body, origin), now, true);
+  }
+
+  async setRule(id: string, status: 'active' | 'off'): Promise<Item | null> {
+    if (status !== 'active' && status !== 'off') return null;
+    return this.change(id, (i) => {
+      if (i.kind !== 'rule') return null;
+      const b = i.body as RuleBody;
+      return { ...i, held: status === 'active' ? false : i.held, body: { ...b, status, proof: status === 'active' && b.status !== 'active' ? 'page' : b.proof } };
+    });
+  }
+
+  async mergeProjects(from: string, into: string): Promise<boolean> {
+    if (!from || !into || from === into) return false;
+    const has = (k: string) => this.store.q('SELECT key FROM projects WHERE key = ?', k).length > 0;
+    if (!has(from) || !has(into)) return false;
+    this.ctx.storage.transactionSync(() => {
+      this.store.q('UPDATE items SET project = ? WHERE project = ?', into, from);
+      this.store.q('UPDATE paths SET key = ? WHERE key = ?', into, from);
+      this.store.q('UPDATE aliases SET key = ? WHERE key = ?', into, from);
+      this.store.q('UPDATE sessions SET project = ? WHERE project = ?', into, from);
+      this.store.q('DELETE FROM projects WHERE key = ?', from);
+    });
+    this.push({ type: 'reset' });
+    return true;
+  }
+
+  async exportAll(): Promise<Uint8Array> {
+    return buildExport({
+      items: this.store.all(),
+      projects: this.store.q<{ key: string; name: string }>('SELECT key, name FROM projects ORDER BY created'),
+      agents: this.store.q<AgentRow>('SELECT * FROM agents ORDER BY first'),
+    });
+  }
+
+  async wipe(): Promise<void> {
+    this.push({ type: 'reset' });
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, 'reset');
+      } catch {
+        continue;
+      }
+    }
+    await this.ctx.storage.deleteAll();
+    this.store.init();
+  }
+
+  async rowCount(): Promise<number> {
+    let n = 0;
+    for (const t of TABLES) n += this.store.count(t);
+    return n;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get('Upgrade') !== 'websocket') return new Response(null, { status: 426 });
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    if (message === 'ping') ws.send('pong');
+  }
+
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
+    if (code >= 1000 && code < 5000 && ![1004, 1005, 1006, 1015].includes(code)) ws.close(code, reason);
+    else ws.close();
   }
 }
