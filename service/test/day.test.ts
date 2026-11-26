@@ -48,20 +48,21 @@ async function seed(stub: DurableObjectStub<Person>): Promise<void> {
   });
 }
 
-async function call(stub: DurableObjectStub<Person>, kind: Kind, i: number, a: number, p: number): Promise<void> {
+async function call(stub: DurableObjectStub<Person>, kind: Kind, i: number, a: number, p: number): Promise<string> {
   const c = AGENTS[a];
   const w = where(p);
   const topic = TOPICS[i % TOPICS.length];
   const hook = (event: string, more: Record<string, string>) => stub.event(c, { host: a === 1 ? 'claude-code' : 'codex', event, session: `day-${a}-${p}`, cwd: w.folder, ...more });
-  if (kind === 'recall first') await stub.recall(c, w);
-  else if (kind === 'recall query') await stub.recall(c, { ...w, query: `${topic} part decisions` });
-  else if (kind === 'event prompt') await hook('UserPromptSubmit', { prompt: `please look at the ${topic} work again, step ${i}` });
+  if (kind === 'recall first') return (await stub.recall(c, w, true)).text;
+  if (kind === 'recall query') return (await stub.recall(c, { ...w, query: i % 2 ? `${topic} part decisions` : `zebra quartz lantern ${i}` }, true)).text;
+  if (kind === 'event prompt') await hook('UserPromptSubmit', { prompt: `please look at the ${topic} work again, step ${i}` });
   else if (kind === 'checkpoint') await stub.checkpoint(c, { ...w, goal: `Finished the ${topic} step ${i}`, decisions: [`keep ${topic} simple`], open: [`test ${topic} ${i}`], changed: [`src/${i}.ts`] });
   else if (kind === 'handoff') await stub.handoff(c, { ...w, goal: `Ship the ${topic}`, next: `Wire the ${topic} step ${i}`, files: [`src/${i}.ts`] });
   else if (kind === 'rule') await stub.rule(c, { ...w, text: `Notes for the ${topic}`, words: `please look at the ${topic} work again`, scope: 'project' });
   else if (kind === 'event edit') await hook('PostToolUse', { tool: 'Edit', file: `src/${topic.replace(/ /g, '-')}-${i}.ts` });
   else if (kind === 'event command') await hook('PostToolUseFailure', { tool: 'Bash', command: `npm test -- ${i}` });
   else await hook('Stop', { message: `Done with the ${topic} step ${i}.` });
+  return '';
 }
 
 it('a base person a year in, in ten sittings that each start cold, stays under 300 rows written and 6,000 rows read a day', async () => {
@@ -86,13 +87,14 @@ it('a base person a year in, in ten sittings that each start cold, stays under 3
   let written = 0;
   let boots = 0;
   let instance = '';
+  let topicLists = 0;
   for (let i = 0; i < ops.length; i++) {
     if (i > 0 && i % per_sitting === 0) {
       await evictDurableObject(stub);
       await open(stub);
     }
     const op = ops[i];
-    await call(stub, op.kind, i, op.a, op.p);
+    if ((await call(stub, op.kind, i, op.a, op.p)).includes('\nTOPICS\n')) topicLists++;
     const got = await runInDurableObject(stub, (x: Person) => ({ last: x.lastRows, boot: x.bootRows, id: x.instance }));
     if (got.id !== instance) {
       instance = got.id;
@@ -109,7 +111,8 @@ it('a base person a year in, in ten sittings that each start cold, stays under 3
     per.set(op.kind, k);
   }
   const kinds = Object.fromEntries([...per].map(([k, v]) => [k, { read: Math.round((v.read / v.n) * 10) / 10, written: Math.round((v.written / v.n) * 10) / 10 }]));
-  console.log(`DAY ${JSON.stringify({ calls: ops.length, boots, read, written, kinds })}`);
+  console.log(`DAY ${JSON.stringify({ calls: ops.length, boots, read, written, topicLists, kinds })}`);
   expect(written).toBeLessThanOrEqual(300);
   expect(read).toBeLessThanOrEqual(6000);
+  expect(topicLists).toBeGreaterThan(0);
 });
