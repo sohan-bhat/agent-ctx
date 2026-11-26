@@ -104,6 +104,27 @@ function normalized(s: string): string {
   return out;
 }
 
+const OVERRIDE_WORLD: RegExp[] = [
+  String.raw`\b(?:ignora|ignore|ignorar|ignoren|olvida|olvide|olvidar|olviden)\s+(?:todas\s+|todos\s+)?(?:las\s+|los\s+|tus\s+|sus\s+)?(?:instrucciones|indicaciones|reglas|órdenes|mensajes)\s+(?:anteriores|previas|previos|de\s+arriba|de\s+antes)\b`,
+  String.raw`\b(?:ignora|ignore|ignorar|olvida|olvide|olvidar)\s+(?:todas\s+)?(?:las\s+)?(?:anteriores|previas)\s+(?:instrucciones|indicaciones|reglas)\b`,
+  String.raw`\b(?:ignora|ignore)\s+(?:todo\s+)?lo\s+anterior\b`,
+  String.raw`\b(?:ignoriere|ignorier|ignorieren\s+sie|vergiss|vergessen\s+sie)\s+(?:alle\s+|die\s+|deine\s+|ihre\s+)?(?:alle\s+)?(?:vorherigen|vorigen|obigen|bisherigen|früheren|vorangegangenen)\s+(?:anweisungen|instruktionen|befehle|regeln|vorgaben)\b`,
+  String.raw`\b(?:ignoriere|ignorier|ignorieren\s+sie|vergiss|vergessen\s+sie)\s+(?:alle\s+|die\s+|deine\s+|ihre\s+)?(?:anweisungen|instruktionen|befehle|regeln)\s+(?:oben|von\s+oben|davor|zuvor)\b`,
+  String.raw`\b(?:ignore|ignorez|ignorer|oublie|oubliez|oublier)\s+(?:toutes\s+)?(?:les\s+|tes\s+|vos\s+)?(?:instructions|consignes|règles|directives|messages)\s+(?:précédentes|précédents|antérieures|ci-dessus|ci\s+dessus|plus\s+haut)\b`,
+  String.raw`\b(?:ignore|ignorez)\s+(?:tout\s+)?ce\s+qui\s+précède\b`,
+  String.raw`\b(?:ignore|ignora|ignorar|ignorem|esqueça|esquece|esquecer|esqueçam)\s+(?:todas\s+|todos\s+)?(?:as\s+|os\s+|suas\s+)?(?:instruções|regras|ordens|orientações|mensagens)\s+(?:anteriores|prévias|acima|de\s+cima)\b`,
+  String.raw`\b(?:ignora|ignori|ignorare|ignorate|dimentica|dimentichi|dimenticare|dimenticate)\s+(?:tutte\s+)?(?:le\s+)?(?:istruzioni|regole|indicazioni|direttive)\s+(?:precedenti|di\s+prima|di\s+sopra|qui\s+sopra|sopra)\b`,
+  String.raw`\b(?:ignora|ignori|ignorate|dimentica|dimenticate)\s+(?:tutte\s+)?le\s+precedenti\s+(?:istruzioni|regole|indicazioni)\b`,
+  String.raw`(?<!\p{L})(?:проигнорируй|игнорируй|игнорируйте|проигнорируйте|забудь|забудьте)\s+(?:все\s+)?(?:предыдущие|прежние|вышеуказанные|предшествующие|прошлые)\s+(?:инструкции|указания|правила|команды)`,
+  String.raw`(?<!\p{L})(?:проигнорируй|игнорируй|игнорируйте|проигнорируйте|забудь|забудьте)\s+(?:все\s+)?(?:инструкции|указания|правила)\s+выше`,
+  String.raw`(?:पिछले|पहले\s+के|ऊपर\s+(?:दिए\s+गए|के|लिखे))\s+(?:सभी\s+|सारे\s+)?(?:निर्देशों|निर्देश|आदेशों|आदेश|नियमों|नियम)\s+(?:को\s+)?(?:अनदेखा|नज़रअंदाज़|नजरअंदाज|भूल)`,
+  String.raw`(?<!\p{L})(?:تجاهل|تجاهلي|تجاهلوا|انس|انسى|انسي|انسوا)\s+(?:جميع\s+|كل\s+)?(?:التعليمات|الأوامر|التوجيهات|القواعد|الإرشادات)\s+(?:السابقة|أعلاه|المذكورة\s+أعلاه|الماضية)`,
+  String.raw`(?<!\p{L})(?:تجاهل|تجاهلي|تجاهلوا)\s+(?:كل\s+)?ما\s+(?:سبق|ورد\s+أعلاه)`,
+  String.raw`(?:以前|前|上記|これまで|今まで|先ほど|上)の(?:すべての|全ての)?(?:指示|命令|指令|ルール|プロンプト)(?:を|は)?(?:すべて|全て)?(?:無視|忘れ)`,
+  String.raw`(?:忽略|无视|無視|忘记|忘記|忘掉)(?:掉)?(?:你)?(?:所有|全部|一切)?(?:的)?(?:之前|以前|先前|上面|上述|前面|以上|此前)(?:的)?(?:所有|全部)?(?:的)?(?:指令|指示|规则|規則|命令|提示)`,
+  String.raw`(?:이전|앞|위|앞서)\s*(?:의\s*)?(?:모든\s*)?(?:지시|지침|명령|규칙|프롬프트)(?:사항)?(?:들)?(?:을|를|은|는)?\s*(?:모두\s*)?(?:무시|잊어|잊으)`,
+].map((src) => new RegExp(normalized(src), 'iu'));
+
 const once = (re: RegExp) => new RegExp(re.source, re.flags.replace('g', ''));
 
 const ROLE_DETECT = [ROLE_TAG, LOWER_TAG, PIPE_TAG, SQUARE_TAG, DOUBLE_TAG, HEADING].map(once);
@@ -142,6 +163,10 @@ export function sanitize(text: string): { text: string; flags: Flag[] } {
   s = s.replace(TAGS, '').replace(BIDI, '').replace(ZERO_WIDTH, '').replace(CONTROL, '');
   const n = normalized(s);
   if (OVERRIDE.some((re) => re.test(n))) flags.add('override');
+  else {
+    const low = /[^\x00-\x7F]/.test(s) ? normalized(s.toLowerCase()) : n;
+    if (OVERRIDE_WORLD.some((re) => re.test(low))) flags.add('override');
+  }
   if (SHELL.some((re) => re.test(n)) || piped(n)) flags.add('shell');
   if (ROLE_DETECT.some((re) => re.test(n)) || ROLE_NESTED.test(n) || (ROLE_LINE_SEEN.test(n) && !ROLE_LINE_SEEN.test(s))) flags.add('role');
   s = swap(s, COMMENT, '', 'markup', flags);

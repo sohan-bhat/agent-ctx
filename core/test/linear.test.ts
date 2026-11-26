@@ -101,6 +101,14 @@ const OWN: [string, string][] = [
   ['stacked marks of one class', fill('a', String.fromCodePoint(0x301))],
   ['stacked marks of mixed classes', fill('a', String.fromCodePoint(0x301, 0x316, 0x334, 0x345))],
   ['stacked marks on han', fill('\u5728', String.fromCodePoint(0x301, 0x316))],
+  ['ignora then spaces', fill('ignora', ' ', 'x')],
+  ['olvida order repeated', fill('', 'olvida las ')],
+  ['vergiss order repeated', fill('', 'vergiss die alle ')],
+  ['cyrillic order repeated', fill('', '\u0437\u0430\u0431\u0443\u0434\u044c \u0432\u0441\u0435 ')],
+  ['devanagari order repeated', fill('', '\u092a\u093f\u091b\u0932\u0947 \u0938\u092d\u0940 ')],
+  ['arabic order repeated', fill('', '\u062a\u062c\u0627\u0647\u0644 \u062c\u0645\u064a\u0639 ')],
+  ['han order repeated', fill('', '\u5ffd\u7565\u4e4b\u524d\u7684\u6240\u6709')],
+  ['hangul prefix then spaces', fill('\uc774\uc804', ' ')],
 ];
 
 const PIECES = [
