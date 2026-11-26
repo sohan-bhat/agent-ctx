@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { readLines } from './lines.ts';
-import { cleanSummary, contentBlocks, cut, parseLine, promptText, textOf, usageOf, type Rec } from './records.ts';
-import { redact } from './redact.ts';
+import { cleanSummary, contentBlocks, parseLine, promptText, textOf, usageOf, type Rec } from './records.ts';
+import { cut } from '../../core/src/caps.ts';
+import { redact } from '../../core/src/redact.ts';
 import { slim } from './slim.ts';
-import { tokens } from './text.ts';
+import { tokens } from '../../core/src/text.ts';
 
 export const CHARS_PER_TOKEN = 2.6;
 export const IMAGE_TOKENS = 1600;

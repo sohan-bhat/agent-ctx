@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { guessRoot, remoteName } from '../src/core/place.ts';
+import { guessRoot, remoteName } from '../src/place.ts';
 
 test('guessRoot skips container folders and stops above generic ones', () => {
   assert.equal(guessRoot('/h/code/projects/foo/src/a.ts', '/h/code'), '/h/code/projects/foo');
@@ -17,7 +17,7 @@ test('remote names come out as owner and repo', () => {
 });
 
 test('a file under a plain working folder stays with that folder', async () => {
-  const { placeOfFile } = await import('../src/core/place.ts');
+  const { placeOfFile } = await import('../src/place.ts');
   const fs = await import('node:fs');
   const path = await import('node:path');
   const { scratch } = await import('./synth.ts');

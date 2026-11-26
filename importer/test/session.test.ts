@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { scratch, makeRepo, Transcript } from './synth.ts';
-import { newState, scan, deriveCards } from '../src/core/session.ts';
-import { clearPlaceCache } from '../src/core/place.ts';
+import { newState, scan, deriveCards } from '../src/session.ts';
+import { clearPlaceCache } from '../src/place.ts';
 
 function setup() {
   const root = scratch('session');

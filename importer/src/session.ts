@@ -6,7 +6,6 @@ import { isScratchPath } from './paths.ts';
 import {
   cleanSummary,
   compactSummaryText,
-  cut,
   editPaths,
   isCompactBoundary,
   isToolResultLine,
@@ -15,7 +14,8 @@ import {
   promptText,
   titleOf,
 } from './records.ts';
-import { redact } from './redact.ts';
+import { cut } from '../../core/src/caps.ts';
+import { redact } from '../../core/src/redact.ts';
 
 export const PROMPT_CAP = 300;
 export const LATER_CAP = 200;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { world, repo, Transcript } from './helpers.ts';
-import { advance, newAnalyzer, largest, decisions, fileNamed, commandNamed, normalizeCommand, timeline, MAX_STEPS, type Span, type Timeline } from '../src/core/context.ts';
+import { advance, newAnalyzer, largest, decisions, fileNamed, commandNamed, normalizeCommand, timeline, MAX_STEPS, type Span, type Timeline } from '../src/context.ts';
 
 function build() {
   const w = world('ctx');

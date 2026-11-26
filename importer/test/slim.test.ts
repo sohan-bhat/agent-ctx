@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { world, repo, Transcript } from './helpers.ts';
-import { slim, SLIM_FROM } from '../src/core/slim.ts';
-import { advance, newAnalyzer, step, timeline, wantedBytes } from '../src/core/context.ts';
-import { parseLine } from '../src/core/records.ts';
+import { slim, SLIM_FROM } from '../src/slim.ts';
+import { advance, newAnalyzer, step, timeline, wantedBytes } from '../src/context.ts';
+import { parseLine } from '../src/records.ts';
 
 const line = (r: unknown) => Buffer.from(JSON.stringify(r));
 const big = (n: number) => 'line one "quoted" and a tab\tthen \\ a slash, café ✓\n'.repeat(Math.ceil(n / 50));

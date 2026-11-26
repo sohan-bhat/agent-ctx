@@ -1,3 +1,5 @@
+import { cut } from '../../core/src/caps.ts';
+
 export type Rec = Record<string, any>;
 
 export const UNDERSTOOD = new Set([
@@ -185,11 +187,4 @@ export function titleOf(r: Rec): { ai?: string; custom?: string } | null {
   if (r.type === 'custom-title' && typeof r.customTitle === 'string') return { custom: r.customTitle };
   if (r.type === 'summary' && typeof r.summary === 'string') return { ai: r.summary };
   return null;
-}
-
-export function cut(s: string, n: number): string {
-  if (s.length <= n) return s;
-  const sl = s.slice(0, n);
-  const sp = sl.lastIndexOf(' ');
-  return (sp > n * 0.6 ? sl.slice(0, sp) : sl).trimEnd() + '…';
 }

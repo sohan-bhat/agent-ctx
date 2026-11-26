@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { world, repo, Transcript, ROOT } from './helpers.ts';
-import { advance, newAnalyzer, timeline } from '../src/core/context.ts';
+import { advance, newAnalyzer, timeline } from '../src/context.ts';
 
 const ready = fs.existsSync(path.join(ROOT, 'web', 'node_modules', 'd3-hierarchy'));
-const m = ready ? await import('../web/src/lib/model.ts') : null;
+const m = ready ? await import('../../web/src/lib/model.ts') : null;
 type Row = { id: string; own: number; kept?: number; children?: Row[] };
 const view: { treeOf: (pieces: unknown[], withKept?: boolean) => Row } | null = ready ? await import(path.join(ROOT, 'web', 'src', 'lib', 'context.ts')) : null;
 const skip = ready ? false : 'the page dependencies are not installed';

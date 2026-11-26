@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-process.env.CLAUDE_CTX_SCRATCH ??= '/private/tmp/:/tmp/';
+process.env.AGENT_CTX_SCRATCH ??= '/private/tmp/:/tmp/';
 
 const made: string[] = [];
 
@@ -14,7 +14,7 @@ export function removeScratch(): void {
 process.on('exit', removeScratch);
 
 export function scratch(name: string): string {
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `claude-ctx-${name}-`));
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `agent-ctx-${name}-`));
   made.push(dir);
   return dir;
 }
@@ -201,11 +201,6 @@ export class Transcript {
   }
 
   save(): string {
-    fs.writeFileSync(this.file, this.lines.map((l) => l + '\n').join(''));
-    return this.file;
-  }
-
-  append(): string {
     fs.writeFileSync(this.file, this.lines.map((l) => l + '\n').join(''));
     return this.file;
   }

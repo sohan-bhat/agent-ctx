@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { redact, DROPPED } from '../src/core/redact.ts';
+import { redact, DROPPED } from '../src/redact.ts';
 
 const fakes: Record<string, string> = {
   anthropic: 'sk-ant-api03-' + 'Q'.repeat(10) + 'abc123DEF456ghi789',
