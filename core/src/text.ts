@@ -5,6 +5,10 @@ const STOP = new Set(
   ).split(' '),
 );
 
+export function isStop(w: string): boolean {
+  return STOP.has(w);
+}
+
 function suffix(w: string): string {
   if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y';
   if (w.endsWith('sses')) return w.slice(0, -2);
@@ -21,16 +25,64 @@ export function stem(w: string): string {
   return s;
 }
 
+const FOLDED = /([\p{Script=Latin}\p{Script=Greek}\p{Script=Arabic}\p{Script=Hebrew}])\p{M}+/gu;
+const WORD = /[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu;
+const MARK = /^\p{M}$/u;
+const UNSPACED = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\u30FC]$/u;
+const ASCII = /^[a-z0-9]+$/;
+
+function fold(text: string): string {
+  return text.normalize('NFKD').replace(FOLDED, '$1').normalize('NFC').toLowerCase();
+}
+
+function word(w: string, out: string[]): void {
+  if (ASCII.test(w)) {
+    if (w.length < 2 || w.length > 30) return;
+    if (/^\d+$/.test(w) && w.length > 4) return;
+    if (STOP.has(w)) return;
+    out.push(stem(w));
+    return;
+  }
+  const n = [...w].length;
+  if (n >= 2 && n <= 30) out.push(w);
+}
+
+function pairs(units: string[], out: string[]): void {
+  if (units.length === 1) out.push(units[0]);
+  for (let k = 0; k + 1 < units.length; k++) out.push(units[k] + units[k + 1]);
+}
+
+function split(run: string, out: string[]): void {
+  let units: string[] = [];
+  let rest = '';
+  const flush = () => {
+    if (units.length) pairs(units, out);
+    if (rest) word(rest, out);
+    units = [];
+    rest = '';
+  };
+  for (const ch of run) {
+    if (MARK.test(ch)) {
+      if (units.length && !rest) units[units.length - 1] += ch;
+      else rest += ch;
+      continue;
+    }
+    if (UNSPACED.test(ch)) {
+      if (rest) flush();
+      units.push(ch);
+    } else {
+      if (units.length) flush();
+      rest += ch;
+    }
+  }
+  flush();
+}
+
 export function tokens(text: string): string[] {
   if (!text) return [];
   const spaced = text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
   const out: string[] = [];
-  for (const raw of spaced.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (raw.length < 2 || raw.length > 30) continue;
-    if (/^\d+$/.test(raw) && raw.length > 4) continue;
-    if (STOP.has(raw)) continue;
-    out.push(stem(raw));
-  }
+  for (const m of fold(spaced).matchAll(WORD)) split(m[0], out);
   return out;
 }
 
