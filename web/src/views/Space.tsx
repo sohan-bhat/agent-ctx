@@ -144,7 +144,7 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
           ))}
         </ToggleGroup>
       )}
-      <div className="relative min-h-0 flex-1" data-space>
+      <div id="space" tabIndex={-1} className="relative min-h-0 flex-1 outline-none" data-space>
         {webgl && !broken && !ready && <Placeholder />}
         {webgl && !broken ? (
           <>
@@ -174,7 +174,9 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
         ) : (
           list(true)
         )}
-        {notice && <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-4 text-center">{notice}</div>}
+        <div role="status" className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-4 text-center">
+          {notice}
+        </div>
         {aside}
       </div>
       <div className="flex items-center gap-4 pt-1">
@@ -190,7 +192,7 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
           thumbLabel="Time"
           valueText={readout}
         />
-        <span className="num w-[12ch] shrink-0 text-right text-xs" data-readout>
+        <span className="num min-w-[13ch] shrink-0 whitespace-nowrap text-right text-xs" data-readout>
           {readout}
         </span>
       </div>
@@ -200,7 +202,7 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
           if (!o) setSelected(null);
         }}
       >
-        <SheetContent side={narrow ? 'bottom' : 'right'} className="max-h-[70dvh] gap-0 overflow-y-auto p-4 pt-5 pr-12 text-sm" aria-describedby={undefined}>
+        <SheetContent side={narrow ? 'bottom' : 'right'} className="max-h-[70dvh] gap-0 overflow-y-auto overscroll-contain p-4 pt-5 pr-12 text-sm" aria-describedby={undefined}>
           <SheetTitle className="sr-only">{item ? headline(item) : 'Item'}</SheetTitle>
           {panel}
         </SheetContent>

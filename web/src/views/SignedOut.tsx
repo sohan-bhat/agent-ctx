@@ -15,10 +15,11 @@ export function SignedOut() {
   const [time, setTime] = useState(reduced ? DEMO_END : DEMO_START);
   const held = useRef(false);
   const open = useRef(false);
+  const [stopped, setStopped] = useState(false);
   const [tick, setTick] = useState(0);
   const wake = () => setTick((n) => n + 1);
   useEffect(() => {
-    if (reduced || time >= DEMO_END) return;
+    if (reduced || stopped || time >= DEMO_END) return;
     let raf = 0;
     let last = performance.now();
     let acc = 0;
@@ -37,7 +38,7 @@ export function SignedOut() {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [reduced, time >= DEMO_END, tick]);
+  }, [reduced, stopped, time >= DEMO_END, tick]);
   const onHold = useCallback((h: boolean) => {
     held.current = h;
     if (!h) wake();
@@ -47,7 +48,10 @@ export function SignedOut() {
     if (!o) wake();
   }, []);
   return (
-    <div className="flex h-dvh flex-col px-4 pb-3 pt-5 sm:px-8 md:px-12 md:pt-8">
+    <div className="flex h-dvh flex-col pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1.25rem,env(safe-area-inset-top))] sm:pl-8 sm:pr-8 md:pl-12 md:pr-12 md:pt-8">
+      <a href="#space" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-sm focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground">
+        Skip to the demo
+      </a>
       <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <div className="min-w-0">
           <h1 translate="no" className="text-[1.75rem] font-bold leading-none tracking-[-0.02em] md:text-[2.25rem]">
@@ -71,7 +75,10 @@ export function SignedOut() {
           clockOnly
           segments={false}
           label="Demo of the shared space, one day of work by three agents"
-          onTime={(t) => setTime(t)}
+          onTime={(t) => {
+            setStopped(true);
+            setTime(t);
+          }}
           onHold={onHold}
           onPanel={onPanel}
           aside={<span className="num pointer-events-none absolute right-0 top-0 text-xs">demo</span>}

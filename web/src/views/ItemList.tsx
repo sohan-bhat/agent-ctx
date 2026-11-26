@@ -12,13 +12,15 @@ export function ItemList({ projects, agents, items, time, visible, onOpen }: { p
     })
     .filter((g) => g.rows.length);
   return (
-    <div className={visible ? 'size-full overflow-y-auto px-1 py-2' : 'sr-only'} data-list>
+    <div className={visible ? 'size-full overflow-y-auto overscroll-contain px-1 py-2' : 'sr-only'} data-list>
       {groups.map(({ p, rows }) => (
-        <section key={p.key} aria-label={p.name} className="mb-6">
+        <section key={p.key} aria-label={p.name} className="mb-6 [content-visibility:auto]">
           <h2 className="mb-2 text-[0.9375rem] font-bold">{p.name}</h2>
           {rows.map(({ name, list }) => (
             <div key={name} className="mb-3">
-              <h3 className="num mb-1 text-xs">{name === 'page' ? 'you' : name}</h3>
+              <h3 translate="no" className="num mb-1 text-xs">
+                {name === 'page' ? 'you' : name}
+              </h3>
               <ul className="grid grid-cols-1">
                 {list.map((i) => (
                   <li key={i.id}>

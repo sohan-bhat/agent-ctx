@@ -28,9 +28,11 @@ export function DeleteAccount({ open, onOpenChange, onDelete }: { open: boolean;
           <Label htmlFor="confirm-delete" className="text-sm">
             Type delete to confirm
           </Label>
-          <Input id="confirm-delete" value={word} onChange={(e) => setWord(e.target.value)} autoComplete="off" spellCheck={false} className="h-11 text-sm sm:h-9" />
+          <Input id="confirm-delete" name="confirm" value={word} onChange={(e) => setWord(e.target.value)} autoComplete="off" spellCheck={false} className="h-11 text-sm sm:h-9" />
         </div>
-        {failed && <p className="text-destructive">Deleting failed. Try again.</p>}
+        <p role="status" className="text-destructive empty:hidden">
+          {failed ? 'Deleting failed. Try again.' : ''}
+        </p>
         <AlertDialogFooter>
           <AlertDialogCancel className="h-11 sm:h-8">Cancel</AlertDialogCancel>
           <Button

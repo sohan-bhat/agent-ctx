@@ -3,7 +3,7 @@ import { ListIcon } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { api } from '@/lib/api';
-import { megabytes, since } from '@/lib/format';
+import { count, megabytes, since } from '@/lib/format';
 import { isPending } from '@/lib/item';
 import type { Agent, Item, Live, Me, RuleBody, Space as SpaceData } from '@/lib/types';
 import { navigate } from '@/router';
@@ -149,29 +149,31 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
       await api.setRule(id, status);
       patch(id, (i) => ({ ...i, body: { ...(i.body as RuleBody), status } }));
     },
-    reject: actions.remove,
   };
 
-  const storage = `${megabytes(me.limits.bytes)} of ${megabytes(me.limits.max)} MB`;
-  const cost = `about ${Math.round(me.toolChars / 4).toLocaleString('en-US')} tokens added to each agent`;
+  const storage = `${megabytes(me.limits.bytes)} of ${megabytes(me.limits.max)}\u00a0MB`;
+  const cost = `about ${count(Math.round(me.toolChars / 4))} tokens added to each agent`;
   const notice = failed ? (
     <p>No connection to the service. Reload to try again.</p>
   ) : !online ? (
-    <p>No live updates right now.</p>
+    <p>No live updates right now. Reload to try again.</p>
   ) : data && !items.length ? (
     <p>{agents.length ? `${agents.map((a) => a.label).join(', ')} connected. Nothing saved yet.` : 'Add agent to begin.'}</p>
   ) : null;
 
   return (
-    <div className="flex h-dvh flex-col px-4 pb-3 pt-3 sm:px-8 md:px-12 md:pt-5">
+    <div className="flex h-dvh flex-col pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:pl-8 sm:pr-8 md:pl-12 md:pr-12 md:pt-5">
+      <a href="#space" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-sm focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground">
+        Skip to the space
+      </a>
       <header className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
         <h1 translate="no" className="text-[1.125rem] font-bold leading-none tracking-[-0.01em]">
           agent-ctx
         </h1>
         <ul className="order-last flex basis-full flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] sm:order-none sm:basis-auto" aria-label="Connected agents" data-agents>
           {agents.map((a: Agent) => (
-            <li key={a.id} className="whitespace-nowrap" data-agent={a.label}>
-              {a.label} <span className="num inline-block min-w-[3ch] text-xs">{since(a.last, now)}</span>
+            <li key={a.id} className="max-w-full truncate" data-agent={a.label}>
+              <span translate="no">{a.label}</span> <span className="num inline-block min-w-[3ch] text-xs">{since(a.last, now)}</span>
             </li>
           ))}
         </ul>
@@ -204,8 +206,8 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
                 Delete account
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="min-h-11 text-sm sm:min-h-8" onSelect={() => location.assign('/logout')}>
-                Sign out
+              <DropdownMenuItem asChild className="min-h-11 text-sm sm:min-h-8">
+                <a href="/logout">Sign out</a>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

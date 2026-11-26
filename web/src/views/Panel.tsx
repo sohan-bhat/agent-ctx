@@ -32,11 +32,11 @@ export function Panel({ item, queued, actions, headingId }: { item: Item; queued
   return (
     <div className="grid gap-3" data-panel={item.id}>
       <div className="grid gap-1.5">
-        <h2 id={headingId} className="text-[0.9375rem] font-bold leading-snug text-pretty">
+        <h2 id={headingId} className="break-words text-[0.9375rem] font-bold leading-snug text-pretty">
           {head?.text}
         </h2>
         {rest.map((l, i) => (
-          <p key={i} className={l.mono ? 'num break-words text-xs leading-relaxed' : 'text-sm leading-snug text-pretty'}>
+          <p key={i} translate={l.mono ? 'no' : undefined} className={l.mono ? 'num break-words text-xs leading-relaxed' : 'break-words text-sm leading-snug text-pretty'}>
             {l.text}
           </p>
         ))}
@@ -84,7 +84,9 @@ export function Panel({ item, queued, actions, headingId }: { item: Item; queued
           </AlertDialog>
         </div>
       )}
-      {failed && <p className="text-sm text-destructive">Saving failed. Try again.</p>}
+      <p role="status" className="text-sm text-destructive empty:hidden">
+        {failed ? 'Saving failed. Try again.' : ''}
+      </p>
     </div>
   );
 }

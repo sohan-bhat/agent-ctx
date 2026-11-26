@@ -105,6 +105,7 @@ export function Overlay({ plates, controls, portal }: { plates: Plate[]; control
           <Html key={t.id} portal={portalRef} position={t.at} zIndexRange={[20, 0]} pointerEvents="none" style={{ visibility: s ? 'visible' : 'hidden' }}>
             <span
               data-label={t.plate ? 'plate' : 'district'}
+              translate="no"
               className={`ctx-label absolute left-0 top-0 block whitespace-nowrap leading-none ${t.plate ? 'text-[0.8125rem] font-bold' : 'num text-[0.6875rem]'}`}
               style={{ transform: `translate(-50%, -50%) translate(${s?.x ?? 0}px, ${s?.y ?? 0}px) rotate(${s?.angle ?? 0}deg)` }}
             >

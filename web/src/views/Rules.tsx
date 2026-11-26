@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -10,7 +10,6 @@ import type { Item, NewRule, Project, RuleBody } from '@/lib/types';
 export interface RuleActions {
   add: (rule: NewRule) => Promise<void>;
   set: (id: string, status: 'active' | 'off') => Promise<void>;
-  reject: (id: string) => Promise<void>;
 }
 
 const body = (i: Item) => i.body as RuleBody;
@@ -22,6 +21,7 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
   const [scope, setScope] = useState('all');
   const [later, setLater] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
   const [failed, setFailed] = useState(false);
   const rules = items.filter((i) => i.kind === 'rule').sort((a, b) => b.created - a.created);
   const pending = rules.filter((i) => body(i).status === 'pending').sort((a, b) => Number(later.has(a.id)) - Number(later.has(b.id)));
@@ -42,13 +42,16 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const t = text.trim();
-    if (!t) return;
+    if (!t) {
+      input.current?.focus();
+      return;
+    }
     const rule: NewRule = scope === 'all' ? { text: t, scope: 'all' } : { text: t, scope: 'project', project: scope };
     if (await run(() => actions.add(rule))) setText('');
   };
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={narrow ? 'bottom' : 'right'} className="max-h-[85dvh] gap-0 overflow-y-auto text-sm sm:max-w-md" aria-describedby={undefined}>
+      <SheetContent side={narrow ? 'bottom' : 'right'} className="max-h-[85dvh] gap-0 overflow-y-auto overscroll-contain text-sm sm:max-w-md" aria-describedby={undefined}>
         <SheetHeader className="p-4 pb-2 pr-12">
           <SheetTitle className="text-[0.9375rem] font-bold">Rules</SheetTitle>
         </SheetHeader>
@@ -58,7 +61,7 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
               <li key={i.id} className="grid gap-2" data-pending={i.id}>
                 <p className="leading-snug">{`“${body(i).words}”`}</p>
                 <p className="num text-xs">
-                  {i.origin.agent}, {where(i, projects)}
+                  <span translate="no">{i.origin.agent}</span>, {where(i, projects)}
                 </p>
                 {later.has(i.id) ? (
                   <p className="text-sm font-semibold">Later</p>
@@ -67,7 +70,7 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
                     <Button className="h-11 sm:h-8" disabled={busy} onClick={() => void run(() => actions.set(i.id, 'active'))}>
                       Accept
                     </Button>
-                    <Button variant="outline" className="h-11 sm:h-8" disabled={busy} onClick={() => void run(() => actions.reject(i.id))}>
+                    <Button variant="outline" className="h-11 sm:h-8" disabled={busy} onClick={() => void run(() => actions.set(i.id, 'off'))}>
                       Reject
                     </Button>
                     <Button variant="ghost" className="h-11 sm:h-8" disabled={busy} onClick={() => setLater((s) => new Set(s).add(i.id))}>
@@ -91,7 +94,7 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
           ))}
         </ul>
         <form onSubmit={submit} className="mt-auto grid gap-2.5 border-t p-4">
-          <Input value={text} onChange={(e) => setText(e.target.value)} aria-label="New rule" placeholder="New rule" maxLength={300} className="h-11 text-sm sm:h-9" />
+          <Input ref={input} name="rule" autoComplete="off" value={text} onChange={(e) => setText(e.target.value)} aria-label="New rule" placeholder="Run the tests before each commit\u2026" maxLength={300} className="h-11 text-sm sm:h-9" />
           <ToggleGroup type="single" variant="outline" spacing={0} value={scope} onValueChange={(v) => v && setScope(v)} className="max-w-full flex-wrap" aria-label="Where the rule holds">
             {projects.map((p) => (
               <ToggleGroupItem key={p.key} value={p.key} className="h-11 px-3 text-[0.8125rem] sm:h-8">
@@ -102,10 +105,12 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
               All projects
             </ToggleGroupItem>
           </ToggleGroup>
-          <Button type="submit" variant="outline" className="h-11 justify-self-start sm:h-9" disabled={busy || !text.trim()}>
+          <Button type="submit" variant="outline" className="h-11 justify-self-start sm:h-9" disabled={busy}>
             Add
           </Button>
-          {failed && <p className="text-sm text-destructive">Saving failed. Try again.</p>}
+          <p role="status" className="text-sm text-destructive empty:hidden">
+            {failed ? 'Saving failed. Try again.' : ''}
+          </p>
         </form>
       </SheetContent>
     </Sheet>

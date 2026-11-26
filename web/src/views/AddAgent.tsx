@@ -21,10 +21,11 @@ function CopyLine({ step, at, onUse }: { step: Extract<Step, { type: 'copy' }>; 
   return (
     <div className="grid gap-1.5">
       <p className="text-sm">{step.label}</p>
-      <code className="num select-all whitespace-pre-wrap break-normal rounded-sm bg-field px-2.5 py-2 text-xs leading-relaxed [overflow-wrap:normal]">{text}</code>
+      <code translate="no" className="num select-all whitespace-pre-wrap break-normal rounded-sm bg-field px-2.5 py-2 text-xs leading-relaxed [overflow-wrap:normal]">{text}</code>
       <Button
         variant="outline"
         className="h-11 w-[5.5rem] justify-self-start sm:h-9"
+        aria-live="polite"
         onClick={async () => {
           onUse();
           setDone(await copy(text));
@@ -92,14 +93,20 @@ export function AddAgent({ open, onOpenChange }: { open: boolean; onOpenChange: 
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="top-[12dvh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-md" aria-describedby={undefined}>
+      <DialogContent
+        className="top-[12dvh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-md"
+        aria-describedby={undefined}
+        onOpenAutoFocus={(e) => {
+          if (window.matchMedia('(pointer: coarse)').matches) e.preventDefault();
+        }}
+      >
         {chosen ? (
           <Path product={chosen} onBack={() => setChosen(null)} />
         ) : (
           <Command className="bg-popover" label="Agent products">
             <DialogTitle className="px-4 pb-2 pt-4 text-[0.9375rem] font-bold">Add agent</DialogTitle>
             <div className="px-2">
-              <CommandInput placeholder="Search" aria-label="Search agents" className="text-sm" />
+              <CommandInput placeholder="Search\u2026" aria-label="Search agents" className="text-sm" />
             </div>
             <CommandList className="max-h-[60dvh] p-2">
               <CommandEmpty className="py-4 text-sm">No match</CommandEmpty>
