@@ -6,11 +6,12 @@ This file is guidance for agents and people who change this repository.
 
 agent-ctx is one hosted memory shared by agent products of different vendors.
 
-    core       shared TypeScript with no runtime dependencies
-    service    the Cloudflare Worker, one private store per person
-    web        the page
-    plugins    JSON only plugins, sources in plugins/src, stamped by scripts/stamp.mjs
-    docs       format.md and cost.md
+    core            shared TypeScript with no runtime dependencies
+    service         the Cloudflare Worker, one private store per person, with the runtime scripts in service/e2e
+    web             the page
+    plugins         JSON only plugins, with the origin set in place by plugins/stamp.mjs
+    .claude-plugin  the marketplace entry for the Claude Code plugin
+    docs            format.md, cost.md and vendors.md
 
 ## Rules
 
@@ -32,7 +33,7 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
     npm test
     npm --prefix service run typecheck
     npm --prefix service test
-    node test-e2e/real.mjs
+    node service/e2e/real.mjs
     npm --prefix service run conformance
     npm --prefix web run build
     node web/e2e/run.mjs
@@ -41,6 +42,6 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
 
 The conformance step consists of the official MCP conformance suite, with both requirement sets 2025-11-25 and 2026-07-28 and the authorization server scenarios, run against the real local runtime. Every possible failure of this step is listed with a reason in service/conformance-baseline.yml. Never add a real fault there.
 
-Passing unit suites are no proof that the Worker starts or that sign in can be finished in a browser. The real local runtime is started with test-e2e/real.mjs, and a real browser is taken through the sign in page for agents with web/e2e/consent.mjs. Run both scripts after any change to service/src.
+Passing unit suites are no proof that the Worker starts or that sign in can be finished in a browser. The real local runtime is started with service/e2e/real.mjs, and a real browser is taken through the sign in page for agents with web/e2e/consent.mjs. Run both scripts after any change to service/src.
 
 For WebKit and Firefox set ENGINE to webkit or firefox before the web scripts.

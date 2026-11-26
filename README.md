@@ -6,11 +6,12 @@ The hosted service is in development and the licence is MIT.
 
 ## Layout
 
-    core       shared TypeScript with no runtime dependencies
-    service    the Cloudflare Worker, one private store per person
-    web        the page
-    plugins    JSON only plugins for Claude Code and Codex
-    docs       format.md and cost.md
+    core            shared TypeScript with no runtime dependencies
+    service         the Cloudflare Worker, one private store per person
+    web             the page
+    plugins         JSON only plugins for Claude Code and Codex
+    .claude-plugin  the marketplace entry for the Claude Code plugin
+    docs            format.md, cost.md and vendors.md
 
 ## Run locally
 
