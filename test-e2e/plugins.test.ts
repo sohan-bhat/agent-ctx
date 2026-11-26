@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cleanOrigin, stamp } from '../scripts/stamp.mjs';
+import { SRC, cleanOrigin, stamp } from '../scripts/stamp.mjs';
 
 type Json = Record<string, unknown>;
 interface Handler { type?: string; server?: string; tool?: string; input?: Record<string, string>; [k: string]: unknown }
@@ -75,12 +75,13 @@ test('every address in a stamped copy has the one origin', () => {
   });
 });
 
-test('each plugin in a stamped copy holds only JSON and one README', () => {
+test('each plugin in a stamped copy holds only JSON, one README and at most one icon', () => {
   eachCopy((dir) => {
     const files = plugins(dir).map((f) => relative(dir, f));
+    const extra: Record<string, string[]> = { 'claude-code': [join('claude-code', '.claude-plugin', 'icon.png')], codex: [] };
     for (const plugin of ['claude-code', 'codex']) {
       const other = files.filter((f) => f.startsWith(`${plugin}/`) && !f.endsWith('.json'));
-      assert.deepEqual(other, [`${plugin}/README.md`], files.join(' '));
+      assert.deepEqual(other.sort(), [...extra[plugin], `${plugin}/README.md`].sort(), files.join(' '));
     }
     for (const f of files.filter((x) => x.endsWith('.json'))) assert.doesNotThrow(() => read(join(dir, f)), f);
   });
@@ -179,13 +180,22 @@ test('the bearer flag puts a header on the server entries and nowhere else', () 
   });
 });
 
+test('the stamp copies the icon byte for byte', () => {
+  eachCopy((dir) => {
+    const icon = join('claude-code', '.claude-plugin', 'icon.png');
+    const source = readFileSync(join(SRC, icon));
+    assert.equal(source.subarray(1, 4).toString('latin1'), 'PNG');
+    assert.ok(readFileSync(join(dir, icon)).equals(source));
+  });
+});
+
 test('the committed copy is a fresh stamp of the invalid origin', () => {
   const s = fresh('https://agent-ctx.invalid');
   try {
     const want = plugins(s.dir).map((f) => relative(s.dir, f));
     const have = plugins(COMMITTED).map((f) => relative(COMMITTED, f));
     assert.deepEqual(have, want);
-    for (const f of want) assert.equal(readFileSync(join(COMMITTED, f), 'utf8'), readFileSync(join(s.dir, f), 'utf8'), f);
+    for (const f of want) assert.ok(readFileSync(join(COMMITTED, f)).equals(readFileSync(join(s.dir, f))), f);
   } finally {
     s.done();
   }

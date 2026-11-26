@@ -45,10 +45,15 @@ export function stamp(origin, outDir, bearer) {
   const written = [];
   for (const file of walk(SRC)) {
     const rel = relative(SRC, file);
-    let text = readFileSync(file, 'utf8').split(MARK).join(o);
-    if (bearer !== undefined && file.endsWith('.json')) text = withBearer(text, bearer);
     const dest = join(out, rel);
     mkdirSync(dirname(dest), { recursive: true });
+    if (file.endsWith('.png')) {
+      writeFileSync(dest, readFileSync(file));
+      written.push(rel);
+      continue;
+    }
+    let text = readFileSync(file, 'utf8').split(MARK).join(o);
+    if (bearer !== undefined && file.endsWith('.json')) text = withBearer(text, bearer);
     writeFileSync(dest, text);
     written.push(rel);
   }
