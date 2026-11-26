@@ -174,9 +174,9 @@ auth.get('/login/callback', async (c) => {
   }
   const state = c.req.query('state') ?? '';
   if (!(await same(state, saved.s))) return plain(400, 'This sign in does not match the one this browser started. Start again.');
-  if (c.req.query('error')) return plain(400, 'GitHub did not sign you in.');
+  if (c.req.query('error')) return plain(400, 'The GitHub sign in was cancelled.');
   const code = c.req.query('code');
-  if (!code) return plain(400, 'GitHub sent no code. Start again.');
+  if (!code) return plain(400, 'The GitHub answer had no code. Start again.');
   const body = new URLSearchParams({
     client_id: c.env.GITHUB_CLIENT_ID,
     client_secret: c.env.GITHUB_CLIENT_SECRET,
@@ -190,12 +190,12 @@ auth.get('/login/callback', async (c) => {
     body,
   });
   const token = (await tokenRes.json().catch(() => ({}))) as { access_token?: unknown; error?: unknown };
-  if (!tokenRes.ok || token.error || typeof token.access_token !== 'string') return plain(400, 'GitHub did not accept this sign in. Start again.');
+  if (!tokenRes.ok || token.error || typeof token.access_token !== 'string') return plain(400, 'This sign in was not accepted. Start again.');
   const userRes = await fetch('https://api.github.com/user', {
     headers: { Authorization: `Bearer ${token.access_token}`, Accept: 'application/vnd.github+json', 'User-Agent': UA, 'X-GitHub-Api-Version': '2022-11-28' },
   });
   const user = (await userRes.json().catch(() => ({}))) as { id?: unknown; login?: unknown };
-  if (!userRes.ok || !Number.isSafeInteger(user.id) || (user.id as number) <= 0 || typeof user.login !== 'string') return plain(502, 'GitHub did not say who you are. Try again.');
+  if (!userRes.ok || !Number.isSafeInteger(user.id) || (user.id as number) <= 0 || typeof user.login !== 'string') return plain(502, 'The GitHub account could not be read. Try again.');
   return signIn(c, { person: `gh-${user.id}`, login: user.login.slice(0, 40) }, typeof saved.r === 'string' ? saved.r : '/');
 });
 

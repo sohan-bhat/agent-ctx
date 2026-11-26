@@ -153,6 +153,7 @@ export class Person extends DurableObject<Env> {
     if (!c.scopes.includes(need)) return { ok: false, text: need === 'write' ? SAY.scope : SAY.noread };
     const limited = this.limits.call(now);
     if (limited) return { ok: false, text: limited };
+    this.maintain(now);
     if (input !== null && JSON.stringify(input ?? null).length > this.limits.max.inputBytes) return { ok: false, text: SAY.size };
     return this.touchAgent(c.agent, now);
   }
@@ -488,7 +489,6 @@ export class Person extends DurableObject<Env> {
     if (!sid) return '';
     const tool = val(a.tool);
     if (tool && OWN_TOOL.test(tool)) return '';
-    this.maintain(now);
     const s = this.session(c, sid, a, now);
     const reader = `s-${sid}`;
     if (name === 'UserPromptSubmit') {
@@ -614,6 +614,9 @@ export class Person extends DurableObject<Env> {
       this.store.q('DELETE FROM sessions WHERE id = ?', id);
       this.store.q('DELETE FROM seen WHERE reader = ?', `s-${id}`);
       for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
+    }
+    for (const r of this.store.q<{ session: string; n: number }>('SELECT session, COUNT(*) AS n FROM events GROUP BY session HAVING n > ?', EVENTS_PER_SESSION)) {
+      this.store.q('DELETE FROM events WHERE key IN (SELECT key FROM events WHERE session = ? ORDER BY at ASC LIMIT ?)', r.session, r.n - EVENTS_PER_SESSION);
     }
     for (const r of this.store.q<{ k: string; v: string }>("SELECT k, v FROM meta WHERE k LIKE 'key:%' OR k LIKE 'body:%'")) {
       const at = (JSON.parse(r.v) as { at?: number }).at ?? 0;

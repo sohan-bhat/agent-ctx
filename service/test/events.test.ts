@@ -183,6 +183,17 @@ describe('hook events', () => {
     expect(added(r.text)).toContain('Pantry shopping list export');
   });
 
+  it('a session keeps at most 400 events', async () => {
+    const p = person();
+    await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'first prompt about the pantry shelves' }));
+    const now = Date.now();
+    for (let i = 0; i < 450; i++) await sql(p, "INSERT INTO events(key, session, t, at, text, path, ok, flags) VALUES(?, 's1', 'edit', ?, NULL, ?, NULL, NULL)", `k${i}`, now + i, `src/f${i}.ts`);
+    await sql(p, "UPDATE meta SET v = '0' WHERE k = 'maintained'");
+    await p.recall(CC, { folder: CWD });
+    expect((await sql<{ n: number }>(p, "SELECT COUNT(*) AS n FROM events WHERE session = 's1'"))[0].n).toBe(400);
+    expect((await sql<{ path: string }>(p, "SELECT path FROM events WHERE session = 's1' ORDER BY at DESC LIMIT 1"))[0].path).toBe('src/f449.ts');
+  });
+
   it('old events are deleted', async () => {
     const p = person();
     await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'an old prompt about pantry shelves' }));
