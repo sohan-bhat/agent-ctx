@@ -1,20 +1,20 @@
 # Sign in by vendor
 
-How each agent product signs in to agent-ctx, as each vendor published it on 2026-11-26. The four metadata documents are saved unchanged in service/test/fixtures/vendors, and service/test/vendors.test.ts runs every row against them. PORT stands for any port the product picks.
+Below is how each agent product signs in to agent-ctx, as published by each vendor on 2026-11-26. The four metadata documents are saved unchanged in service/test/fixtures/vendors, and every row is tested against those documents in service/test/vendors.test.ts. PORT stands for any port chosen by the product.
 
-| Product | How the product identifies itself | Redirect form | Result |
+| Product | How the product is identified | Redirect form | Result |
 |---|---|---|---|
-| Claude Code | Metadata document https://claude.ai/oauth/claude-code-client-metadata in claude-code.2026-11-26.json | http://localhost:PORT/callback and http://127.0.0.1:PORT/callback | Signs in as Claude Code with the loopback warning. Token with method none. Tools load in both protocol eras |
-| Codex | Metadata document https://chatgpt.com/oauth/codex/client.json in codex.2026-11-26.json | http://127.0.0.1:PORT/callback and http://localhost:PORT/callback | Signs in as Codex with the loopback warning. Token with method none. Tools load in both protocol eras. A callback path the document does not list gets a plain page that reads Invalid redirect URI |
-| ChatGPT | Metadata document https://chatgpt.com/oauth/client.json in chatgpt.2026-11-26.json | https://chatgpt.com/connector_platform_oauth_redirect | Signs in as ChatGPT as published. Token with method none or with private_key_jwt signed by a key from its jwks_uri. A broken assertion gets 401. Tools load in both protocol eras |
-| Antigravity | Metadata document https://antigravity.google/oauth/client-metadata.json in antigravity.2026-11-26.json | https://antigravity.google/oauth-callback | Signs in as Antigravity. Token with method none. Tools load in both protocol eras |
-| Claude apps | Registers itself | https://claude.ai/api/mcp/auth_callback | Signs in as Claude |
-| Cursor web and cloud agents | Registers itself with both Cursor callbacks | https://www.cursor.com/agents/mcp/oauth/callback | Signs in as Cursor |
-| Cursor desktop | Registers itself with both Cursor callbacks | http://localhost:8787/callback | Signs in as unverified Cursor with the loopback warning, since any app on the computer can listen there |
-| Cursor older versions | Registers itself with cursor://anysphere.cursor-mcp/oauth/callback | cursor://anysphere.cursor-mcp/oauth/callback | No sign in. The sign in library sends codes only to https or loopback addresses, so the person sees a plain page that reads Invalid redirect URI. Current Cursor documents no custom scheme |
-| VS Code desktop | Registers itself | http://127.0.0.1:33418 | Signs in under the word unverified and its own name, with the loopback warning |
-| VS Code web | Registers itself | https://vscode.dev/redirect | Signs in as VS Code |
-| Gemini CLI | Registers itself | http://localhost:PORT/oauth/callback | Signs in under the word unverified and its own name, with the loopback warning |
-| Amp | Registers itself | http://localhost:8976/oauth/callback | Signs in under the word unverified and its own name, with the loopback warning |
+| Claude Code | Metadata document https://claude.ai/oauth/claude-code-client-metadata in claude-code.2026-11-26.json | http://localhost:PORT/callback and http://127.0.0.1:PORT/callback | Signed in as Claude Code with the loopback warning, a token with method none and tools loaded in both protocol eras |
+| Codex | Metadata document https://chatgpt.com/oauth/codex/client.json in codex.2026-11-26.json | http://127.0.0.1:PORT/callback and http://localhost:PORT/callback | Signed in as Codex with the loopback warning, a token with method none and tools loaded in both protocol eras. For a callback path not listed in the document, a plain page with the words Invalid redirect URI is shown |
+| ChatGPT | Metadata document https://chatgpt.com/oauth/client.json in chatgpt.2026-11-26.json | https://chatgpt.com/connector_platform_oauth_redirect | Signed in as ChatGPT as published, with a token with method none or with private_key_jwt signed by a key from the jwks_uri of the metadata document. A broken assertion is answered with 401, and tools are loaded in both protocol eras |
+| Antigravity | Metadata document https://antigravity.google/oauth/client-metadata.json in antigravity.2026-11-26.json | https://antigravity.google/oauth-callback | Signed in as Antigravity with a token with method none and tools loaded in both protocol eras |
+| Claude apps | Self registration | https://claude.ai/api/mcp/auth_callback | Signed in as Claude |
+| Cursor web and cloud agents | Self registration with both Cursor callbacks | https://www.cursor.com/agents/mcp/oauth/callback | Signed in as Cursor |
+| Cursor desktop | Self registration with both Cursor callbacks | http://localhost:8787/callback | Signed in as unverified Cursor with the loopback warning, since a listener at that address may be any app on the computer |
+| Cursor older versions | Self registration with cursor://anysphere.cursor-mcp/oauth/callback | cursor://anysphere.cursor-mcp/oauth/callback | Sign in is not possible. In the sign in library, codes are sent only to https or loopback addresses, so the person sees a plain page with the words Invalid redirect URI. No custom scheme is documented for current Cursor |
+| VS Code desktop | Self registration | http://127.0.0.1:33418 | Signed in under the word unverified and the registered name, with the loopback warning |
+| VS Code web | Self registration | https://vscode.dev/redirect | Signed in as VS Code |
+| Gemini CLI | Self registration | http://localhost:PORT/oauth/callback | Signed in under the word unverified and the registered name, with the loopback warning |
+| Amp | Self registration | http://localhost:8976/oauth/callback | Signed in under the word unverified and the registered name, with the loopback warning |
 
-The consent page allows its form to send the browser on to the origin of the matched redirect address and to no other place. Every row above passes that check.
+From the form on the consent page, the browser may be sent on to the origin of the matched redirect address and to no other place. Every row above falls inside that limit.
