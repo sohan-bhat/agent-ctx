@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { Hono } from 'hono';
+import { api } from './api.ts';
 import { auth, escape, who, type AppEnv } from './auth.ts';
 import { mcpHandler } from './mcp.ts';
 
@@ -9,6 +10,7 @@ export { Person } from './person.ts';
 const app = new Hono<AppEnv>();
 
 app.route('/', auth);
+app.route('/api', api);
 
 app.get('/', async (c) => {
   const me = await who(c);
