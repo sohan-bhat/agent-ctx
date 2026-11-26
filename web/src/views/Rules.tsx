@@ -51,7 +51,14 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
   };
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={narrow ? 'bottom' : 'right'} className="max-h-[85dvh] gap-0 overflow-y-auto overscroll-contain text-sm sm:max-w-md" aria-describedby={undefined}>
+      <SheetContent
+        side={narrow ? 'bottom' : 'right'}
+        className="max-h-[85dvh] gap-0 overflow-y-auto overscroll-contain text-sm sm:max-w-md"
+        aria-describedby={undefined}
+        onOpenAutoFocus={(e) => {
+          if (window.matchMedia('(pointer: coarse)').matches) e.preventDefault();
+        }}
+      >
         <SheetHeader className="p-4 pb-2 pr-12">
           <SheetTitle className="text-[0.9375rem] font-bold">Rules</SheetTitle>
         </SheetHeader>
@@ -94,7 +101,7 @@ export function Rules({ open, onOpenChange, items, projects, actions }: { open: 
           ))}
         </ul>
         <form onSubmit={submit} className="mt-auto grid gap-2.5 border-t p-4">
-          <Input ref={input} name="rule" autoComplete="off" value={text} onChange={(e) => setText(e.target.value)} aria-label="New rule" placeholder="Run the tests before each commit\u2026" maxLength={300} className="h-11 text-sm sm:h-9" />
+          <Input ref={input} name="rule" autoComplete="off" value={text} onChange={(e) => setText(e.target.value)} aria-label="New rule" placeholder="Run the tests before each commit…" maxLength={300} className="h-11 text-sm sm:h-9" />
           <ToggleGroup type="single" variant="outline" spacing={0} value={scope} onValueChange={(v) => v && setScope(v)} className="max-w-full flex-wrap" aria-label="Where the rule holds">
             {projects.map((p) => (
               <ToggleGroupItem key={p.key} value={p.key} className="h-11 px-3 text-[0.8125rem] sm:h-8">

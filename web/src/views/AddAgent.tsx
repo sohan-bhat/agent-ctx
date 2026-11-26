@@ -106,7 +106,7 @@ export function AddAgent({ open, onOpenChange }: { open: boolean; onOpenChange: 
           <Command className="bg-popover" label="Agent products">
             <DialogTitle className="px-4 pb-2 pt-4 text-[0.9375rem] font-bold">Add agent</DialogTitle>
             <div className="px-2">
-              <CommandInput placeholder="Search\u2026" aria-label="Search agents" className="text-sm" />
+              <CommandInput placeholder="Search…" aria-label="Search agents" className="text-sm" />
             </div>
             <CommandList className="max-h-[60dvh] p-2">
               <CommandEmpty className="py-4 text-sm">No match</CommandEmpty>

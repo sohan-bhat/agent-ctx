@@ -202,7 +202,14 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
           if (!o) setSelected(null);
         }}
       >
-        <SheetContent side={narrow ? 'bottom' : 'right'} className="max-h-[70dvh] gap-0 overflow-y-auto overscroll-contain p-4 pt-5 pr-12 text-sm" aria-describedby={undefined}>
+        <SheetContent
+          side={narrow ? 'bottom' : 'right'}
+          className="max-h-[70dvh] gap-0 overflow-y-auto overscroll-contain p-4 pt-5 pr-12 text-sm"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(e) => {
+            if (window.matchMedia('(pointer: coarse)').matches) e.preventDefault();
+          }}
+        >
           <SheetTitle className="sr-only">{item ? headline(item) : 'Item'}</SheetTitle>
           {panel}
         </SheetContent>
