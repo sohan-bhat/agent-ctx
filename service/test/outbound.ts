@@ -18,9 +18,6 @@ export function outbound(o: { clientId: string; clientSecret: string }) {
     if (url.href === CIMD_URL) {
       return json({ client_id: CIMD_URL, client_name: 'Example Agent', redirect_uris: ['http://127.0.0.1/callback'], token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] });
     }
-    if (url.href === CLAUDE_CODE_URL) {
-      return json({ client_id: CLAUDE_CODE_URL, client_name: 'Claude Code', redirect_uris: ['http://localhost/callback', 'http://127.0.0.1/callback'], token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] });
-    }
     if (url.host === 'github.com' && url.pathname === '/login/oauth/access_token' && request.method === 'POST') {
       const form = new URLSearchParams(await request.text());
       if (request.headers.get('accept') !== 'application/json' || !request.headers.get('user-agent')) return json({ error: 'bad_request' });
