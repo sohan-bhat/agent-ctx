@@ -4,6 +4,7 @@ import { recall } from '../src/recall.ts';
 import type { Item } from '../src/model.ts';
 import * as one from './corpus.ts';
 import * as two from './corpus2.ts';
+import * as three from './corpus3.ts';
 
 export interface Labelled { q: string; project: string; kind: string; want: string[] }
 export interface TestSet { items: Item[]; queries: Labelled[]; projects: { key: string; names: string[] }[]; now: number }
@@ -14,6 +15,8 @@ export const SETS: Record<'set1' | 'set2', TestSet> = {
   set1: { items: one.ITEMS, queries: one.QUERIES, projects: one.PROJECTS, now: one.NOW },
   set2: { items: two.ITEMS, queries: two.QUERIES, projects: two.PROJECTS, now: two.NOW },
 };
+
+export const SET3: TestSet = { items: three.ITEMS, queries: three.QUERIES, projects: three.PROJECTS, now: three.NOW };
 
 export function run(set: TestSet = SETS.set1): Row[] {
   return set.queries.map((query) => {
@@ -57,8 +60,9 @@ function isMain(): boolean {
 }
 
 if (isMain()) {
-  for (const name of ['set1', 'set2'] as const) {
-    const s = measure(run(SETS[name]));
+  const all: [string, TestSet][] = [['set1', SETS.set1], ['set2', SETS.set2], ['set3', SET3]];
+  for (const [name, set] of all) {
+    const s = measure(run(set));
     console.log(`${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
     console.log(`${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
     console.log(`${name}_found ${s.found.toFixed(2)}`);
