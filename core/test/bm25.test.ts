@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketOf, buildBm25, idf, search, view } from '../src/bm25.ts';
+import { bucketOf, buildBm25, idf, search, view } from '../src/text.ts';
 
 const docs = [
   ['wind', 'gust', 'filter'],

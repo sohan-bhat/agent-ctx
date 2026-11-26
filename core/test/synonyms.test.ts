@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS, joinPhrases, synonymsOf, vocabulary } from '../src/synonyms.ts';
-import { tokens } from '../src/text.ts';
+import { GROUPS, joinPhrases, synonymsOf, tokens, vocabulary } from '../src/text.ts';
 
 const SUBJECT = [
   'weather', 'wind', 'gust', 'rain', 'humidity', 'temperature', 'pressure', 'anemometer', 'vane', 'lightning', 'solar', 'forecast', 'station', 'sensor', 'lora', 'barometer', 'fog', 'battery',

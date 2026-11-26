@@ -1,7 +1,5 @@
-import { B, K1, idf } from './bm25.ts';
+import { B, K1, idf, joinPhrases, stem, synonymsOf, tokens } from './text.ts';
 import { itemText, projectName, type CardBody, type Item } from './model.ts';
-import { joinPhrases, synonymsOf } from './synonyms.ts';
-import { stem, tokens } from './text.ts';
 
 export const DAY = 86400000;
 export const MIN_MATCH = 2;

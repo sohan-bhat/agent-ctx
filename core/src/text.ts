@@ -148,3 +148,206 @@ export function fileTokens(file: string): string[] {
   const name = base.replace(/\.[a-z0-9]{1,6}$/i, '');
   return [...tokens(name), ...tokens(parent)];
 }
+
+const PHRASES: [RegExp, string][] = [
+  [/\bsign[\s_-]*in\b/gi, 'signin'],
+  [/\blog[\s_-]*in\b/gi, 'login'],
+  [/\bsign[\s_-]*up\b/gi, 'signup'],
+  [/\b(?:log|sign)[\s_-]*out\b/gi, 'logout'],
+  [/\bend[\s_-]+to[\s_-]+end\b/gi, 'e2e'],
+  [/\bpull[\s_-]+requests?\b/gi, 'pr'],
+  [/\bmerge[\s_-]+requests?\b/gi, 'mr'],
+  [/\bweb[\s_-]*sockets?\b/gi, 'websocket'],
+  [/\bout[\s_-]+of[\s_-]+memory\b/gi, 'oom'],
+  [/\btime[\s_-]*zones?\b/gi, 'timezone'],
+  [/\brate[\s_-]+limit(?:s|ed|ing)?\b/gi, 'ratelimit'],
+  [/\bapi[\s_-]+keys?\b/gi, 'apikey'],
+  [/\benv(?:ironment)?[\s_-]+var(?:iable)?s?\b/gi, 'envvar'],
+];
+
+export const GROUPS: string[][] = [
+  ['login', 'signin', 'logon', 'auth', 'authentication', 'authenticate'],
+  ['signup', 'register', 'registration', 'onboarding'],
+  ['logout', 'signout'],
+  ['password', 'passphrase', 'passcode'],
+  ['token', 'credential', 'credentials', 'apikey', 'secret'],
+  ['permission', 'permissions', 'access', 'role', 'roles', 'authorization'],
+  ['admin', 'administrator', 'moderator', 'superuser'],
+  ['user', 'account', 'profile'],
+  ['session', 'cookie'],
+  ['picture', 'image', 'photo', 'img', 'thumbnail'],
+  ['speed', 'fast', 'slow', 'performance', 'perf', 'latency', 'sluggish'],
+  ['crash', 'exception', 'panic', 'segfault'],
+  ['timeout', 'hang', 'hangs', 'freeze', 'frozen', 'unresponsive'],
+  ['delete', 'erase', 'destroy', 'purge'],
+  ['settings', 'config', 'configuration', 'preferences', 'prefs', 'options'],
+  ['docs', 'documentation', 'readme', 'guide'],
+  ['repo', 'repository', 'monorepo'],
+  ['db', 'database', 'datastore'],
+  ['deps', 'dependency', 'dependencies', 'package', 'packages', 'library', 'libraries'],
+  ['deploy', 'deployment', 'release', 'ship', 'publish', 'rollout'],
+  ['rollback', 'downgrade'],
+  ['upgrade', 'bump'],
+  ['phone', 'mobile', 'smartphone', 'iphone', 'android'],
+  ['big', 'large', 'huge', 'bloated', 'oversized'],
+  ['email', 'mail', 'mailer', 'smtp'],
+  ['notification', 'notify', 'alert', 'warning', 'alarm'],
+  ['cache', 'memoize', 'memoization', 'memo'],
+  ['thread', 'worker', 'concurrency', 'parallel', 'parallelism'],
+  ['memory', 'ram', 'heap', 'oom', 'leak'],
+  ['cpu', 'processor'],
+  ['storage', 'disk', 'blob'],
+  ['backend', 'server'],
+  ['endpoint', 'route', 'handler', 'api'],
+  ['frontend', 'ui', 'client'],
+  ['button', 'btn'],
+  ['search', 'find'],
+  ['upload', 'attach', 'attachment'],
+  ['export', 'download'],
+  ['ci', 'pipeline', 'workflow'],
+  ['compile', 'compiler', 'bundle', 'bundler'],
+  ['lint', 'linter', 'eslint'],
+  ['format', 'formatter', 'prettier'],
+  ['log', 'logging', 'trace', 'tracing'],
+  ['metric', 'metrics', 'telemetry', 'analytics', 'monitoring'],
+  ['backup', 'snapshot', 'dump'],
+  ['migration', 'migrate', 'schema'],
+  ['env', 'environment', 'envvar', 'dotenv'],
+  ['container', 'docker', 'dockerfile'],
+  ['websocket', 'socket', 'realtime'],
+  ['refresh', 'reload'],
+  ['queue', 'job', 'cron', 'scheduler'],
+  ['timezone', 'tz', 'utc'],
+  ['timestamp', 'datetime'],
+  ['accessibility', 'a11y', 'screenreader'],
+  ['i18n', 'translation', 'localization', 'l10n', 'translate'],
+  ['offline', 'pwa', 'serviceworker'],
+  ['payment', 'billing', 'checkout', 'invoice'],
+  ['chart', 'graph', 'plot'],
+  ['ratelimit', 'throttle', 'throttling'],
+  ['pr', 'mr'],
+  ['e2e', 'playwright', 'cypress'],
+];
+
+const ALL = new RegExp(PHRASES.map(([re]) => `(${re.source})`).join('|'), 'gi');
+
+export function joinPhrases(text: string): string {
+  return (text ?? '').replace(ALL, (...m: unknown[]) => {
+    for (let k = 0; k < PHRASES.length; k++) if (m[k + 1] !== undefined) return PHRASES[k][1];
+    return m[0] as string;
+  });
+}
+
+const INDEX = new Map<string, string[]>();
+for (const group of GROUPS) {
+  const stems = [...new Set(group.flatMap((w) => tokens(joinPhrases(w))))];
+  for (const s of stems) {
+    const others = stems.filter((x) => x !== s);
+    INDEX.set(s, [...new Set([...(INDEX.get(s) ?? []), ...others])]);
+  }
+}
+
+export function synonymsOf(term: string): string[] {
+  return INDEX.get(term) ?? [];
+}
+
+export function vocabulary(): string[] {
+  return [...INDEX.keys()];
+}
+
+export const K1 = 1.2;
+export const B = 0.75;
+
+export interface Postings {
+  [term: string]: number[];
+}
+
+export interface Bm25Data {
+  n: number;
+  avgdl: number;
+  dl: number[];
+  terms: Postings;
+}
+
+export interface Bm25View {
+  n: number;
+  avgdl: number;
+  dl: number[];
+  get(term: string): number[] | undefined;
+}
+
+export function buildBm25(docs: string[][]): Bm25Data {
+  const terms: Postings = Object.create(null);
+  const dl: number[] = [];
+  let total = 0;
+  docs.forEach((toks, i) => {
+    dl.push(toks.length);
+    total += toks.length;
+    const tf = new Map<string, number>();
+    for (const t of toks) tf.set(t, (tf.get(t) || 0) + 1);
+    for (const [t, n] of tf) {
+      let p = terms[t];
+      if (!p) p = terms[t] = [];
+      p.push(i, n);
+    }
+  });
+  return { n: docs.length, avgdl: docs.length ? total / docs.length : 0, dl, terms };
+}
+
+export function view(data: Bm25Data): Bm25View {
+  return { n: data.n, avgdl: data.avgdl, dl: data.dl, get: (t) => data.terms[t] };
+}
+
+export function bucketOf(term: string, buckets: number): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < term.length; i++) {
+    h ^= term.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % buckets;
+}
+
+export function idf(n: number, df: number): number {
+  return Math.log(1 + (n - df + 0.5) / (df + 0.5));
+}
+
+export interface Scored {
+  doc: number;
+  score: number;
+  norm: number;
+  matched: number;
+}
+
+export const COMMON = 0.5;
+
+export function search(data: Bm25View, query: string[], weights?: Map<string, number>): Scored[] {
+  const q = new Map<string, number>();
+  for (const t of query) q.set(t, (q.get(t) || 0) + (weights?.get(t) ?? 1));
+  const n = data.n;
+  const acc = new Float64Array(n);
+  const hit = new Uint16Array(n);
+  const touched: number[] = [];
+  const avg = data.avgdl || 1;
+  const dl = data.dl;
+  let max = 0;
+  for (const [t, qw] of q) {
+    const p = data.get(t);
+    if (!p) continue;
+    const df = p.length / 2;
+    if (n >= 20 && df / n > COMMON) continue;
+    const w = idf(n, df) * qw;
+    max += w * (K1 + 1);
+    for (let i = 0; i < p.length; i += 2) {
+      const doc = p[i];
+      const tf = p[i + 1];
+      const s = (w * tf * (K1 + 1)) / (tf + K1 * (1 - B + (B * dl[doc]) / avg));
+      if (hit[doc] === 0) touched.push(doc);
+      acc[doc] += s;
+      hit[doc]++;
+    }
+  }
+  const out: Scored[] = [];
+  for (const doc of touched) out.push({ doc, score: acc[doc], norm: max ? acc[doc] / max : 0, matched: hit[doc] });
+  out.sort((a, b) => b.score - a.score);
+  return out;
+}

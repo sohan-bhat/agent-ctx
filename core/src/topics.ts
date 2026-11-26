@@ -1,8 +1,6 @@
-import { idf } from './bm25.ts';
+import { idf, joinPhrases, synonymsOf, tokens } from './text.ts';
 import { itemText, type CardBody, type HandoffBody, type Item } from './model.ts';
 import { isChat, typoOf } from './rank.ts';
-import { joinPhrases, synonymsOf } from './synonyms.ts';
-import { tokens } from './text.ts';
 
 export const SHORT = 8;
 export const TOPICS = 12;
