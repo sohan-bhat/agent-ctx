@@ -180,9 +180,9 @@ test('long goals and long agent names are cut so twelve topics still fit 1,400 c
 
 const FAMILIES: [string, lang.Lang, string, string][] = [
   ['Latin', 'es', 'tarjeta azul olvidada ayer', 'es-1'],
-  ['Devanagari', 'hi', 'भुगतान वाली पुरानी पर्ची', 'hi-1'],
+  ['Devanagari', 'hi', 'पीडीएफ वाली पुरानी पर्ची', 'hi-4'],
   ['Arabic', 'ar', 'الهوامش الزرقاء القديمة', 'ar-3'],
-  ['Japanese', 'ja', '在庫ゼロの棚', 'ja-1'],
+  ['Japanese', 'ja', '画像フォルダ整理', 'ja-3'],
   ['Han', 'zh', '提醒铃声换掉', 'zh-3'],
 ];
 

@@ -79,7 +79,7 @@ export function looseScores(items: Item[], query: string, settings: Partial<Loos
   for (const raw of new Set(tokens(joinPhrases(query ?? '')))) {
     if (isChat(raw)) continue;
     let t = raw;
-    if (!df.has(t)) {
+    if (!df.has(t) && /^[a-z0-9]+$/.test(t)) {
       const fix = typoOf(t, byLength());
       if (fix && !isChat(fix)) t = fix;
     }
