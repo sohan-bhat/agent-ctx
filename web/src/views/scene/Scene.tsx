@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import type { Item } from '@/lib/types';
+import type { Item, Read } from '@/lib/types';
 import { headline } from '@/lib/item';
 import { useReduced } from '@/lib/hooks';
 import { usePalette } from './palette';
-import { at, layout as plan, type Layout, type Placed } from './layout';
+import { at, bestPhi, layout as plan, type Layout, type Placed } from './layout';
 import { World, type WorldApi } from './World';
 import { itemId } from './Blocks';
 
@@ -13,9 +13,9 @@ export interface SceneProps {
   projects: { key: string; name: string }[];
   agents: string[];
   items: Item[];
+  reads: Read[];
   time: number;
   span: number;
-  narrow: boolean;
   focusKey: string | null;
   selected: string | null;
   panel: ReactNode;
@@ -27,15 +27,31 @@ export interface SceneProps {
   onReady: () => void;
 }
 
-export default function Scene({ projects, agents, items, time, span, narrow, focusKey, selected, panel, inline, label, onSelect, onPlate, onHold, onReady }: SceneProps) {
+export default function Scene({ projects, agents, items, reads, time, span, focusKey, selected, panel, inline, label, onSelect, onPlate, onHold, onReady }: SceneProps) {
   const palette = usePalette();
   const reduced = useReduced();
   const overlay = useRef<HTMLDivElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const api = useRef<WorldApi>(null);
-  const base = useMemo(() => plan({ projects, agents, items, narrow }), [projects, agents, items, narrow]);
-  const view: Layout = useMemo(() => ({ plates: base.plates, links: base.links, box: base.box, corners: base.corners, placed: at(base.base, time, span) }), [base, time, span]);
+  const [aspect, setAspect] = useState(() => Math.round((innerWidth / Math.max(1, innerHeight * 0.7)) * 20) / 20);
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setAspect(Math.round((r.width / r.height) * 20) / 20);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  const base = useMemo(() => plan({ projects, agents, items, reads, aspect }), [projects, agents, items, reads, aspect]);
+  const shown = useMemo(() => {
+    const plate = focusKey ? base.plates.find((p) => p.key === focusKey) : undefined;
+    if (!plate) return { plates: base.plates, base: base.base, links: base.links, corners: base.corners, phi: base.phi };
+    return { plates: [plate], base: base.base.filter((b) => b.plate === plate.key), links: base.links.filter((l) => base.base.some((b) => b.plate === plate.key && l.id.startsWith(`${b.id}>`))), corners: plate.corners, phi: bestPhi(plate.corners, aspect) };
+  }, [base, focusKey, aspect]);
+  const view: Layout = useMemo(() => ({ plates: shown.plates, links: shown.links, box: base.box, corners: shown.corners, phi: shown.phi, top: base.top, placed: at(shown.base, time, span, base.top) }), [shown, base, time, span]);
   const byId = useMemo(() => new Map(view.placed.filter((p) => !p.id.endsWith('^')).map((p) => [p.id, p])), [view]);
   const [hover, setHover] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -163,13 +179,14 @@ export default function Scene({ projects, agents, items, time, span, narrow, foc
 
   useEffect(() => {
     if (import.meta.env.MODE !== 'mock') return;
-    const w = window as unknown as { __space?: { spots: () => { id: string; look: string; x: number; y: number; area: number }[] } };
+    const w = window as unknown as { __space?: { spots: () => { id: string; look: string; x: number; y: number; area: number }[]; extent: () => unknown } };
     w.__space = {
       spots: () =>
         shownList().map((p) => {
           const [x, y] = api.current?.project(p) ?? [0, 0];
           return { id: p.id, look: p.look, x, y, area: p.w * p.d };
         }),
+      extent: () => (api.current ? { ...api.current.extent(), phi: view.phi } : null),
     };
     return () => {
       delete w.__space;

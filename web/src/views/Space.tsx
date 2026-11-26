@@ -4,7 +4,7 @@ import { Slider } from '@/components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { clock, stamp } from '@/lib/format';
 import { headline } from '@/lib/item';
-import type { Item, Project } from '@/lib/types';
+import type { Item, Project, Read } from '@/lib/types';
 import { useNarrow } from '@/lib/hooks';
 import { ItemList } from './ItemList';
 import { Panel, type Actions } from './Panel';
@@ -65,6 +65,7 @@ export interface SpaceProps {
   projects: Project[];
   agents: string[];
   items: Item[];
+  reads: Read[];
   queue: Set<string>;
   start: number;
   end: number;
@@ -81,7 +82,7 @@ export interface SpaceProps {
   segments?: boolean;
 }
 
-export function Space({ projects, agents, items, queue, start, end, time, clockOnly = false, actions, notice, aside, label, onTime, onHold, onPanel, prefer = null, segments = true }: SpaceProps) {
+export function Space({ projects, agents, items, reads, queue, start, end, time, clockOnly = false, actions, notice, aside, label, onTime, onHold, onPanel, prefer = null, segments = true }: SpaceProps) {
   const narrow = useNarrow();
   const webgl = useMemo(hasWebGL, []);
   const [ready, setReady] = useState(false);
@@ -154,9 +155,9 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
                   projects={projects}
                   agents={agents}
                   items={items}
+                  reads={reads}
                   time={time}
                   span={span}
-                  narrow={narrow}
                   focusKey={focus}
                   selected={mode === 'scene' ? selected : null}
                   panel={panel}

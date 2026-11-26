@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { DEMO_AGENTS, DEMO_END, DEMO_ITEMS, DEMO_PROJECTS, DEMO_START } from '@/demo';
+import { DEMO_AGENTS, DEMO_END, DEMO_ITEMS, DEMO_PROJECTS, DEMO_READS, DEMO_START } from '@/demo';
 import { Link } from '@/router';
 import { useReduced } from '@/lib/hooks';
 import { Space } from './Space';
@@ -68,6 +68,7 @@ export function SignedOut() {
           projects={DEMO_PROJECTS}
           agents={AGENTS}
           items={DEMO_ITEMS}
+          reads={DEMO_READS}
           queue={NONE}
           start={DEMO_START}
           end={DEMO_END}

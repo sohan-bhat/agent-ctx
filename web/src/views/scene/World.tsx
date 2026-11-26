@@ -4,7 +4,7 @@ import { AdaptiveDpr, CameraControls, CameraControlsImpl, ContactShadows, Grid, 
 import { Box3, Object3D, Vector3, type OrthographicCamera } from 'three';
 import { Blocks, Foundations, Links, Marks, mix, Outlines, type Pointing } from './Blocks';
 import { Overlay } from './Overlay';
-import { boxOf, fit, frameTo, HOME, homePad, PLATE, plateBox, type Layout, type Placed, type Plate } from './layout';
+import { boxOf, fit, frameTo, HOME, homePad, PLATE, type Layout, type Placed, type Plate } from './layout';
 import type { Palette } from './palette';
 
 function Lights({ dark, box }: { dark: boolean; box: Box3 }) {
@@ -71,6 +71,7 @@ export interface WorldApi {
   focus: (p: Placed) => Promise<void>;
   back: () => boolean;
   project: (p: Placed) => [number, number];
+  extent: () => { x0: number; y0: number; x1: number; y1: number; w: number; h: number };
   turn: (azimuth: number, polar: number) => void;
   zoom: (factor: number) => void;
 }
@@ -100,11 +101,8 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
   const saved = useRef<string | null>(null);
   const homeZoom = useRef(1);
   const free = useRef(false);
-  const view = useMemo(() => {
-    const p = focusKey ? layout.plates.find((q) => q.key === focusKey) : undefined;
-    return p ? plateBox(p) : layout.corners;
-  }, [layout, focusKey]);
-  const viewKey = (Array.isArray(view) ? view : [view.min, view.max]).map((v) => v.toArray().map((n) => n.toFixed(2)).join()).join('|');
+  const view = layout.corners;
+  const viewKey = `${layout.phi}|${view.map((v) => v.toArray().map((n) => n.toFixed(2)).join()).join('|')}`;
   useLayoutEffect(() => {
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
@@ -116,12 +114,12 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
   const placeHome = (smooth: boolean) => {
     const c = controls.current;
     if (!c) return;
-    const pad = homePad(size.width, size.height);
-    const all = fit(camera, layout.corners, HOME.theta, HOME.phi, pad).zoom;
+    const pad = homePad(size.width);
+    const all = fit(camera, layout.corners, HOME.theta, layout.phi, pad).zoom;
     homeZoom.current = all;
     c.minZoom = all * 0.5;
     c.maxZoom = all * 14;
-    frameTo(c, camera, view, HOME.theta, HOME.phi, pad, smooth && !reduced);
+    frameTo(c, camera, view, HOME.theta, layout.phi, pad, smooth && !reduced);
   };
   const first = useRef(true);
   const lastFocus = useRef(focusKey);
@@ -190,6 +188,26 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
         camera.updateMatrixWorld();
         const v = new Vector3(p.cx, p.y0 + p.h, p.cz).project(camera);
         return [((v.x + 1) / 2) * size.width, ((1 - v.y) / 2) * size.height];
+      },
+      extent: () => {
+        camera.updateMatrixWorld();
+        const v = new Vector3();
+        let x0 = Infinity;
+        let y0 = Infinity;
+        let x1 = -Infinity;
+        let y1 = -Infinity;
+        for (const p of layout.plates)
+          for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]])
+            for (const y of [0, -PLATE]) {
+              v.set(p.cx + (dx * p.side) / 2, y, p.cz + (dz * p.side) / 2).project(camera);
+              const sx = ((v.x + 1) / 2) * size.width;
+              const sy = ((1 - v.y) / 2) * size.height;
+              x0 = Math.min(x0, sx);
+              x1 = Math.max(x1, sx);
+              y0 = Math.min(y0, sy);
+              y1 = Math.max(y1, sy);
+            }
+        return { x0, y0, x1, y1, w: size.width, h: size.height };
       },
       turn: (azimuth, polar) => {
         const c = controls.current;
