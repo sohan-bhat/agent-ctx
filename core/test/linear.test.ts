@@ -19,17 +19,30 @@ const CALLS: [string, (s: string) => unknown][] = [
   ['stripOwn', stripOwn],
 ];
 
+const RUNS = 5;
+
+function cpu(since?: NodeJS.CpuUsage): NodeJS.CpuUsage {
+  return typeof process.threadCpuUsage === 'function' ? process.threadCpuUsage(since) : process.cpuUsage(since);
+}
+
 function timeOnce(fn: (s: string) => unknown, s: string): number {
-  const t = performance.now();
+  const start = cpu();
   fn(s);
-  return performance.now() - t;
+  const used = cpu(start);
+  return (used.user + used.system) / 1000;
 }
 
 function timeBest(fn: (s: string) => unknown, s: string): number {
   let best = timeOnce(fn, s);
-  for (let k = 0; k < 2 && best > BAR; k++) best = Math.min(best, timeOnce(fn, s));
+  for (let k = 1; k < RUNS && best > BAR; k++) best = Math.min(best, timeOnce(fn, s));
   return best;
 }
+
+test('a quadratic pattern still measures over the bar in CPU time', () => {
+  const trailing = /[ \t]+$/;
+  const ms = timeBest((s) => trailing.test(s), fill('', ' ', 'x'));
+  assert.ok(ms > BAR, `${ms.toFixed(1)} ms`);
+});
 
 const REVIEWER: [string, string][] = [
   ['<< then spaces', fill('<<', ' ')],
