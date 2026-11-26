@@ -157,6 +157,12 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
     if (moving) invalidate();
   }, -1);
 
+  useLayoutEffect(() => {
+    if (import.meta.env.MODE !== 'mock') return;
+    const w = window as unknown as { __heights?: () => Record<string, number> };
+    w.__heights = () => Object.fromEntries([...now.current].map(([id, s]) => [id, s.h]));
+  }, []);
+
   latest.current = new Map(standing.map((p) => [p.id, p]));
   for (const p of leaving) if (!latest.current.has(p.id)) latest.current.set(p.id, p);
   const stable = (id: string, c: Color) => {

@@ -7,10 +7,10 @@ const PW = process.env.PW ?? '/usr/local/lib/node_modules/@playwright/cli/node_m
 
 export const engine = process.env.ENGINE ?? 'chromium';
 
-export async function browser() {
+export async function browser(extra = []) {
   if (engine !== 'chromium' && !process.env.PLAYWRIGHT_BROWSERS_PATH) process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(web, '..', '..', '..', 'pw-browsers');
   const pw = await import(PW);
-  if (engine === 'chromium') return pw.chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+  if (engine === 'chromium') return pw.chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', ...extra] });
   return pw[engine].launch({ headless: true });
 }
 
