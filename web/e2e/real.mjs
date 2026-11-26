@@ -34,7 +34,7 @@ async function service(dir) {
   const env = { ...process.env, DISABLE_TELEMETRY: '1', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: path.join(dir, 'wrangler') };
   const svc = path.join(web, '..', 'service');
   const port = new URL(ORIGIN).port;
-  const args = ['dev', '--port', port, '--var', 'DEV_LOGIN:1', '--var', `MCP_RESOURCE:${RESOURCE}`, ...(TLS ? ['--local-protocol', 'https'] : [])];
+  const args = ['dev', '--port', port, '--persist-to', path.join(dir, 'state'), '--var', 'DEV_LOGIN:1', '--var', `MCP_RESOURCE:${RESOURCE}`, ...(TLS ? ['--local-protocol', 'https'] : [])];
   const child = spawn(path.join(svc, 'node_modules', '.bin', 'wrangler'), args, { cwd: svc, detached: true, stdio: ['ignore', log, log], env });
   for (let i = 0; i < 120 && !(await up()); i++) await sleep(1000);
   if (!(await up())) throw new Error('The service did not start.');

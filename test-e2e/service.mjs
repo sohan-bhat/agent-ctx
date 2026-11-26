@@ -21,7 +21,7 @@ async function start(dir) {
   if (await up()) throw new Error('A service already answers on port 8790. Stop that one first.');
   const log = openSync(join(dir, 'service.log'), 'a');
   const env = { ...process.env, DISABLE_TELEMETRY: '1', WRANGLER_SEND_METRICS: 'false' };
-  const child = spawn('npm', ['--prefix', join(ROOT, 'service'), 'run', 'dev', '--', '--var', 'DEV_LOGIN:1'], { detached: true, stdio: ['ignore', log, log], env });
+  const child = spawn('npm', ['--prefix', join(ROOT, 'service'), 'run', 'dev', '--', '--persist-to', join(dir, 'state'), '--var', 'DEV_LOGIN:1'], { detached: true, stdio: ['ignore', log, log], env });
   writeFileSync(join(dir, 'service.pid'), String(child.pid));
   child.unref();
   for (let i = 0; i < 120; i++) {
