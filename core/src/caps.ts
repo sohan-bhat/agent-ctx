@@ -1,3 +1,5 @@
+import { redact } from './redact.ts';
+
 export const ITEM_BYTES = 2048;
 export const RESULT_CHARS = 600;
 export const CALL_CHARS = 2400;
@@ -23,4 +25,8 @@ const encoder = new TextEncoder();
 
 export function bytes(s: string): number {
   return encoder.encode(s).length;
+}
+
+export function clean(text: string, max: number): string {
+  return cut(redact(text ?? ''), max);
 }

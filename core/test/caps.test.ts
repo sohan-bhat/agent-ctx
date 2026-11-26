@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CALL_CHARS, FIRST_CHARS, FOLD_AT, ITEM_BYTES, RESULT_CHARS, RULE_MAX, RULE_MIN, RULE_PROMPT_MAX, RULES_AUTO_PER_DAY, RULES_SHOWN, STORE_BYTES, bytes, cut } from '../src/caps.ts';
+import { CALL_CHARS, FIRST_CHARS, FOLD_AT, ITEM_BYTES, RESULT_CHARS, RULE_MAX, RULE_MIN, RULE_PROMPT_MAX, RULES_AUTO_PER_DAY, RULES_SHOWN, STORE_BYTES, bytes, clean, cut } from '../src/caps.ts';
+import { DROPPED, redact } from '../src/redact.ts';
 
 test('the caps hold the values of the design', () => {
   assert.deepEqual(
@@ -36,4 +37,21 @@ test('bytes is the UTF-8 length', () => {
   assert.equal(bytes(String.fromCodePoint(0xe9)), 2);
   assert.equal(bytes(String.fromCodePoint(0x2603)), 3);
   assert.equal(bytes(String.fromCodePoint(0x1f600)), 4);
+});
+
+test('clean redacts the whole text before it cuts, so a key at the cut never leaks', () => {
+  const key = 'sk-proj-Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv';
+  const text = 'open https://example.com/' + 'p'.repeat(255) + '?t=' + key + ' and then run the tests';
+  const at = text.indexOf(key);
+  assert.ok(at > 270 && at < 300, String(at));
+  assert.ok(redact(cut(text, 300)).includes('Ab1'));
+  const out = clean(text, 300);
+  assert.ok(!out.includes('Ab1') && !out.includes('sk-proj'), out.slice(-40));
+  assert.ok(out.length <= 300);
+});
+
+test('clean keeps short text whole after redaction', () => {
+  assert.equal(clean('deploy with token=9f8e7d6c5b4a now', 300), `deploy with token=${DROPPED} now`);
+  assert.equal(clean('plain words', 300), 'plain words');
+  assert.equal(clean('', 10), '');
 });
