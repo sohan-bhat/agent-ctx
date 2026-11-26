@@ -12,7 +12,7 @@ test('the index exports every name the service needs', () => {
     'normalizeWords', 'proveWords', 'decideRule', 'ruleLine',
     'rankItems', 'recent', 'namedProjects',
     'recall', 'HEADER',
-    'totalBytes', 'foldCard', 'foldPlan', 'mergeFolded',
+    'totalBytes', 'foldCard', 'foldPlan', 'mergeFolded', 'applyPlan', 'underCeiling',
     'redact', 'hasSecret', 'DROPPED', 'tokens',
   ];
   const got = core as Record<string, unknown>;

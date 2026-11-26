@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { foldCard, foldPlan, mergeFolded, totalBytes } from '../src/fold.ts';
+import { applyPlan, foldCard, foldPlan, isProtected, mergeFolded, totalBytes, underCeiling } from '../src/fold.ts';
 import { ITEM_BYTES } from '../src/caps.ts';
 import { itemBytes, type Body, type CardBody, type Item, type Kind } from '../src/model.ts';
 
@@ -29,17 +29,8 @@ function card(day: number, extra: Partial<Item> = {}, size = 900): Item {
   return item('card', { goal: `Calibrate sensor batch ${day} so the wind readings match the reference mast`, decisions: [{ what: 'x'.repeat(size), why: 'drift' }], open: ['check the humidity offset'] }, day, extra);
 }
 
-function apply(items: Item[], plan: ReturnType<typeof foldPlan>): Item[] {
-  const byId = new Map(items.map((i) => [i.id, i]));
-  for (const id of plan.fold) byId.set(id, foldCard(byId.get(id)!));
-  for (const m of plan.merge) {
-    const group = m.ids.map((id) => byId.get(id)!);
-    for (const id of m.ids) byId.delete(id);
-    const merged = mergeFolded(group);
-    byId.set(merged.id, merged);
-  }
-  return [...byId.values()];
-}
+const apply = applyPlan;
+const AT_80 = START + 80 * DAY;
 
 test('totalBytes adds up the body sizes', () => {
   const a = card(1);
@@ -51,8 +42,8 @@ test('totalBytes adds up the body sizes', () => {
 test('under the mark the plan is empty', () => {
   const items = [card(1), card(2)];
   const total = totalBytes(items);
-  assert.deepEqual(foldPlan(items, Math.ceil(total / 0.8) + 10), { fold: [], merge: [] });
-  assert.deepEqual(foldPlan(items), { fold: [], merge: [] });
+  assert.deepEqual(foldPlan(items, Math.ceil(total / 0.8) + 10), { fold: [], merge: [], drop: [] });
+  assert.deepEqual(foldPlan(items), { fold: [], merge: [], drop: [] });
 });
 
 test('foldCard keeps the date, the agent and the goal cut to 120, and drops the rest', () => {
@@ -77,7 +68,7 @@ test('over the mark the oldest unpinned cards fold until the total sits under 0.
   assert.deepEqual(plan.merge, []);
   const after = totalBytes(apply(items, plan));
   assert.ok(after < 0.7 * limit);
-  const oneLess = apply(items, { fold: plan.fold.slice(0, -1), merge: [] });
+  const oneLess = apply(items, { fold: plan.fold.slice(0, -1), merge: [], drop: [] });
   assert.ok(totalBytes(oneLess) >= 0.7 * limit);
 });
 
@@ -88,8 +79,8 @@ test('pinned items and rules survive a plan that folds everything else', () => {
   const others = Array.from({ length: 20 }, (_, k) => card(k + 1));
   const items = [pinned, rule, handoff, ...others];
   const limit = 6000;
-  const plan = foldPlan(items, limit, 0.8);
-  const touched = new Set([...plan.fold, ...plan.merge.flatMap((m) => m.ids)]);
+  const plan = foldPlan(items, limit, 0.8, AT_80);
+  const touched = new Set([...plan.fold, ...plan.merge.flatMap((m) => m.ids), ...plan.drop]);
   assert.ok(!touched.has(pinned.id) && !touched.has(rule.id) && !touched.has(handoff.id));
   assert.deepEqual(new Set(plan.fold), new Set(others.map((i) => i.id)));
   const after = apply(items, plan);
@@ -105,6 +96,7 @@ test('when folding is not enough, folded cards merge per project and month, olde
   const plan = foldPlan(items, limit);
   assert.equal(plan.fold.length, 24);
   assert.ok(plan.merge.length > 0);
+  assert.deepEqual(plan.drop, []);
   const months = plan.merge.map((m) => m.month);
   assert.deepEqual(months, [...months].sort());
   assert.equal(months[0], '2026-08');
@@ -139,4 +131,111 @@ test('mergeFolded lists the goals cut to 60 each in one folded card that fits', 
   assert.ok(itemBytes(mergeFolded(many)) <= ITEM_BYTES);
   const again = mergeFolded([m, foldCard(card(4))]);
   assert.equal((again.body as CardBody).goal.split('\n').length, 4);
+});
+
+test('when fold and merge leave the total over the mark, the oldest folded cards are dropped', () => {
+  const pinned = card(0, { pinned: true }, 1800);
+  const cards = Array.from({ length: 40 }, (_, k) => card(k * 3));
+  const items = [pinned, ...cards];
+  const limit = Math.floor((itemBytes(pinned) + 1200) / 0.7);
+  const plan = foldPlan(items, limit, 0.8, AT_80);
+  assert.equal(plan.fold.length, 40);
+  assert.ok(plan.drop.length > 0 && !plan.drop.includes(pinned.id));
+  const dropped = new Set(plan.drop);
+  const kept = cards.filter((c) => !dropped.has(c.id));
+  assert.ok(kept.length > 0);
+  assert.ok(Math.max(...cards.filter((c) => dropped.has(c.id)).map((c) => c.created)) <= Math.min(...kept.map((c) => c.created)));
+  for (const m of plan.merge) assert.ok(!m.ids.some((id) => dropped.has(id)));
+  const after = applyPlan(items, plan);
+  assert.ok(totalBytes(after) < 0.8 * limit);
+  assert.ok(after.includes(pinned));
+});
+
+test('old handoffs and old dropped items go after the folded cards, recent handoffs and rules never', () => {
+  const now = START + 100 * DAY;
+  const rule = item('rule', { text: 'r'.repeat(900), words: 'keep the anemometer cups clean', scope: 'project', status: 'active', proof: 'page' }, 1);
+  const fresh = item('handoff', { goal: 'Fresh handoff', next: 'n'.repeat(900) }, 90);
+  const stale = item('handoff', { goal: 'Stale handoff', next: 'n'.repeat(900) }, 20);
+  const oldDrop = item('dropped', { label: 'prompt', text: 'd'.repeat(900), size: 900 }, 30);
+  const newDrop = item('dropped', { label: 'prompt', text: 'd'.repeat(900), size: 900 }, 95);
+  const cards = Array.from({ length: 5 }, (_, k) => card(k + 2));
+  const items = [rule, fresh, stale, oldDrop, newDrop, ...cards];
+  const protectedBytes = itemBytes(rule) + itemBytes(fresh);
+  const plan = foldPlan(items, Math.floor(protectedBytes / 0.75), 0.8, now);
+  assert.ok(cards.every((c) => plan.drop.includes(c.id)));
+  assert.ok(plan.drop.includes(stale.id) && plan.drop.includes(oldDrop.id) && plan.drop.includes(newDrop.id));
+  assert.ok(!plan.drop.includes(rule.id) && !plan.drop.includes(fresh.id));
+  const soft = foldPlan(items, Math.floor((protectedBytes + itemBytes(newDrop) + 50) / 0.7), 0.8, now);
+  assert.ok(soft.drop.includes(stale.id) && soft.drop.includes(oldDrop.id));
+  assert.ok(!soft.drop.includes(newDrop.id));
+  assert.equal(isProtected(fresh, now), true);
+  assert.equal(isProtected(stale, now), false);
+});
+
+test('applyPlan folds, merges and drops without changing the input', () => {
+  const items = [card(1), card(2), card(3), card(40)];
+  const before = JSON.stringify(items);
+  const out = applyPlan(items, { fold: [items[0].id, items[1].id, items[2].id], merge: [{ project: items[0].project, month: '2026-08', ids: [items[0].id, items[1].id] }], drop: [items[2].id] });
+  assert.equal(JSON.stringify(items), before);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].folded, true);
+  assert.equal((out[0].body as CardBody).goal.split('\n').length, 2);
+  assert.equal(out[1], items[3]);
+});
+
+test('30 MB of made up cards ends at or under 10 MB with every pinned item and active rule intact', () => {
+  const MB = 1024 * 1024;
+  const now = START + 400 * DAY;
+  const filler = 'y'.repeat(1900);
+  const projects = ['github.com/acme/gale-station', 'github.com/acme/pantry-notes', 'folder:rollcall'];
+  const items: Item[] = [];
+  let size = 0;
+  const add = (i: Item) => {
+    items.push(i);
+    size += itemBytes(i);
+  };
+  let k = 0;
+  while (size < 8.2 * MB) {
+    add(item('card', { goal: `Pinned note ${k}`, decisions: [{ what: filler, why: 'kept on purpose' }] }, k % 390, { pinned: true, project: projects[k % 3] }));
+    k++;
+  }
+  const rules = Array.from({ length: 60 }, (_, r) => item('rule', { text: `rule ${r}`, words: `always keep rule number ${r}`, scope: 'project', status: 'active', proof: 'hook' }, r, { project: projects[r % 3] }));
+  for (const r of rules) add(r);
+  while (size < 30 * MB) {
+    add(item('card', { goal: `Card ${k} about readings, recipes or rosters`, decisions: [{ what: filler, why: 'made up' }] }, k % 390, { project: projects[k % 3] }));
+    k++;
+  }
+  assert.equal(size, totalBytes(items));
+  const plan = foldPlan(items, 10 * MB, 0.8, now);
+  assert.ok(plan.fold.length > 0 && plan.drop.length > 0);
+  const pinned = items.filter((i) => i.pinned);
+  const { items: out, full } = underCeiling(items, 10 * MB, now);
+  assert.ok(totalBytes(out) <= 10 * MB, String(totalBytes(out)));
+  assert.equal(full, false);
+  const kept = new Set(out);
+  assert.ok(pinned.every((p) => kept.has(p)));
+  assert.ok(rules.every((r) => kept.has(r)));
+});
+
+test('a store of 11 MB of pinned items alone gives full true and loses nothing', () => {
+  const MB = 1024 * 1024;
+  const filler = 'z'.repeat(1900);
+  const items: Item[] = [];
+  for (let k = 0, size = 0; size < 11 * MB; k++) {
+    const i = item('card', { goal: `Pinned ${k}`, decisions: [{ what: filler }] }, k % 60, { pinned: true });
+    items.push(i);
+    size += itemBytes(i);
+  }
+  const { items: out, full } = underCeiling(items, 10 * MB, START + 100 * DAY);
+  assert.equal(full, true);
+  assert.equal(out.length, items.length);
+  assert.ok(out.every((i, n) => i === items[n]));
+});
+
+test('a store under the mark comes back identical', () => {
+  const items = [card(1), card(2), item('rule', { text: 'x', words: 'keep it short please', scope: 'all', status: 'active', proof: 'page' }, 3)];
+  const { items: out, full } = underCeiling(items, 10 * 1024 * 1024, AT_80);
+  assert.equal(full, false);
+  assert.equal(out, items);
+  assert.deepEqual(out, items);
 });
