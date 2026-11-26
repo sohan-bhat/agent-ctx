@@ -39,7 +39,7 @@ import {
   type Source,
   type Via,
 } from '../../core/src/index.ts';
-import { Store, TABLES, type AgentRow, type EventRow, type ReadRow, type SessionRow } from './store.ts';
+import { Store, TABLES, newer, type AgentRow, type EventRow, type ReadRow, type SessionRow } from './store.ts';
 import { Limits, SAY } from './limits.ts';
 import { buildExport } from './export.ts';
 
@@ -55,7 +55,6 @@ export interface Space { projects: { key: string; name: string; items: number }[
 export interface Me { bytes: number; max: number; callsToday: number; storedToday: number }
 
 const MINUTE = 60000;
-const HOUR = 3600000;
 const DAY = 86400000;
 const LIVE = 3 * MINUTE;
 const SAME_GRANT_WAIT = 20 * MINUTE;
@@ -64,6 +63,10 @@ const EVENTS_PER_SESSION = 400;
 const POOL = 400;
 const SPACE_ITEMS = 1500;
 const READS_KEPT = 200;
+const POOLS_KEPT = 4;
+const SESSIONS_KEPT = 100;
+const EVENT_SESSIONS_KEPT = 8;
+const WALK_PAGE = 16;
 const OWN_TOOL = /agent[-_]?ctx/i;
 const PLACEHOLDER = /^\$\{[^}]*\}$/;
 const FAILED = 'Memory could not be loaded. Do not assume that nothing is stored.';
@@ -117,16 +120,41 @@ function hash(s: string): string {
   return eventKey('', { t: 'start', at: 0, text: s });
 }
 
+
+function keep<K, V>(m: Map<K, V>, k: K, v: V, cap: number): V {
+  m.delete(k);
+  m.set(k, v);
+  while (m.size > cap) m.delete(m.keys().next().value as K);
+  return v;
+}
+
+interface Live extends SessionRow { written: number; auto: Record<string, string | null> }
+
 export class Person extends DurableObject<Env> {
   store: Store;
   limits: Limits;
   lastRows = { read: 0, written: 0 };
+  bootRows = { read: 0, written: 0 };
+  instance = crypto.randomUUID();
+  private pools = new Map<string, Item[]>();
+  private rulesCache: Item[] | null = null;
+  private nameCache: { key: string; names: string[] }[] | null = null;
+  private resolved = new Map<string, string>();
+  private projectKeys = new Set<string>();
+  private agentLast = new Map<string, number>();
+  private sessionCache = new Map<string, Live>();
+  private deliveredCache = new Map<string, Set<string>>();
+  private eventCache = new Map<string, EventRow[]>();
+  private readsCache: ReadRow[] | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.store = new Store(ctx.storage.sql);
     this.limits = new Limits(this.store);
-    ctx.blockConcurrencyWhile(async () => this.store.init());
+    ctx.blockConcurrencyWhile(async () => {
+      this.store.init();
+      this.bootRows = this.store.counts();
+    });
   }
 
   private measure<T>(fn: () => T): T {
@@ -134,9 +162,23 @@ export class Person extends DurableObject<Env> {
     try {
       return fn();
     } finally {
+      this.limits.flush(Date.now());
       const after = this.store.counts();
       this.lastRows = { read: after.read - before.read, written: after.written - before.written };
     }
+  }
+
+  private forget(): void {
+    this.pools.clear();
+    this.rulesCache = null;
+    this.nameCache = null;
+    this.resolved.clear();
+    this.projectKeys.clear();
+    this.agentLast.clear();
+    this.sessionCache.clear();
+    this.deliveredCache.clear();
+    this.eventCache.clear();
+    this.readsCache = null;
   }
 
   private push(msg: unknown): void {
@@ -160,21 +202,38 @@ export class Person extends DurableObject<Env> {
   }
 
   private touchAgent(label: string, now: number): Result | null {
+    const last = this.agentLast.get(label);
+    if (last !== undefined) {
+      if (now - last > MINUTE) {
+        this.store.q('UPDATE agents SET last = ? WHERE id = ?', now, label);
+        this.agentLast.set(label, now);
+      }
+      return null;
+    }
     const row = this.store.q<AgentRow>('SELECT * FROM agents WHERE id = ?', label)[0];
     if (row) {
-      if (now - row.last > MINUTE) this.store.q('UPDATE agents SET last = ? WHERE id = ?', now, label);
+      if (now - row.last > MINUTE) {
+        this.store.q('UPDATE agents SET last = ? WHERE id = ?', now, label);
+        row.last = now;
+      }
+      this.agentLast.set(label, row.last);
       return null;
     }
     const n = this.store.q<{ n: number }>('SELECT COUNT(*) AS n FROM agents')[0]?.n ?? 0;
     if (n >= this.limits.max.agents) return { ok: false, text: SAY.agents };
     const agent: AgentRow = { id: label, label, first: now, last: now };
     this.store.q('INSERT INTO agents(id, label, first, last) VALUES(?, ?, ?, ?)', agent.id, agent.label, agent.first, agent.last);
+    this.agentLast.set(label, now);
     this.push({ type: 'agent', agent });
     return null;
   }
 
   private project(w: Where, now: number): string {
     const folder = redact((typeof w.folder === 'string' ? w.folder : '').trim());
+    const repo = typeof w.repo === 'string' ? w.repo : '';
+    const memo = `${repo}\u0001${folder}`;
+    const hit = this.resolved.get(memo);
+    if (hit !== undefined) return hit;
     const name = folder ? folderName(folder) : '';
     const known: Known = { paths: {}, aliases: {}, repos: [] };
     if (folder) {
@@ -186,12 +245,28 @@ export class Person extends DurableObject<Env> {
       if (a) known.aliases[name] = a.key;
       known.repos = this.store.q<{ key: string }>("SELECT key FROM projects WHERE name = ? AND key NOT LIKE 'folder:%'", name).map((r) => r.key);
     }
-    const remote = typeof w.repo === 'string' ? cleanRemote(w.repo) : null;
+    const remote = repo ? cleanRemote(repo) : null;
     const resolved = resolveProject({ repo: remote ?? undefined, folder }, known);
     const r = { ...resolved, key: redact(resolved.key) };
-    if (r.learn?.path && known.paths[r.learn.path] !== r.key) this.store.q('INSERT INTO paths(path, key) VALUES(?, ?) ON CONFLICT(path) DO UPDATE SET key = excluded.key', r.learn.path, r.key);
-    if (r.learn?.alias && known.aliases[r.learn.alias] !== r.key) this.store.q('INSERT INTO aliases(alias, key) VALUES(?, ?) ON CONFLICT(alias) DO UPDATE SET key = excluded.key', r.learn.alias, r.key);
-    this.store.q('INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING', r.key, projectName(r.key), now);
+    let changed = false;
+    if (r.learn?.path && known.paths[r.learn.path] !== r.key) {
+      this.store.q('INSERT INTO paths(path, key) VALUES(?, ?) ON CONFLICT(path) DO UPDATE SET key = excluded.key', r.learn.path, r.key);
+      changed = true;
+    }
+    if (r.learn?.alias && known.aliases[r.learn.alias] !== r.key) {
+      this.store.q('INSERT INTO aliases(alias, key) VALUES(?, ?) ON CONFLICT(alias) DO UPDATE SET key = excluded.key', r.learn.alias, r.key);
+      changed = true;
+    }
+    if (!this.projectKeys.has(r.key)) {
+      const added = this.store.q('INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING RETURNING key', r.key, projectName(r.key), now);
+      if (added.length) changed = true;
+      this.projectKeys.add(r.key);
+    }
+    if (changed) {
+      this.resolved.clear();
+      this.nameCache = null;
+    }
+    keep(this.resolved, memo, r.key, 200);
     return r.key;
   }
 
@@ -199,7 +274,34 @@ export class Person extends DurableObject<Env> {
     return compact({ agent: c.agent, model, session, via, source, at: now }) as Origin;
   }
 
-  private save(item: Item, now: number, counted: boolean): Result {
+  private putItem(item: Item): void {
+    this.store.put(item);
+    for (const [key, list] of [...this.pools]) {
+      const at = list.findIndex((i) => i.id === item.id);
+      if (key !== item.project || item.folded) {
+        if (at >= 0) this.pools.delete(key);
+        continue;
+      }
+      const full = list.length >= POOL;
+      if (at >= 0) list.splice(at, 1);
+      const pos = list.findIndex((i) => newer(item, i) < 0);
+      if (pos >= 0) {
+        list.splice(pos, 0, item);
+        if (list.length > POOL) list.pop();
+      } else if (!full) list.push(item);
+      else if (at >= 0) this.pools.delete(key);
+    }
+    if (item.kind === 'rule' && this.rulesCache) this.rulesCache = [...this.rulesCache.filter((r) => r.id !== item.id), item];
+  }
+
+  private removeItem(item: Item): number {
+    const n = this.store.remove(item.id);
+    this.pools.delete(item.project);
+    if (this.rulesCache) this.rulesCache = this.rulesCache.filter((r) => r.id !== item.id);
+    return n;
+  }
+
+  private save(item: Item, now: number, counted: boolean, after?: (saved: Item) => void): Result {
     if (counted) {
       const r = this.limits.canStore(now);
       if (r) {
@@ -215,18 +317,22 @@ export class Person extends DurableObject<Env> {
     }
     const limit = this.limits.max.storeBytes;
     const size = itemBytes(clean);
-    let total = this.store.totalBytes();
-    const last = this.store.meta<number>('folded', -1);
-    if (total - this.store.bytesOf(clean.id) + size > FOLD_AT * limit && total > last + 0.02 * limit) total = this.fold(now);
-    const prev = this.store.bytesOf(clean.id);
+    let total = this.limits.bytes();
+    let prev = this.store.bytesOf(clean.id);
+    if (total - prev + size > FOLD_AT * limit && total > this.limits.folded() + 0.02 * limit) {
+      total = this.fold(now);
+      prev = this.store.bytesOf(clean.id);
+    }
     if (total - prev + size > limit) {
       this.limits.refuse(SAY.full, now);
       return { ok: false, text: SAY.full };
     }
-    this.store.put(clean);
-    this.store.setTotal(total - prev + size);
+    this.putItem(clean);
+    this.limits.setBytes(total - prev + size);
     if (counted) this.limits.stored(now);
-    if (this.limits.paused(now)) this.limits.clear();
+    this.limits.clear();
+    after?.(clean);
+    this.limits.flush(now, true);
     this.push({ type: 'item', item: clean });
     return { ok: true, text: '', item: clean };
   }
@@ -245,9 +351,11 @@ export class Person extends DurableObject<Env> {
         if (!o || o.folded !== i.folded || JSON.stringify(o.body) !== JSON.stringify(i.body)) this.store.put(i);
       }
       total = totalBytes(items);
-      this.store.setTotal(total);
-      this.store.setMeta('folded', total);
     });
+    this.pools.clear();
+    this.rulesCache = null;
+    this.limits.setBytes(total);
+    this.limits.setFolded(total);
     this.push({ type: 'reset' });
     return total;
   }
@@ -257,7 +365,7 @@ export class Person extends DurableObject<Env> {
     if (typeof key === 'string' && key) marks.push(`key:${c.grant}:${hash(key)}`);
     marks.push(`body:${c.grant}:${hash(JSON.stringify([kind, project, body]))}`);
     for (const m of marks) {
-      const seen = this.store.meta<{ id: string; at: number; text: string } | null>(m, null);
+      const seen = this.limits.mark(m);
       const ttl = m.startsWith('key:') ? DAY : 10 * MINUTE;
       if (seen && now - seen.at < ttl) {
         const item = this.store.item(seen.id);
@@ -265,15 +373,6 @@ export class Person extends DurableObject<Env> {
       }
     }
     return { marks };
-  }
-
-  private remember(marks: string[], r: Result, now: number): void {
-    if (!r.ok || !r.item) return;
-    for (const m of marks) this.store.setMeta(m, { id: r.item.id, at: now, text: r.text });
-  }
-
-  private liveSessions(now: number): SessionRow[] {
-    return this.store.q<SessionRow>('SELECT * FROM sessions WHERE last >= ?', now - LIVE);
   }
 
   private offer(h: Item, reader: string, grant: string, now: number, liveOfGrant: Set<string>): boolean {
@@ -286,21 +385,76 @@ export class Person extends DurableObject<Env> {
     return true;
   }
 
+  private pool(project: string): Item[] {
+    const hit = this.pools.get(project);
+    if (hit) return keep(this.pools, project, hit, POOLS_KEPT);
+    return keep(this.pools, project, this.store.projectItems(project, POOL), POOLS_KEPT);
+  }
+
+  private rulesList(): Item[] {
+    this.rulesCache ??= this.store.rules();
+    return this.rulesCache;
+  }
+
+  private names(): { key: string; names: string[] }[] {
+    if (this.nameCache) return this.nameCache;
+    const names = new Map<string, string[]>();
+    for (const p of this.store.q<{ key: string; name: string }>('SELECT key, name FROM projects')) names.set(p.key, [p.name]);
+    for (const a of this.store.q<{ alias: string; key: string }>('SELECT alias, key FROM aliases')) names.get(a.key)?.push(a.alias);
+    this.nameCache = [...names.entries()].map(([key, n]) => ({ key, names: [...new Set(n.filter(Boolean))] }));
+    return this.nameCache;
+  }
+
+  private deliveredFor(reader: string): Set<string> {
+    const hit = this.deliveredCache.get(reader);
+    if (hit) return keep(this.deliveredCache, reader, hit, SESSIONS_KEPT);
+    return keep(this.deliveredCache, reader, new Set(this.store.delivered(reader)), SESSIONS_KEPT);
+  }
+
+  private readsList(): ReadRow[] {
+    this.readsCache ??= this.store.meta<ReadRow[]>('reads', []);
+    return this.readsCache;
+  }
+
+  private walkFirst(project: string, f: { seen: Set<string>; once: boolean; reader: string; grant: string; now: number; liveOfGrant: Set<string>; putBack: Item[] }): Item[] {
+    const out: Item[] = [];
+    const shown = new Set(f.putBack.map((i) => i.id));
+    let cards = 0;
+    let handoff = false;
+    let after: Item | null = null;
+    while (out.length < POOL && (cards < 3 || !handoff)) {
+      const page = this.store.walk(project, after, Math.min(WALK_PAGE, POOL - out.length));
+      for (const i of page) {
+        out.push(i);
+        if (i.held) continue;
+        if (i.kind === 'card' && !(f.once && f.seen.has(i.id)) && !shown.has(i.id)) cards++;
+        if (i.kind === 'handoff' && !f.seen.has(i.id) && this.offer(i, f.reader, f.grant, f.now, f.liveOfGrant)) handoff = true;
+      }
+      if (page.length < WALK_PAGE) break;
+      after = page[page.length - 1];
+    }
+    return out;
+  }
+
   private memory(o: { project: string; reader: string; grant: string; agent: string; query?: string; first: boolean; once: boolean; putBack: Item[]; rulesOnly?: boolean; now: number }): { text: string; delivered: string[] } {
     const query = (o.query ?? '').trim();
-    const rules = this.store.rules();
-    let items: Item[] = o.rulesOnly ? [] : this.store.projectItems(o.project, POOL);
+    const rules = this.rulesList();
+    const live = this.limits.live(o.now);
+    const liveOfGrant = new Set(live.filter((s) => s.grant === o.grant).map((s) => `s-${s.sid}`));
+    const seen = this.deliveredFor(o.reader);
+    let items: Item[] = [];
     let projects: { key: string; names: string[] }[] = [];
-    if (query && !o.rulesOnly) {
-      const names = new Map<string, string[]>();
-      for (const p of this.store.q<{ key: string; name: string }>('SELECT key, name FROM projects')) names.set(p.key, [p.name]);
-      for (const a of this.store.q<{ alias: string; key: string }>('SELECT alias, key FROM aliases')) names.get(a.key)?.push(a.alias);
-      projects = [...names.entries()].map(([key, n]) => ({ key, names: [...new Set(n.filter(Boolean))] }));
-      for (const key of namedProjects(query, projects, o.project)) items = items.concat(this.store.projectItems(key, POOL));
+    if (!o.rulesOnly) {
+      if (query) {
+        items = this.pool(o.project);
+        projects = this.names();
+        for (const key of namedProjects(query, projects, o.project)) items = items.concat(this.pool(key));
+      } else if (this.pools.has(o.project)) {
+        items = this.pool(o.project);
+      } else {
+        items = this.walkFirst(o.project, { seen, once: o.once, reader: o.reader, grant: o.grant, now: o.now, liveOfGrant, putBack: o.putBack });
+      }
     }
-    const live = this.liveSessions(o.now);
-    const liveOfGrant = new Set(live.filter((s) => s.grant_id === o.grant).map((s) => `s-${s.id}`));
-    const seen = this.store.q<{ item: string }>('SELECT item FROM seen WHERE reader = ?', o.reader).map((r) => r.item);
     const byId = new Map<string, Item>();
     for (const i of [...items, ...rules]) byId.set(i.id, i);
     const pool = [...byId.values()].filter((i) => i.kind !== 'handoff' || this.offer(i, o.reader, o.grant, o.now, liveOfGrant));
@@ -310,17 +464,23 @@ export class Person extends DurableObject<Env> {
       projects,
       query,
       first: o.first,
-      seen,
+      seen: [...seen],
       putBack: o.putBack,
       now: o.now,
-      live: live.map((s) => `s-${s.id}`).filter((s) => s !== o.reader),
+      live: live.map((s) => `s-${s.sid}`).filter((s) => s !== o.reader),
       once: o.once,
     });
-    const record = o.once ? res.delivered : res.delivered.filter((id) => byId.get(id)?.kind === 'handoff');
-    for (const id of record) this.store.q('INSERT INTO seen(reader, item) VALUES(?, ?) ON CONFLICT DO NOTHING', o.reader, id);
+    const record = (o.once ? res.delivered : res.delivered.filter((id) => byId.get(id)?.kind === 'handoff')).filter((id) => !seen.has(id));
+    if (record.length) {
+      for (const id of record) seen.add(id);
+      this.store.setDelivered(o.reader, [...seen]);
+    }
     const handoffs = res.delivered.filter((id) => byId.get(id)?.kind === 'handoff');
-    for (const id of handoffs) this.store.q('INSERT INTO reads(at, item, agent) VALUES(?, ?, ?)', o.now, id, o.agent);
-    if (handoffs.length) this.store.q('DELETE FROM reads WHERE rowid IN (SELECT rowid FROM reads ORDER BY at DESC, rowid DESC LIMIT -1 OFFSET ?)', READS_KEPT);
+    if (handoffs.length) {
+      const list = [...handoffs.map((item) => ({ item, agent: o.agent, at: o.now })), ...this.readsList()].slice(0, READS_KEPT);
+      this.readsCache = list;
+      this.store.setMeta('reads', list);
+    }
     return res;
   }
 
@@ -343,7 +503,7 @@ export class Person extends DurableObject<Env> {
         const query = (a.query ?? '').trim();
         let putBack: Item[] = [];
         if (a.dropped) {
-          const dropped = this.store.projectItems(project, POOL).filter((i) => i.kind === 'dropped' && !i.held);
+          const dropped = this.pool(project).filter((i) => i.kind === 'dropped' && !i.held);
           putBack = query ? rankItems(dropped, query, now).slice(0, 5).map((h) => h.item) : dropped.slice(0, 5);
         }
         const res = this.memory({ project, reader: `g-${c.grant}`, grant: c.grant, agent: c.agent, query, first: !query, once: false, putBack, now });
@@ -352,6 +512,13 @@ export class Person extends DurableObject<Env> {
         return { ok: false, text: FAILED };
       }
     });
+  }
+
+  private write(c: Caller, now: number, kind: 'card' | 'handoff' | 'rule', project: string, body: CardBody | HandoffBody | RuleBody, source: Source, marks: string[], text: string): Result {
+    const r = this.save(newItem(kind, project, body, this.origin(c, now, 'tool', source, `g-${c.grant}`)), now, true, (saved) => {
+      for (const m of marks) this.limits.setMark(m, { id: saved.id, at: now, text });
+    });
+    return r.ok ? { ...r, text } : r;
   }
 
   async checkpoint(c: Caller, a: CheckpointArgs): Promise<Result> {
@@ -371,10 +538,7 @@ export class Person extends DurableObject<Env> {
       body.goal = typeof a.goal === 'string' ? a.goal : '';
       const memo = this.remembered(c, 'card', project, body, a.key, now);
       if (memo.hit) return memo.hit;
-      const r = this.save(newItem('card', project, body, this.origin(c, now, 'tool', 'agent', `g-${c.grant}`)), now, true);
-      const out = r.ok ? { ...r, text: 'Checkpoint saved. Its open tasks are shown to the next agent at the start of its session.' } : r;
-      this.remember(memo.marks, out, now);
-      return out;
+      return this.write(c, now, 'card', project, body, 'agent', memo.marks, 'Checkpoint saved. Its open tasks are shown to the next agent at the start of its session.');
     });
   }
 
@@ -398,11 +562,22 @@ export class Person extends DurableObject<Env> {
       body.next = typeof a.next === 'string' ? a.next : '';
       const memo = this.remembered(c, 'handoff', project, body, a.key, now);
       if (memo.hit) return memo.hit;
-      const r = this.save(newItem('handoff', project, body, this.origin(c, now, 'tool', 'agent', `g-${c.grant}`)), now, true);
-      const out = r.ok ? { ...r, text: 'Handoff saved for the next agent.' } : r;
-      this.remember(memo.marks, out, now);
-      return out;
+      return this.write(c, now, 'handoff', project, body, 'agent', memo.marks, 'Handoff saved for the next agent.');
     });
+  }
+
+  private prompts(grant: string, now: number, fromStore: boolean): string[] {
+    if (fromStore) {
+      return this.store
+        .q<{ text: string }>("SELECT e.text AS text FROM events e JOIN sessions s ON e.session = s.id WHERE s.grant_id = ? AND e.t = 'prompt' AND e.at >= ?", grant, now - DAY)
+        .map((r) => r.text);
+    }
+    const out: string[] = [];
+    for (const [sid, rows] of this.eventCache) {
+      if (this.sessionCache.get(sid)?.grant_id !== grant) continue;
+      for (const r of rows) if (r.t === 'prompt' && r.at >= now - DAY && r.text) out.push(r.text);
+    }
+    return out;
   }
 
   async rule(c: Caller, a: RuleArgs): Promise<Result> {
@@ -422,19 +597,15 @@ export class Person extends DurableObject<Env> {
       } catch {
         return { ok: false, text: SAY.clean };
       }
-      const prompts = this.store
-        .q<{ text: string }>("SELECT e.text AS text FROM events e JOIN sessions s ON e.session = s.id WHERE s.grant_id = ? AND e.t = 'prompt' AND e.at >= ?", c.grant, now - DAY)
-        .map((r) => r.text);
       const today = new Date(now).toISOString().slice(0, 10);
-      const activatedToday = this.store.rules().filter((r) => (r.body as RuleBody).proof === 'hook' && new Date(r.created).toISOString().slice(0, 10) === today).length;
-      const d = decideRule({ text: a.text, words, scope }, { via: 'tool', prompts, activatedToday });
+      const activatedToday = this.rulesList().filter((r) => (r.body as RuleBody).proof === 'hook' && new Date(r.created).toISOString().slice(0, 10) === today).length;
+      const input = { text: a.text, words, scope } as const;
+      let d = decideRule(input, { via: 'tool', prompts: this.prompts(c.grant, now, false), activatedToday });
+      if (d.status !== 'active') d = decideRule(input, { via: 'tool', prompts: this.prompts(c.grant, now, true), activatedToday });
       const body: RuleBody = compact({ text: 'x', words: 'x', scope, status: d.status, proof: d.proof });
       body.text = typeof a.text === 'string' ? a.text : '';
       body.words = words;
-      const r = this.save(newItem('rule', project, body, this.origin(c, now, 'tool', d.status === 'active' ? 'person' : 'agent', `g-${c.grant}`)), now, true);
-      const out = r.ok ? { ...r, text: d.reason } : r;
-      this.remember(memo.marks, out, now);
-      return out;
+      return this.write(c, now, 'rule', project, body, d.status === 'active' ? 'person' : 'agent', memo.marks, d.reason);
     });
   }
 
@@ -454,40 +625,57 @@ export class Person extends DurableObject<Env> {
     });
   }
 
-  private session(c: Caller, sid: string, a: EventArgs, now: number): SessionRow {
-    const raw = val(a.model);
-    const model = raw ? cut(redact(raw), 80) : undefined;
-    const row = this.store.q<SessionRow>('SELECT * FROM sessions WHERE id = ?', sid)[0];
-    if (row) {
-      if (model && row.model !== model) row.model = model;
-      row.last = now;
-      this.store.q('UPDATE sessions SET last = ?, model = ? WHERE id = ?', now, row.model, sid);
-      return row;
-    }
-    const s: SessionRow = { id: sid, agent: c.agent, model: model ?? null, project: this.project({ folder: val(a.cwd) }, now), start: now, last: now, primed: 0, grant_id: c.grant };
-    this.store.q('INSERT INTO sessions(id, agent, model, project, start, last, primed, grant_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)', s.id, s.agent, s.model, s.project, s.start, s.last, s.primed, s.grant_id);
-    return s;
+  private writeSession(s: Live, now: number): void {
+    this.store.q('UPDATE sessions SET last = ?, model = ?, n = ?, primed = ? WHERE id = ?', s.last, s.model, s.n, s.primed, s.id);
+    s.written = now;
   }
 
-  private addEvent(sid: string, t: EvType, now: number, raw: { text?: string; path?: string; ok?: boolean }): boolean {
+  private session(c: Caller, sid: string, a: EventArgs, now: number): Live {
+    const raw = val(a.model);
+    const model = raw ? cut(redact(raw), 80) : undefined;
+    let s = this.sessionCache.get(sid);
+    if (!s) {
+      const row = this.store.q<SessionRow>('SELECT * FROM sessions WHERE id = ?', sid)[0];
+      if (row) s = { ...row, n: row.n ?? 0, written: row.last, auto: {} };
+    }
+    if (s) {
+      keep(this.sessionCache, sid, s, SESSIONS_KEPT);
+      const changed = !!model && s.model !== model;
+      if (changed) s.model = model ?? null;
+      s.last = now;
+      if (changed || now - s.written >= MINUTE) this.writeSession(s, now);
+      this.limits.seen(sid, s.grant_id, now);
+      return s;
+    }
+    const fresh: Live = { id: sid, agent: c.agent, model: model ?? null, project: this.project({ folder: val(a.cwd) }, now), start: now, last: now, primed: 0, grant_id: c.grant, n: 0, written: now, auto: {} };
+    this.store.q('INSERT INTO sessions(id, agent, model, project, start, last, primed, grant_id, n) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)', fresh.id, fresh.agent, fresh.model, fresh.project, fresh.start, fresh.last, fresh.primed, fresh.grant_id, fresh.n);
+    keep(this.sessionCache, sid, fresh, SESSIONS_KEPT);
+    this.limits.seen(sid, c.grant, now);
+    return fresh;
+  }
+
+  private addEvent(s: Live, t: EvType, now: number, raw: { text?: string; path?: string; ok?: boolean }): boolean {
     const text = raw.text !== undefined ? cleanText(raw.text) : undefined;
     const path = raw.path !== undefined ? cleanText(raw.path) : undefined;
     const flags = [...new Set([...(text?.flags ?? []), ...(path?.flags ?? [])])];
     const ev: Ev = compact({ t, at: now, text: text?.text, path: path?.text });
-    const key = eventKey(sid, ev);
-    const ok = raw.ok === undefined ? null : raw.ok ? 1 : 0;
+    const row: EventRow = { session: s.id, key: eventKey(s.id, ev), t, at: now, text: ev.text ?? null, path: ev.path ?? null, ok: raw.ok === undefined ? null : raw.ok ? 1 : 0, flags: flags.length ? JSON.stringify(flags) : null };
     const rows = this.store.q<{ key: string }>(
-      'INSERT INTO events(key, session, t, at, text, path, ok, flags) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING RETURNING key',
-      key,
-      sid,
-      t,
-      now,
-      ev.text ?? null,
-      ev.path ?? null,
-      ok,
-      flags.length ? JSON.stringify(flags) : null,
+      'INSERT INTO events(session, key, t, at, text, path, ok, flags) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session, key) DO NOTHING RETURNING key',
+      row.session,
+      row.key,
+      row.t,
+      row.at,
+      row.text,
+      row.path,
+      row.ok,
+      row.flags,
     );
-    return rows.length > 0;
+    if (!rows.length) return false;
+    s.n++;
+    this.eventCache.get(s.id)?.push(row);
+    if (s.n > EVENTS_PER_SESSION) this.events(s, now);
+    return true;
   }
 
   private onEvent(c: Caller, a: EventArgs, name: string, host: string, now: number): string {
@@ -506,14 +694,17 @@ export class Person extends DurableObject<Env> {
       if (stripped.trim().length < 15) {
         if (!first || !stripped.trim() || /^[/!#]/.test(stripped.trim())) return '';
       } else {
-        if (!this.addEvent(sid, 'prompt', now, { text: kept })) return '';
+        if (!this.addEvent(s, 'prompt', now, { text: kept })) return '';
         if (quietPrompt(stripped)) return '';
       }
       const putBack = this.queued(s.project);
       const query = first ? undefined : cleanText(kept).text;
       const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, query, first, once: true, putBack, now });
       this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
-      if (first) this.store.q('UPDATE sessions SET primed = 1 WHERE id = ?', sid);
+      if (first) {
+        s.primed = 1;
+        this.writeSession(s, now);
+      }
       const paused = first ? this.limits.paused(now) : null;
       const text = paused ? withLine(res.text, paused, s.project, 3000) : res.text;
       return hookOutput(host, name, text);
@@ -521,26 +712,27 @@ export class Person extends DurableObject<Env> {
     if (name === 'PostToolUse' || name === 'PostToolUseFailure') {
       const file = val(a.file);
       const command = val(a.command);
-      if (file) this.addEvent(sid, 'edit', now, { path: file });
-      if (command) this.addEvent(sid, 'command', now, { text: cut(command, 300), ok: name === 'PostToolUse' });
+      if (file) this.addEvent(s, 'edit', now, { path: file });
+      if (command) this.addEvent(s, 'command', now, { text: cut(command, 300), ok: name === 'PostToolUse' });
       return '';
     }
     if (name === 'Stop' || name === 'StopFailure') {
       const message = val(a.message);
-      this.addEvent(sid, 'stop', now, { text: message ? stripOwn(message) : '', ok: name === 'Stop' });
+      this.addEvent(s, 'stop', now, { text: message ? stripOwn(message) : '', ok: name === 'Stop' });
       this.rebuild(s, now, true);
       return '';
     }
     if (name === 'PostCompact') {
       const summary = val(a.summary);
-      if (summary) this.addEvent(sid, 'compact', now, { text: summary });
+      if (summary) this.addEvent(s, 'compact', now, { text: summary });
       this.dropped(s, now);
       return '';
     }
     if (name === 'SessionStart') {
       const source = val(a.source);
       if (source !== 'clear' && source !== 'compact') return '';
-      this.store.q('DELETE FROM seen WHERE reader = ?', reader);
+      if (this.deliveredFor(reader).size) this.store.dropDelivered(reader);
+      this.deliveredCache.set(reader, new Set());
       const putBack = this.queued(s.project);
       const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, first: true, once: true, putBack, rulesOnly: true, now });
       this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
@@ -553,22 +745,36 @@ export class Person extends DurableObject<Env> {
     return '';
   }
 
-  private events(sid: string): { evs: Ev[]; flags: string[] } {
-    const rows = this.store.q<EventRow>('SELECT * FROM events WHERE session = ? ORDER BY at', sid);
-    if (rows.length > EVENTS_PER_SESSION) {
-      const drop = rows.splice(0, rows.length - EVENTS_PER_SESSION);
-      for (const r of drop) this.store.q('DELETE FROM events WHERE key = ?', r.key);
+  private events(s: Live, now: number): { evs: Ev[]; flags: string[] } {
+    let rows = this.eventCache.get(s.id);
+    if (!rows) rows = this.store.sessionEvents(s.id);
+    rows.sort((x, y) => x.at - y.at || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+    const old = now - KEEP_EVENTS;
+    const drop = rows.filter((r, i) => r.at < old || i < rows!.length - EVENTS_PER_SESSION);
+    if (drop.length) {
+      const gone = new Set(drop.map((r) => r.key));
+      for (const r of drop) this.store.q('DELETE FROM events WHERE session = ? AND key = ?', s.id, r.key);
+      rows = rows.filter((r) => !gone.has(r.key));
     }
+    if (s.n !== rows.length) {
+      s.n = rows.length;
+      this.writeSession(s, now);
+    }
+    keep(this.eventCache, s.id, rows, EVENT_SESSIONS_KEPT);
     const flags = new Set<string>();
     for (const r of rows) for (const f of r.flags ? (JSON.parse(r.flags) as string[]) : []) flags.add(f);
     const evs = rows.map((r) => compact({ t: r.t as EvType, at: r.at, text: r.text ?? undefined, path: r.path ?? undefined, ok: r.ok === null ? undefined : r.ok === 1 }) as Ev);
     return { evs, flags: [...flags] };
   }
 
-  private auto(s: SessionRow, kind: 'card' | 'handoff', body: CardBody | HandoffBody, flags: string[], now: number): void {
-    const k = `auto-${kind}:${s.id}`;
-    const id = this.store.meta<string | null>(k, null);
-    const old = id ? this.store.item(id) : null;
+  private autoId(s: Live, kind: string): string | null {
+    if (!(kind in s.auto)) s.auto[kind] = this.store.meta<string | null>(`auto-${kind}:${s.id}`, null);
+    return s.auto[kind];
+  }
+
+  private auto(s: Live, kind: 'card' | 'handoff', body: CardBody | HandoffBody, flags: string[], now: number): void {
+    const id = this.autoId(s, kind);
+    const old = id ? (this.pools.get(s.project)?.find((i) => i.id === id) ?? this.store.item(id)) : null;
     const source: Source = kind === 'card' && !(body as CardBody).last ? 'person' : 'agent';
     const origin = compact({ agent: s.agent, model: s.model ?? undefined, session: `s-${s.id}`, via: 'hook' as Via, source, at: now }) as Origin;
     const item: Item = { ...newItem(kind, s.project, body, origin), flags };
@@ -577,12 +783,15 @@ export class Person extends DurableObject<Env> {
       item.pinned = old.pinned;
       if (kind === 'card') item.created = old.created;
     }
-    const r = this.save(item, now, !old);
-    if (r.ok && !old && r.item) this.store.setMeta(k, r.item.id);
+    this.save(item, now, !old, (saved) => {
+      if (old) return;
+      s.auto[kind] = saved.id;
+      this.store.setMeta(`auto-${kind}:${s.id}`, saved.id);
+    });
   }
 
-  private rebuild(s: SessionRow, now: number, handoff: boolean): void {
-    const { evs, flags } = this.events(s.id);
+  private rebuild(s: Live, now: number, handoff: boolean): void {
+    const { evs, flags } = this.events(s, now);
     const card = autoCard(evs);
     if (card) this.auto(s, 'card', card, flags, now);
     if (!handoff) return;
@@ -594,16 +803,16 @@ export class Person extends DurableObject<Env> {
     this.auto(s, 'handoff', h, flags, now);
   }
 
-  private dropped(s: SessionRow, now: number): void {
+  private dropped(s: Live, now: number): void {
     const k = `dropped:${s.id}`;
     for (const id of this.store.meta<string[]>(k, [])) {
-      const n = this.store.remove(id);
-      if (n) {
-        this.store.setTotal(this.store.totalBytes() - n);
-        this.push({ type: 'remove', id });
-      }
+      const item = this.store.item(id);
+      if (!item) continue;
+      const n = this.removeItem(item);
+      this.limits.setBytes(this.limits.bytes() - n);
+      this.push({ type: 'remove', id });
     }
-    const { evs, flags } = this.events(s.id);
+    const { evs, flags } = this.events(s, now);
     const ids: string[] = [];
     const origin = compact({ agent: s.agent, model: s.model ?? undefined, session: `s-${s.id}`, via: 'hook' as Via, source: 'agent' as Source, at: now }) as Origin;
     for (const body of droppedAt(evs, now)) {
@@ -614,30 +823,26 @@ export class Person extends DurableObject<Env> {
   }
 
   private maintain(now: number): void {
-    const last = this.store.meta<number>('maintained', 0);
-    if (now - last < HOUR) return;
-    this.store.setMeta('maintained', now);
+    const h = this.limits.state();
+    if (now - h.maintained < DAY) return;
+    h.maintained = now;
+    this.limits.touch();
     const old = now - KEEP_EVENTS;
-    const gone = this.store.q<{ id: string }>('SELECT id FROM sessions WHERE last < ?', old).map((r) => r.id);
-    this.store.q('DELETE FROM events WHERE at < ?', old);
-    for (const id of gone) {
+    for (const { id } of this.store.q<{ id: string }>('SELECT id FROM sessions WHERE last < ?', old)) {
+      this.store.q('DELETE FROM events WHERE session = ?', id);
       this.store.q('DELETE FROM sessions WHERE id = ?', id);
-      this.store.q('DELETE FROM seen WHERE reader = ?', `s-${id}`);
+      this.store.dropDelivered(`s-${id}`);
       for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
-    }
-    for (const r of this.store.q<{ session: string; n: number }>('SELECT session, COUNT(*) AS n FROM events GROUP BY session HAVING n > ?', EVENTS_PER_SESSION)) {
-      this.store.q('DELETE FROM events WHERE key IN (SELECT key FROM events WHERE session = ? ORDER BY at ASC LIMIT ?)', r.session, r.n - EVENTS_PER_SESSION);
-    }
-    for (const r of this.store.q<{ k: string; v: string }>("SELECT k, v FROM meta WHERE k LIKE 'key:%' OR k LIKE 'body:%'")) {
-      const at = (JSON.parse(r.v) as { at?: number }).at ?? 0;
-      if (now - at > DAY) this.store.dropMeta(r.k);
+      this.sessionCache.delete(id);
+      this.eventCache.delete(id);
+      this.deliveredCache.delete(`s-${id}`);
     }
   }
 
   async me(): Promise<Me> {
     const now = Date.now();
     const t = this.limits.today(now);
-    return { bytes: this.store.totalBytes(), max: this.limits.max.storeBytes, callsToday: t.calls, storedToday: t.stored };
+    return { bytes: this.limits.bytes(), max: this.limits.max.storeBytes, callsToday: t.calls, storedToday: t.stored };
   }
 
   async space(): Promise<Space> {
@@ -648,7 +853,7 @@ export class Person extends DurableObject<Env> {
       agents: this.store.q<AgentRow>('SELECT * FROM agents ORDER BY first'),
       items: this.store.newest(SPACE_ITEMS),
       queue: this.store.q<{ item: string }>('SELECT item FROM queue ORDER BY at').map((r) => r.item),
-      reads: this.store.q<ReadRow>('SELECT item, agent, at FROM reads ORDER BY at DESC, rowid DESC LIMIT ?', READS_KEPT),
+      reads: this.readsList().slice(0, READS_KEPT),
       now: Date.now(),
     };
   }
@@ -658,7 +863,7 @@ export class Person extends DurableObject<Env> {
     if (!i) return null;
     const next = fn(i);
     if (!next) return null;
-    this.store.put(next);
+    this.putItem(next);
     this.push({ type: 'item', item: next });
     return next;
   }
@@ -680,9 +885,12 @@ export class Person extends DurableObject<Env> {
   }
 
   async remove(id: string): Promise<boolean> {
-    const n = this.store.item(id) ? this.store.remove(id) : -1;
-    if (n < 0) return false;
-    this.store.setTotal(this.store.totalBytes() - n);
+    const item = this.store.item(id);
+    if (!item) return false;
+    const n = this.removeItem(item);
+    const now = Date.now();
+    this.limits.setBytes(this.limits.bytes() - n);
+    this.limits.flush(now, true);
     this.push({ type: 'remove', id });
     return true;
   }
@@ -721,6 +929,12 @@ export class Person extends DurableObject<Env> {
       this.store.q('UPDATE sessions SET project = ? WHERE project = ?', into, from);
       this.store.q('DELETE FROM projects WHERE key = ?', from);
     });
+    this.pools.clear();
+    this.rulesCache = null;
+    this.nameCache = null;
+    this.resolved.clear();
+    this.projectKeys.clear();
+    this.sessionCache.clear();
     this.push({ type: 'reset' });
     return true;
   }
@@ -744,6 +958,8 @@ export class Person extends DurableObject<Env> {
     }
     await this.ctx.storage.deleteAll();
     this.store.init();
+    this.forget();
+    this.limits.reset();
   }
 
   async rowCount(): Promise<number> {

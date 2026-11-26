@@ -1,23 +1,21 @@
 import { itemBytes, type Item, type Kind } from '../../core/src/index.ts';
 
 const SCHEMA = [
-  'CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER)',
+  'CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER) WITHOUT ROWID',
   'CREATE INDEX IF NOT EXISTS items_project_created ON items(project, created)',
   "CREATE INDEX IF NOT EXISTS items_rules ON items(kind) WHERE kind = 'rule'",
-  'CREATE TABLE IF NOT EXISTS events(key TEXT PRIMARY KEY, session TEXT, t TEXT, at INTEGER, text TEXT, path TEXT, ok INTEGER, flags TEXT)',
-  'CREATE INDEX IF NOT EXISTS events_session_at ON events(session, at)',
-  'CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, agent TEXT, model TEXT, project TEXT, start INTEGER, last INTEGER, primed INTEGER, grant_id TEXT)',
-  'CREATE TABLE IF NOT EXISTS projects(key TEXT PRIMARY KEY, name TEXT, created INTEGER)',
-  'CREATE TABLE IF NOT EXISTS paths(path TEXT PRIMARY KEY, key TEXT)',
-  'CREATE TABLE IF NOT EXISTS aliases(alias TEXT PRIMARY KEY, key TEXT)',
-  'CREATE TABLE IF NOT EXISTS agents(id TEXT PRIMARY KEY, label TEXT, first INTEGER, last INTEGER)',
-  'CREATE TABLE IF NOT EXISTS seen(reader TEXT, item TEXT, PRIMARY KEY(reader, item))',
-  'CREATE TABLE IF NOT EXISTS queue(item TEXT PRIMARY KEY, at INTEGER)',
-  'CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)',
-  'CREATE TABLE IF NOT EXISTS reads(at INTEGER, item TEXT, agent TEXT)',
+  'CREATE TABLE IF NOT EXISTS events(session TEXT, key TEXT, t TEXT, at INTEGER, text TEXT, path TEXT, ok INTEGER, flags TEXT, PRIMARY KEY(session, key)) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, agent TEXT, model TEXT, project TEXT, start INTEGER, last INTEGER, primed INTEGER, grant_id TEXT, n INTEGER) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS projects(key TEXT PRIMARY KEY, name TEXT, created INTEGER) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS paths(path TEXT PRIMARY KEY, key TEXT) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS aliases(alias TEXT PRIMARY KEY, key TEXT) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS agents(id TEXT PRIMARY KEY, label TEXT, first INTEGER, last INTEGER) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS delivered(reader TEXT PRIMARY KEY, items TEXT) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS queue(item TEXT PRIMARY KEY, at INTEGER) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT) WITHOUT ROWID',
 ];
 
-export const TABLES = ['items', 'events', 'sessions', 'projects', 'paths', 'aliases', 'agents', 'seen', 'queue', 'meta', 'reads'];
+export const TABLES = ['items', 'events', 'sessions', 'projects', 'paths', 'aliases', 'agents', 'delivered', 'queue', 'meta'];
 
 export interface ItemRow {
   id: string;
@@ -33,8 +31,8 @@ export interface ItemRow {
   bytes: number;
 }
 
-export interface EventRow { key: string; session: string; t: string; at: number; text: string | null; path: string | null; ok: number | null; flags: string | null }
-export interface SessionRow { id: string; agent: string; model: string | null; project: string; start: number; last: number; primed: number; grant_id: string }
+export interface EventRow { session: string; key: string; t: string; at: number; text: string | null; path: string | null; ok: number | null; flags: string | null }
+export interface SessionRow { id: string; agent: string; model: string | null; project: string; start: number; last: number; primed: number; grant_id: string; n: number }
 export interface AgentRow { id: string; label: string; first: number; last: number }
 export interface ReadRow { item: string; agent: string; at: number }
 
@@ -51,6 +49,10 @@ export function toItem(r: ItemRow): Item {
     folded: !!r.folded,
     created: r.created,
   };
+}
+
+export function newer(a: Item, b: Item): number {
+  return b.created - a.created || (b.id < a.id ? -1 : b.id > a.id ? 1 : 0);
 }
 
 type Value = string | number | null;
@@ -108,7 +110,12 @@ export class Store {
   }
 
   projectItems(project: string, limit: number): Item[] {
-    return this.q<ItemRow>('SELECT * FROM items WHERE project = ? AND folded = 0 ORDER BY created DESC LIMIT ?', project, limit).map(toItem);
+    return this.q<ItemRow>('SELECT * FROM items WHERE project = ? AND folded = 0 ORDER BY created DESC, id DESC LIMIT ?', project, limit).map(toItem);
+  }
+
+  walk(project: string, after: Item | null, limit: number): Item[] {
+    if (!after) return this.projectItems(project, limit);
+    return this.q<ItemRow>('SELECT * FROM items WHERE project = ? AND folded = 0 AND (created, id) < (?, ?) ORDER BY created DESC, id DESC LIMIT ?', project, after.created, after.id, limit).map(toItem);
   }
 
   rules(): Item[] {
@@ -153,12 +160,21 @@ export class Store {
     return n;
   }
 
-  totalBytes(): number {
-    return this.meta<number>('bytes', 0);
+  delivered(reader: string): string[] {
+    const row = this.q<{ items: string }>('SELECT items FROM delivered WHERE reader = ?', reader)[0];
+    return row ? (JSON.parse(row.items) as string[]) : [];
   }
 
-  setTotal(n: number): void {
-    this.setMeta('bytes', Math.max(0, n));
+  setDelivered(reader: string, ids: string[]): void {
+    this.q('INSERT INTO delivered(reader, items) VALUES(?, ?) ON CONFLICT(reader) DO UPDATE SET items = excluded.items', reader, JSON.stringify(ids));
+  }
+
+  dropDelivered(reader: string): void {
+    this.q('DELETE FROM delivered WHERE reader = ?', reader);
+  }
+
+  sessionEvents(session: string): EventRow[] {
+    return this.q<EventRow>('SELECT * FROM events WHERE session = ? ORDER BY at, key', session);
   }
 
   sumBytes(): number {
