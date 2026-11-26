@@ -27,6 +27,7 @@ import {
   totalBytes,
   underCeiling,
   folderName,
+  cleanRemote,
   type CardBody,
   type Ev,
   type EvType,
@@ -171,7 +172,7 @@ export class Person extends DurableObject<Env> {
   }
 
   private project(w: Where, now: number): string {
-    const folder = (w.folder ?? '').trim();
+    const folder = redact((typeof w.folder === 'string' ? w.folder : '').trim());
     const name = folder ? folderName(folder) : '';
     const known: Known = { paths: {}, aliases: {}, repos: [] };
     if (folder) {
@@ -183,7 +184,9 @@ export class Person extends DurableObject<Env> {
       if (a) known.aliases[name] = a.key;
       known.repos = this.store.q<{ key: string }>("SELECT key FROM projects WHERE name = ? AND key NOT LIKE 'folder:%'", name).map((r) => r.key);
     }
-    const r = resolveProject({ repo: w.repo, folder }, known);
+    const remote = typeof w.repo === 'string' ? cleanRemote(w.repo) : null;
+    const resolved = resolveProject({ repo: remote ?? undefined, folder }, known);
+    const r = { ...resolved, key: redact(resolved.key) };
     if (r.learn?.path && known.paths[r.learn.path] !== r.key) this.store.q('INSERT INTO paths(path, key) VALUES(?, ?) ON CONFLICT(path) DO UPDATE SET key = excluded.key', r.learn.path, r.key);
     if (r.learn?.alias && known.aliases[r.learn.alias] !== r.key) this.store.q('INSERT INTO aliases(alias, key) VALUES(?, ?) ON CONFLICT(alias) DO UPDATE SET key = excluded.key', r.learn.alias, r.key);
     this.store.q('INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING', r.key, projectName(r.key), now);
@@ -445,7 +448,8 @@ export class Person extends DurableObject<Env> {
   }
 
   private session(c: Caller, sid: string, a: EventArgs, now: number): SessionRow {
-    const model = val(a.model);
+    const raw = val(a.model);
+    const model = raw ? cut(redact(raw), 80) : undefined;
     const row = this.store.q<SessionRow>('SELECT * FROM sessions WHERE id = ?', sid)[0];
     if (row) {
       if (model && row.model !== model) row.model = model;
