@@ -1,6 +1,6 @@
 # Sign in by vendor
 
-Below is how each agent product signs in to agent-ctx, as published by each vendor on 2026-11-26. The four metadata documents are saved unchanged in service/test/vendors.json, and every row is tested against those documents in service/test/vendors.test.ts. PORT stands for any port chosen by the product.
+Below is how each agent product signs in to agent-ctx, as published by each vendor on 2026-11-26. The four metadata documents are saved unchanged in service/test/vendors.json, and every row is tested against those documents in service/test/signin.test.ts. PORT stands for any port chosen by the product.
 
 | Product | How the product is identified | Redirect form | Result |
 |---|---|---|---|
