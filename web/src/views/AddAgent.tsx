@@ -21,19 +21,17 @@ function CopyLine({ step, at, onUse }: { step: Extract<Step, { type: 'copy' }>; 
   return (
     <div className="grid gap-1.5">
       <p className="text-sm">{step.label}</p>
-      <div className="flex items-start gap-2">
-        <code className="num min-w-0 flex-1 select-all break-all rounded-sm bg-field px-2.5 py-2 text-xs leading-relaxed">{text}</code>
-        <Button
-          variant="outline"
-          className="h-11 w-[5.5rem] sm:h-9"
-          onClick={async () => {
-            onUse();
-            setDone(await copy(text));
-          }}
-        >
-          {done ? 'Copied' : 'Copy'}
-        </Button>
-      </div>
+      <code className="num select-all whitespace-pre-wrap break-normal rounded-sm bg-field px-2.5 py-2 text-xs leading-relaxed [overflow-wrap:normal]">{text}</code>
+      <Button
+        variant="outline"
+        className="h-11 w-[5.5rem] justify-self-start sm:h-9"
+        onClick={async () => {
+          onUse();
+          setDone(await copy(text));
+        }}
+      >
+        {done ? 'Copied' : 'Copy'}
+      </Button>
     </div>
   );
 }

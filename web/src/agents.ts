@@ -1,4 +1,4 @@
-export const PLUGIN_MARKETPLACE = 'agent-ctx/agent-ctx';
+export const REPO = 'sohan-bhat/agent-ctx';
 
 export type Step =
   | { type: 'open'; label: string; copy: boolean; href: (address: string) => string }
@@ -19,7 +19,7 @@ export const PRODUCTS: Product[] = [
   {
     id: 'claude-code',
     label: 'Claude Code',
-    path: [claudeOpen, claudeSteps, { type: 'copy', label: 'Then type this in Claude Code', text: () => `/plugin install agent-ctx --marketplace ${PLUGIN_MARKETPLACE}` }],
+    path: [claudeOpen, claudeSteps, { type: 'copy', label: 'Then type this in Claude Code', text: () => `/plugin install agent-ctx --marketplace ${REPO}` }],
   },
   {
     id: 'cursor',
@@ -52,7 +52,7 @@ export const PRODUCTS: Product[] = [
   {
     id: 'antigravity',
     label: 'Antigravity',
-    path: [{ type: 'copy', label: 'Add this to ~/.gemini/config/mcp_config.json', text: (a) => JSON.stringify({ mcpServers: { 'agent-ctx': { serverUrl: a } } }) }],
+    path: [{ type: 'copy', label: 'Add this to ~/.gemini/config/mcp_config.json', text: (a) => JSON.stringify({ mcpServers: { 'agent-ctx': { serverUrl: a } } }, null, 2) }],
   },
 ];
 
