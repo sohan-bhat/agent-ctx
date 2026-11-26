@@ -195,7 +195,7 @@ export function Space({ projects, agents, items, reads, queue, start, end, time,
           thumbLabel="Time"
           valueText={readout}
         />
-        <span className="num min-w-[13ch] shrink-0 whitespace-nowrap text-right text-xs" data-readout>
+        <span className="num min-w-[16ch] shrink-0 whitespace-nowrap text-right text-xs" data-readout>
           {readout}
         </span>
       </div>
