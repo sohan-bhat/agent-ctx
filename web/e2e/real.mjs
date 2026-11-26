@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Jar } from '../../test-e2e/oauth.mjs';
+import { Jar } from '../../service/e2e/lib.mjs';
 import { browser, engine, waitFor, web } from './lib.mjs';
 
 const ORIGIN = process.env.ORIGIN ?? (engine === 'webkit' ? 'https://localhost:8795' : 'http://localhost:8795');

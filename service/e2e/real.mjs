@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const SERVICE = join(ROOT, 'test-e2e', 'service.mjs');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const SERVICE = join(ROOT, 'service', 'e2e', 'lib.mjs');
 const PUBLIC = join(ROOT, 'service', 'public');
 
 function service(cmd, dir) {
@@ -14,8 +14,7 @@ function service(cmd, dir) {
 }
 
 async function check() {
-  const { devSignIn, connect } = await import('./oauth.mjs');
-  const { open } = await import('./mcp.mjs');
+  const { devSignIn, connect, open } = await import('./lib.mjs');
   const wellKnown = await (await fetch('http://localhost:8790/.well-known/oauth-authorization-server')).json();
   if (!wellKnown.registration_endpoint || !wellKnown.client_id_metadata_document_supported) throw new Error('The well known document lacks registration or metadata document support.');
   const jar = await devSignIn('real-run');

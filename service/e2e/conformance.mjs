@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const SERVICE = join(ROOT, 'test-e2e', 'service.mjs');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const SERVICE = join(ROOT, 'service', 'e2e', 'lib.mjs');
 const PUBLIC = join(ROOT, 'service', 'public');
 const BIN = join(ROOT, 'service', 'node_modules', '.bin', 'conformance');
 export const BASELINE = join(ROOT, 'service', 'conformance-baseline.yml');
@@ -123,7 +123,7 @@ async function main() {
     const up = service('start', dir);
     console.log(up.out);
     if (!up.ok) throw new Error('The service did not start.');
-    const { devSignIn, connect } = await import('./oauth.mjs');
+    const { devSignIn, connect } = await import('./lib.mjs');
     const jar = await devSignIn('conformance');
     const t = await connect(jar, 'Conformance Suite', 42201);
     gate = await withToken(t.access);

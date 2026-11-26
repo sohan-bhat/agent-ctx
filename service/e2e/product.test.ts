@@ -1,16 +1,24 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, request, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
+import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { NAMES, PLUGINS, cleanOrigin, currentOrigin, stamp } from '../plugins/stamp.mjs';
+import { cleanOrigin, currentOrigin, NAMES, PLUGINS, stamp } from '../../plugins/stamp.mjs';
+import { MAX } from '../src/limits.ts';
+import { ITEM_BYTES, STORE_BYTES } from '../../core/src/index.ts';
+import { PAGE, PLUGINS_OUT, SAY, SERVICE } from '../deploy.mjs';
+import { vendorDocs } from '../vendor-docs.ts';
+import { BASELINE, REVISIONS, withToken } from './conformance.mjs';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 type Json = Record<string, unknown>;
 interface Handler { type?: string; server?: string; tool?: string; input?: Record<string, string>; [k: string]: unknown }
 interface Group { matcher?: string; hooks: Handler[] }
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const COMMITTED = PLUGINS;
 const SERVER = { 'claude-code': 'plugin:agent-ctx:agent-ctx', codex: 'agent-ctx' } as const;
 const HOOKS = { 'claude-code': join('claude-code', 'hooks', 'hooks.json'), codex: join('codex', 'hooks.json') } as const;
@@ -238,4 +246,222 @@ test('the stamp never deletes a folder that an earlier stamp did not write', () 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const doc = readFileSync(new URL('../../docs/cost.md', import.meta.url), 'utf8');
+const num = (x: number) => x.toLocaleString('en-US');
+
+function section(title: string): string {
+  const start = doc.indexOf(`## ${title}`);
+  assert.ok(start >= 0, title);
+  const rest = doc.slice(start + 3 + title.length);
+  const end = rest.indexOf('\n## ');
+  return end >= 0 ? rest.slice(0, end) : rest;
+}
+
+test('the limits in cost.md are exactly the constants the service enforces', () => {
+  assert.equal(MAX.storeBytes, STORE_BYTES);
+  const want = [
+    `${num(MAX.perMinute)} calls a minute`,
+    `${num(MAX.perDay)} calls a day`,
+    `${num(MAX.storedPerDay)} stored items a day`,
+    `${num(MAX.agents)} connected agents`,
+    `${num(ITEM_BYTES)} bytes an item`,
+    `${num(MAX.storeBytes)} bytes a person`,
+    `${num(MAX.inputBytes)} bytes of input a call`,
+  ];
+  const limits = section('Limits per account');
+  const lines = limits.split('\n').filter((l) => l.startsWith('- '));
+  assert.deepEqual(lines, want.map((w) => `- ${w}`));
+});
+
+test('cost.md follows the copy rules', () => {
+  const prose = doc
+    .split('\n')
+    .filter((l) => l.trim() && !l.startsWith('|') && !l.startsWith('#'));
+  for (const l of prose) {
+    assert.equal(/[–—;()]/.test(l), false, l);
+    assert.equal(/\p{L}: /u.test(l), false, l);
+    assert.equal(/ - /.test(l), false, l);
+  }
+});
+
+const SCRIPT = join(ROOT, 'service', 'deploy.mjs');
+const WRANGLER = join(SERVICE, 'node_modules', '.bin', 'wrangler');
+const KV = '0123456789abcdef0123456789abcdef';
+const ORIGIN = 'https://agent-ctx.example';
+
+function deploy(args: string[]): { status: number | null; out: string } {
+  const home = mkdtempSync(join(tmpdir(), 'deploy-home-'));
+  try {
+    const env: Record<string, string> = { PATH: process.env.PATH ?? '', HOME: home };
+    const r = spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: 'utf8', timeout: 180000 });
+    return { status: r.status, out: `${r.stdout}${r.stderr}` };
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function withPage(fn: () => void): void {
+  const made = !existsSync(PAGE);
+  if (made) {
+    mkdirSync(dirname(PAGE), { recursive: true });
+    writeFileSync(PAGE, '<!doctype html><title>agent-ctx</title>\n');
+  }
+  try {
+    fn();
+  } finally {
+    if (made) rmSync(dirname(PAGE), { recursive: true, force: true });
+    rmSync(join(ROOT, 'out'), { recursive: true, force: true });
+  }
+}
+
+test('the deploy script refuses a missing page, a local or plain origin and a bad KV id', { skip: !existsSync(WRANGLER) }, () => {
+  if (!existsSync(PAGE)) {
+    const r = deploy(['--origin', ORIGIN, '--kv', KV, '--dry-run']);
+    assert.equal(r.status, 1);
+    assert.equal(r.out.trim(), SAY.page);
+    assert.equal(existsSync(PLUGINS_OUT), false);
+  }
+  withPage(() => {
+    for (const origin of ['http://agent-ctx.example', 'https://localhost:8790', 'https://127.0.0.1', 'https://agent-ctx.example/mcp']) {
+      const r = deploy(['--origin', origin, '--kv', KV, '--dry-run']);
+      assert.equal(r.status, 1, origin);
+      assert.equal(r.out.trim(), SAY.https, origin);
+    }
+    const bad = deploy(['--origin', ORIGIN, '--kv', 'replace-with-the-oauth-kv-namespace-id', '--dry-run']);
+    assert.equal(bad.out.trim(), SAY.kv);
+    assert.equal(deploy(['--origin', ORIGIN]).out.trim(), SAY.usage);
+  });
+});
+
+test('a dry run stamps the plugins and bundles the production Worker with no account', { skip: !existsSync(WRANGLER) }, () => {
+  withPage(() => {
+    const r = deploy(['--origin', ORIGIN, '--kv', KV, '--dry-run']);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /--dry-run: exiting now/);
+    assert.ok(r.out.includes(`Running wrangler deploy --config wrangler.deploy.jsonc --env production --var MCP_RESOURCE:${ORIGIN}/mcp --dry-run`), r.out);
+    assert.ok(r.out.includes(KV), r.out);
+    assert.equal(r.out.includes('localhost'), false, r.out);
+    const manifest = JSON.parse(readFileSync(join(PLUGINS_OUT, 'claude-code', '.claude-plugin', 'plugin.json'), 'utf8'));
+    assert.equal(manifest.mcpServers['agent-ctx'].url, `${ORIGIN}/mcp`);
+    assert.equal(manifest.privacyPolicyUrl, `${ORIGIN}/privacy`);
+    assert.equal(existsSync(join(SERVICE, 'wrangler.deploy.jsonc')), false);
+  });
+});
+
+test('production keeps logs on and traces off, since raw text crosses the object call before redaction', () => {
+  const cfg = JSON.parse(readFileSync(join(SERVICE, 'wrangler.jsonc'), 'utf8')) as { observability: unknown; env: { production: { observability: unknown; vars: Record<string, string> } } };
+  const want = { enabled: true, logs: { enabled: true }, traces: { enabled: false } };
+  assert.deepEqual(cfg.env.production.observability, want);
+  assert.deepEqual(cfg.observability, want);
+  assert.equal(cfg.env.production.vars.REGISTRATIONS_PER_DAY, '150');
+});
+
+const DOC = readFileSync(join(ROOT, 'docs', 'vendors.md'), 'utf8');
+
+function rows(): string[][] {
+  return DOC.split('\n')
+    .filter((l) => l.startsWith('| ') && !l.startsWith('| Product') && !l.startsWith('|---'))
+    .map((l) => l.slice(2, -2).split(' | '));
+}
+
+function redirectForm(uri: string): string {
+  const u = new URL(uri);
+  const loopback = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+  return loopback && !u.port ? `${u.protocol}//${u.hostname}:PORT${u.pathname}` : uri;
+}
+
+test('every vendor fixture has one row that names its document, its file and every redirect it lists', () => {
+  const docs = vendorDocs(join(ROOT, 'service', 'test', 'fixtures', 'vendors'));
+  assert.equal(docs.size, 4);
+  for (const [clientId, v] of docs) {
+    const row = rows().filter((r) => r[1].includes(clientId));
+    assert.equal(row.length, 1, clientId);
+    assert.ok(row[0][1].includes(v.file), `${clientId} names ${v.file}`);
+    for (const uri of v.doc.redirect_uris as string[]) assert.ok(row[0][2].includes(redirectForm(uri)), `${clientId} lists ${uri}`);
+    assert.match(v.file, /^[a-z]+(?:-[a-z]+)*\.\d{4}-\d{2}-\d{2}\.json$/);
+  }
+  const named = rows().filter((r) => r[1].startsWith('Metadata document'));
+  assert.equal(named.length, docs.size);
+});
+
+test('the table keeps four columns and the copy rules', () => {
+  for (const r of rows()) assert.equal(r.length, 4, r.join(' | '));
+  const prose = DOC.replace(/[a-z]+:\/\/\S+/g, '').replace(/`[^`]*`/g, '');
+  assert.doesNotMatch(prose, /[;()–—]|\w: /);
+});
+
+const COPY = [
+  'README.md',
+  'AGENTS.md',
+  'docs/format.md',
+  'docs/cost.md',
+  'docs/vendors.md',
+  'plugins/claude-code/README.md',
+  'plugins/codex/README.md',
+];
+
+function proseLines(text: string): string[] {
+  return text
+    .replace(/^```[^\n]*\n[\s\S]*?^```[ \t]*$/gm, '')
+    .split('\n')
+    .filter((l) => !/^(?: {4}|\t)/.test(l) && !/^\|(?:\s*:?-+:?\s*\|)+$/.test(l))
+    .map((l) => l.replace(/`[^`\n]*`/g, ''));
+}
+
+test('the seven documents have no it, its, itself, dashes, semicolons or parentheses in prose', () => {
+  for (const file of COPY) {
+    for (const line of proseLines(readFileSync(join(ROOT, file), 'utf8'))) {
+      assert.doesNotMatch(line, /\b(?:it|its|itself|it's)\b|[–—;()]/i, `${file} ${line}`);
+    }
+  }
+});
+
+function upstream(): Promise<{ port: number; seen: IncomingHttpHeaders[]; close: () => void }> {
+  return new Promise((done) => {
+    const seen: IncomingHttpHeaders[] = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      res.end('ok');
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as { port: number }).port;
+      done({ port, seen, close: () => server.close() });
+    });
+  });
+}
+
+function hit(port: number, host: string): Promise<number> {
+  return new Promise((done, fail) => {
+    const r = request({ host: '127.0.0.1', port, path: '/mcp', method: 'POST', headers: { host, origin: 'http://evil.example' } }, (res) => {
+      res.resume();
+      res.on('end', () => done(res.statusCode ?? 0));
+    });
+    r.on('error', fail);
+    r.end('{}');
+  });
+}
+
+test('the relay adds the bearer token and passes a foreign Host and Origin through unchanged', async () => {
+  const up = await upstream();
+  const gate = await withToken('tok-123', { host: '127.0.0.1', port: up.port });
+  try {
+    assert.equal(await hit(gate.port, `localhost:${gate.port}`), 200);
+    assert.equal(await hit(gate.port, 'evil.example'), 200);
+    assert.equal(up.seen[0].authorization, 'Bearer tok-123');
+    assert.equal(up.seen[0].host, `127.0.0.1:${up.port}`);
+    assert.equal(up.seen[1].host, 'evil.example');
+    assert.equal(up.seen[1].origin, 'http://evil.example');
+  } finally {
+    await gate.close();
+    up.close();
+  }
+});
+
+test('the baseline gives one reason for every entry and runs both requirement sets', () => {
+  assert.deepEqual(REVISIONS, ['2025-11-25', '2026-07-28']);
+  const lines = readFileSync(BASELINE, 'utf8').trim().split('\n');
+  assert.equal(lines[0], 'server:');
+  for (const l of lines.slice(1)) assert.match(l, /^  - [a-z0-9-]+(?::[a-z0-9-]+)? # \S.+$/, l);
 });
