@@ -212,10 +212,10 @@ function balance(corners: Vector3[], aspect: number): number {
 
 export function layout({ projects, agents, items, reads, aspect }: LayoutInput): Omit<Layout, 'placed'> & { base: Omit<Placed, 'h' | 'shown' | 'y0'>[] } {
   const keys = projects.map((p) => p.key);
-  for (const it of items) if (!keys.includes(it.project)) keys.push(it.project);
+  for (const it of items) if (!keys.includes(it.project) && (it.project || it.kind !== 'rule')) keys.push(it.project);
   if (!keys.length) keys.push('');
   const byProject = new Map<string, Item[]>(keys.map((k) => [k, []]));
-  for (const it of items) byProject.get(it.project)!.push(it);
+  for (const it of items) byProject.get(it.kind === 'rule' && !it.project ? keys[0] : it.project)!.push(it);
   const tiles = keys.map((k) => tile(byProject.get(k)!.filter(inDistrict), agents));
   const rulesOf = keys.map((k) => byProject.get(k)!.filter(ruleShown).sort((a, b) => a.created - b.created));
   const posts = tiles.map((t, i) => {

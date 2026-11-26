@@ -210,6 +210,7 @@ export default function Scene({ projects, agents, items, reads, time, span, focu
       data-flat={flat}
       data-outlines={outlines}
       data-pins={view.placed.filter((p) => p.shown && p.item.pinned && p.look !== 'cap').length}
+      data-links={view.links.filter((l) => l.at <= time).length}
       data-ready={ready ? '1' : '0'}
       onKeyDown={onKey}
       onPointerDown={() => onHold(true)}
