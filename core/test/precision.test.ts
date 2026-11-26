@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { measure, reachable, run, SETS, SET2B } from './precision.ts';
+import { measure, reachable, run, SETS, SET2B, SET_LANG } from './precision.ts';
 import { loadVectors, runHybrid } from './vectors.ts';
 import { ITEMS, PROJECTS, QUERIES } from './corpus.ts';
 import * as two from './corpus2.ts';
@@ -68,4 +68,9 @@ test('on the tool path the right card stays reachable on the tuning sets', () =>
   const twoB = reachable(SET2B);
   assert.ok(two >= 0.96, String(two));
   assert.ok(twoB >= 0.85, String(twoB));
+});
+
+test('recall finds cards written in six languages and stays quiet on their chat lines', () => {
+  const s = measure(run(SET_LANG));
+  assert.ok(s.found >= 0.98 && s.empty_correct >= 0.98 && s.precision_at_3 >= 0.62, JSON.stringify(s));
 });
