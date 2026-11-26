@@ -4,9 +4,10 @@ import { Hono } from 'hono';
 import { api } from './api.ts';
 import { auth, escape, who, type AppEnv } from './auth.ts';
 import { mcpHandler } from './mcp.ts';
-import { CLIENT_TTL, OPEN_ROUTES } from './open.ts';
+import { CLIENT_TTL, REGISTRATIONS_FULL, SLOW_DOWN, limiterFor, registrationCap } from './open.ts';
 
 export { Person } from './person.ts';
+export { Registry } from './registry.ts';
 
 const app = new Hono<AppEnv>();
 
@@ -23,8 +24,6 @@ app.get('/', async (c) => {
 
 app.notFound((c) => c.text('Not found.', 404));
 
-const SLOW_DOWN = 'Too many requests from this address. Wait a minute and try again.';
-
 const provider = new OAuthProvider<Env>({
   apiRoute: '/mcp',
   apiHandler: { fetch: (request: Request, e: Env, ctx: ExecutionContext) => mcpHandler(request, e, ctx) },
@@ -39,13 +38,19 @@ const provider = new OAuthProvider<Env>({
   accessTokenTTL: 86400,
   refreshTokenIdleTTL: 30 * 86400,
   clientRegistrationTTL: CLIENT_TTL,
+  clientRegistrationCallback: async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    if (await env.REGISTRY.getByName('registrations').admit(day, registrationCap(env.REGISTRATIONS_PER_DAY))) return;
+    return { code: 'temporarily_unavailable', description: REGISTRATIONS_FULL, status: 503 };
+  },
 });
 
 export default {
   async fetch(request: Request, e: Env, ctx: ExecutionContext): Promise<Response> {
-    if (OPEN_ROUTES.has(new URL(request.url).pathname)) {
+    const limiter = limiterFor(e, new URL(request.url).pathname);
+    if (limiter) {
       const key = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-      const { success } = await e.OPEN_LIMIT.limit({ key });
+      const { success } = await limiter.limit({ key });
       if (!success) return new Response(SLOW_DOWN, { status: 429, headers: { 'Retry-After': '60', 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     return provider.fetch(request, e, ctx);

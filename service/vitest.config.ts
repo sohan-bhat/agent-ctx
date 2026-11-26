@@ -24,7 +24,7 @@ export default defineConfig({
           GITHUB_CLIENT_ID: github.clientId,
           GITHUB_CLIENT_SECRET: github.clientSecret,
           DEV_LOGIN: '1',
-          ...(load ? { LOAD_PEOPLE: process.env.LOAD_PEOPLE ?? '1000', LOAD_PLANT: process.env.LOAD_PLANT ?? '' } : {}),
+          ...(load ? { LOAD_PEOPLE: process.env.LOAD_PEOPLE ?? '1000', LOAD_PLANT: process.env.LOAD_PLANT ?? '', REGISTRATIONS_PER_DAY: '1000000' } : {}),
         },
         outboundService: service,
       },
