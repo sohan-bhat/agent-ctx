@@ -39,3 +39,31 @@ test('the table keeps four columns and the copy rules', () => {
   const prose = DOC.replace(/[a-z]+:\/\/\S+/g, '').replace(/`[^`]*`/g, '');
   assert.doesNotMatch(prose, /[;()–—]|\w: /);
 });
+
+const COPY = [
+  'README.md',
+  'AGENTS.md',
+  'docs/format.md',
+  'docs/cost.md',
+  'docs/vendors.md',
+  'plugins/src/claude-code/README.md',
+  'plugins/src/codex/README.md',
+  'plugins/claude-code/README.md',
+  'plugins/codex/README.md',
+];
+
+function proseLines(text: string): string[] {
+  return text
+    .replace(/^```[^\n]*\n[\s\S]*?^```[ \t]*$/gm, '')
+    .split('\n')
+    .filter((l) => !/^(?: {4}|\t)/.test(l) && !/^\|(?:\s*:?-+:?\s*\|)+$/.test(l))
+    .map((l) => l.replace(/`[^`\n]*`/g, ''));
+}
+
+test('the nine documents have no it, its, itself, dashes, semicolons or parentheses in prose', () => {
+  for (const file of COPY) {
+    for (const line of proseLines(readFileSync(join(ROOT, file), 'utf8'))) {
+      assert.doesNotMatch(line, /\b(?:it|its|itself|it's)\b|[–—;()]/i, `${file} ${line}`);
+    }
+  }
+});
