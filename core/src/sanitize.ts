@@ -80,7 +80,7 @@ export function sanitize(text: string): { text: string; flags: Flag[] } {
   s = swap(s, COMMENT, '', 'markup', flags);
   s = swap(s, BAD_LINK, '$1', 'markup', flags);
   s = swap(s, BAD_REF, '$1', 'markup', flags);
-  s = swap(s, ROLE_LINE, '$1$2', 'role', flags);
+  s = swap(s, ROLE_LINE, '$1$2', 'markup', flags);
   s = unwrap(s, ROLE_TAG, flags);
   s = unwrap(s, LOWER_TAG, flags);
   s = unwrap(s, PIPE_TAG, flags);
