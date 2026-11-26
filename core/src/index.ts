@@ -7,5 +7,6 @@ export * from './rules.ts';
 export * from './rank.ts';
 export * from './recall.ts';
 export * from './fold.ts';
+export * from './synonyms.ts';
 export { redact, hasSecret, DROPPED } from './redact.ts';
 export { tokens } from './text.ts';
