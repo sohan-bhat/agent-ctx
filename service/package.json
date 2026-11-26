@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler types --include-runtime=false --strict-vars=false && tsc -p tsconfig.json && tsc -p test/tsconfig.json",
     "load": "LOAD=1 vitest run --reporter=verbose",
-    "conformance": "node ../test-e2e/conformance.mjs"
+    "conformance": "node ../test-e2e/conformance.mjs",
+    "month": "MONTH=1 vitest run --reporter=verbose"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.4.0",
