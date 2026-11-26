@@ -142,6 +142,10 @@ test('a long prompt passes on absolute evidence however many words no card holds
 
 test('a long prompt with fewer than three matched terms returns nothing', () => {
   assert.deepEqual(rankItems(spread, `${FILLER}, something about the badge on the monitor`, NOW), []);
+  const wide = [...spread, ...Array.from({ length: 12 }, (_, k) => card(`w${k}`, `unrelated chores number ${k}`, 20 + k))];
+  const long = `${FILLER}, my coworker brought up the thermal labels yesterday at standup`;
+  assert.deepEqual(rankItems(wide, long, NOW), []);
+  assert.deepEqual(rankItems(wide, `${long} and the badge`, NOW).map((h) => h.item.id), ['s01']);
 });
 
 test('a long prompt that brushes many cards lightly returns nothing', () => {
@@ -177,8 +181,11 @@ test('a synonym matches at a lower weight than the word itself', () => {
   const pool = [card('a', 'Login loop on the dashboard', 3), card('b', 'Authentication timeout on the dashboard', 3), card('c', 'unrelated card', 3), card('d', 'another unrelated card', 3)];
   const hits = rankItems(pool, 'sign in loop', NOW);
   assert.equal(hits[0]?.item.id, 'a');
-  const syn = rankItems([card('x', 'Authentication timeout', 3), card('y', 'Login timeout', 3), card('z', 'other', 3), card('w', 'more', 3)], 'login timeout', NOW);
-  assert.equal(syn[0].item.id, 'y');
+  const rest = [card('z', 'Roster export for leaders', 3), card('w', 'Weekly meetings', 3), card('v', 'Room booking clash', 3)];
+  const bySyn = rankItems([card('x', 'Authentication timeout', 3), ...rest], 'login timeout', NOW);
+  const byWord = rankItems([card('y', 'Login timeout', 3), ...rest], 'login timeout', NOW);
+  assert.deepEqual([bySyn[0]?.item.id, byWord[0]?.item.id], ['x', 'y']);
+  assert.ok(bySyn[0].score < byWord[0].score);
 });
 
 test('a card must stand out from the median of every card with any match', () => {
