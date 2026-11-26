@@ -10,25 +10,20 @@ export function since(t: number, now = Date.now()): string {
   return `${Math.floor(d / 30)}mo`;
 }
 
-const two = (n: number) => String(n).padStart(2, '0');
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const DAY = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const STAMP = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
-export function clock(t: number): string {
-  const d = new Date(t);
-  return `${two(d.getHours())}:${two(d.getMinutes())}`;
-}
+export const clock = (t: number) => CLOCK.format(t);
+export const day = (t: number) => DAY.format(t);
+export const stamp = (t: number) => STAMP.format(t);
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-export function day(t: number): string {
-  const d = new Date(t);
-  return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, ' ')}`;
-}
-
-export function stamp(t: number): string {
-  return `${day(t)} ${clock(t)}`;
-}
+const MB = [0, 1, 2].map((d) => new Intl.NumberFormat(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }));
 
 export function megabytes(bytes: number): string {
   const v = bytes / (1024 * 1024);
-  return v >= 10 ? String(Math.round(v)) : v >= 0.1 || v === 0 ? v.toFixed(1) : v.toFixed(2);
+  return (v >= 10 ? MB[0] : v >= 0.1 || v === 0 ? MB[1] : MB[2]).format(v);
 }
+
+const COUNT = new Intl.NumberFormat();
+export const count = (n: number) => COUNT.format(n);

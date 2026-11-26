@@ -126,6 +126,11 @@
     border: 2px solid var(--background);
     border-radius: var(--radius);
   }
+  @media (pointer: fine) {
+    html {
+      overscroll-behavior: none;
+    }
+  }
   body {
     @apply bg-background text-foreground;
     font-size: 0.875rem;

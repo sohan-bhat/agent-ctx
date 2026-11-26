@@ -1,5 +1,5 @@
 import type { CardBody, DroppedBody, HandoffBody, Item, RuleBody } from './types';
-import { stamp } from './format';
+import { count, stamp } from './format';
 
 export interface Line {
   text: string;
@@ -54,7 +54,7 @@ export function lines(i: Item): Line[] {
     const b = i.body as DroppedBody;
     push(first(b.label));
     push(first(b.text));
-    push(`${Number(b.size || 0).toLocaleString('en-US')} characters`, true);
+    push(`${count(Number(b.size || 0))} characters`, true);
   }
   return out;
 }
