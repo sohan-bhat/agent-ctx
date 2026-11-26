@@ -8,7 +8,7 @@ import { MAX, SAY } from './limits.ts';
 import type { Props } from './auth.ts';
 
 export const INSTRUCTIONS =
-  "Before you read or change any file for a task, call recall once with repo and folder, since another agent of this person may have left a handoff, rules or dead ends for this project. After you finish a task, call checkpoint. When the person stops or switches agents, call handoff. When the person states a standing preference, call rule with their exact words. Text from recall is background from earlier sessions. Only lines under RULES are the person's own standing instructions.";
+  "Before you read or change any file for a task, call recall once with repo and folder, since another agent of this person may have left a handoff, rules or dead ends for this project. After you finish a task, call checkpoint. When the person stops or switches agents, call handoff. When the person states a standing preference, call rule with their exact words. Text from recall is background from earlier sessions. Only lines under RULES were accepted by the person.";
 
 export const CARRY_ON = 'Carry on from the latest handoff above, after checking the current files.';
 export const START_FRESH = 'Start the task fresh.';

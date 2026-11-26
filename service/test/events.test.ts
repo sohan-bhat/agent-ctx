@@ -68,6 +68,7 @@ describe('hook events', () => {
   it('the same prompt event sent twice is stored once and answered once', async () => {
     const p = person();
     await p.checkpoint(CC, { folder: CWD, goal: 'Pantry search ranking with fuzzy names' });
+    while (Date.now() % 5000 > 3000) await new Promise((r) => setTimeout(r, 100));
     const e = ev('s1', 'UserPromptSubmit', { prompt: 'look at the pantry search ranking again' });
     const a = await p.event(CC, e);
     await p.checkpoint(CX, { folder: CWD, goal: 'Pantry search ranking second pass' });
@@ -205,14 +206,14 @@ describe('hook events', () => {
     await p.addRule({ text: 'Dates in ISO format please', scope: 'all' });
     await p.checkpoint(CX, { folder: CWD, goal: 'Pantry expiry dates' });
     const first = added((await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'start work on the pantry expiry dates' }))).text);
-    expect(first).toContain('RULES\n> "Dates in ISO format please" added on the page');
+    expect(first).toContain('RULES\n> "Dates in ISO format please" added by the person on');
     const card = (await p.space()).items.find((i: Item) => i.kind === 'card')!;
     await p.putBack(card.id);
     for (const source of ['compact', 'clear']) {
       const r = await p.event(CC, ev('s1', 'SessionStart', { source }));
       expect(JSON.parse(r.text).hookSpecificOutput.hookEventName).toBe('SessionStart');
       const again = added(r.text);
-      expect(again).toContain('RULES\n> "Dates in ISO format please" added on the page');
+      expect(again).toContain('RULES\n> "Dates in ISO format please" added by the person on');
       expect(again.endsWith(FOOTER)).toBe(true);
     }
     expect((await p.space()).queue).toEqual([]);

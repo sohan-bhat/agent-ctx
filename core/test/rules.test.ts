@@ -59,6 +59,8 @@ test('ruleLine prints the text only when the words are empty', () => {
 test('turning a rule off and on never changes its line', () => {
   const b: RuleBody = { text: 'agent text that differs', words: 'keep every label under forty characters', scope: 'all', status: 'active', proof: 'hook' };
   const before = ruleLine(b);
-  assert.equal(ruleLine({ ...b, status: 'off' }), before);
-  assert.equal(ruleLine({ ...readRule(b), status: 'active', proof: 'page' }), before);
+  const off: RuleBody = { ...b, status: 'off' };
+  const on: RuleBody = { ...readRule(b), status: 'active', proof: 'page' };
+  assert.equal(ruleLine(off), before);
+  assert.equal(ruleLine(on), before);
 });

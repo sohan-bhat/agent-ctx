@@ -42,7 +42,7 @@ describe('a rule the person confirms inside the agent', () => {
     const [rule] = await rules(jar);
     expect(rule).toMatchObject({ status: 'active', proof: 'elicit', line: `"${WORDS}"` });
     const other = await mcp((await connect(jar, 'claude-code')).access);
-    expect((await call(other, 'recall', { folder: '/work/pantry' })).text).toContain(`RULES\n> "${WORDS}" said in`);
+    expect((await call(other, 'recall', { folder: '/work/pantry' })).text).toContain(`RULES\n> "${WORDS}" accepted by the person in unverified Test Agent on`);
   });
 
   it('stays pending when the person declines, cancels or unticks the box', async () => {

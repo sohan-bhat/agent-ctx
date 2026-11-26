@@ -39,7 +39,7 @@ describe('a call that names no project', () => {
     for (const w of NOWHERE) {
       const first = await p.recall(B, w);
       expect(first.noProject).toBe(true);
-      expect(first.text).toContain('RULES\n> "Write dates in ISO form" added on the page');
+      expect(first.text).toContain('RULES\n> "Write dates in ISO form" added by the person on');
       expect(first.text.endsWith(`${FOOTER}\n\n${SAY.placeRead}`)).toBe(true);
       expect(first.text).not.toMatch(/Kiln|HANDOFF|EARLIER|PUT BACK/);
       expect(await p.recall(B, { ...w, query: 'kiln card leak' })).toEqual({ ok: true, text: SAY.placeRead, noProject: true });

@@ -81,6 +81,6 @@ describe('hooks through the event tool', () => {
     expect((await api(`/api/rules/${rule.id}`, { method: 'POST', headers: { Cookie: cc.jar.header(), Origin: ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'active', line: rule.line }) })).status).toBe(200);
     const out = context((await send('SessionStart', { source: 'clear' })).text);
     expect(out.event).toBe('SessionStart');
-    expect(out.added).toContain('RULES\n> "always label shelves with dates" added on the page');
+    expect(out.added).toContain('RULES\n> "always label shelves with dates" proposed in Claude Code, accepted by the person on');
   });
 });

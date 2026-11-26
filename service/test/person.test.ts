@@ -141,7 +141,7 @@ describe('page methods', () => {
     expect((await p.pin(c.item!.id, true))?.pinned).toBe(true);
     const rule = await p.addRule({ text: 'Use metric units in every glaze note', scope: 'all' });
     expect((rule.item!.body as RuleBody)).toMatchObject({ status: 'active', proof: 'page' });
-    expect((await p.recall(B, LOOM)).text).toContain('"Use metric units in every glaze note" added on the page');
+    expect((await p.recall(B, LOOM)).text).toContain('"Use metric units in every glaze note" added by the person on');
     expect(((await p.setRule(rule.item!.id, 'off')) as Item).body as RuleBody).toMatchObject({ status: 'off' });
     expect((await p.recall(B, LOOM)).text).not.toContain('metric units');
     await p.checkpoint(A, { ...LOOM, goal: 'Loom card' });
