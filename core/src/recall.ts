@@ -1,7 +1,8 @@
 import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, cut } from './caps.ts';
 import type { CardBody, DroppedBody, HandoffBody, Item, RuleBody } from './model.ts';
 import { projectName } from './project.ts';
-import { namedProjects, namesOf, rankItems, recent } from './rank.ts';
+import { rankHybrid, type HybridSettings } from './hybrid.ts';
+import { namedProjects, namesOf, recent } from './rank.ts';
 import { ruleLine } from './rules.ts';
 
 export interface RecallInput {
@@ -16,6 +17,10 @@ export interface RecallInput {
   now: number;
   live?: string[];
   once?: boolean;
+  vectors?: Map<string, Int8Array>;
+  queryVector?: Int8Array | null;
+  namedVectors?: Map<string, Int8Array>;
+  hybrid?: Partial<HybridSettings>;
 }
 export interface RecallOutput { text: string; delivered: string[] }
 
@@ -158,6 +163,13 @@ function stripNames(query: string, names: string[]): string {
   return q.trim();
 }
 
+export function namedQueries(query: string, projects: { key: string; names: string[] }[], current: string): { key: string; query: string }[] {
+  return namedProjects(query, projects ?? [], current).map((key) => {
+    const entry = (projects ?? []).find((p) => p.key === key);
+    return { key, query: stripNames(query, entry ? namesOf(entry) : []) };
+  });
+}
+
 function render(header: string, sections: Section[], cap: number): RecallOutput {
   const lines: string[] = [header];
   let used = header.length + 2 + FOOTER.length;
@@ -226,16 +238,16 @@ export function recall(input: RecallInput): RecallOutput {
       earlier.push(block(i));
     }
   } else {
-    const named = namedProjects(query, input.projects ?? [], project);
-    for (const h of rankItems(pool(project), query, now).slice(0, 3)) {
+    const vectors = input.vectors ?? new Map<string, Int8Array>();
+    const qv = input.queryVector ?? null;
+    for (const h of rankHybrid(pool(project), vectors, query, qv, now, input.hybrid).slice(0, 3)) {
       shown.add(h.item.id);
       earlier.push(block(h.item));
     }
-    for (const key of named) {
-      const entry = (input.projects ?? []).find((p) => p.key === key);
-      const q = stripNames(query, entry ? namesOf(entry) : []);
+    for (const { key, query: q } of namedQueries(query, input.projects ?? [], project)) {
       const where = ` in ${nameOf(key, 'another-project')}`;
-      for (const h of rankItems(pool(key), q, now).slice(0, 2)) {
+      const nv = input.namedVectors?.get(key) ?? qv;
+      for (const h of rankHybrid(pool(key), vectors, q, nv, now, { ...input.hybrid, max: 2 }).slice(0, 2)) {
         if (shown.has(h.item.id)) continue;
         shown.add(h.item.id);
         earlier.push(block(h.item, where));
