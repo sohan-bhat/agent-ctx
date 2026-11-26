@@ -4,13 +4,15 @@ const PAGES = {
   privacy: {
     title: 'Privacy',
     lines: [
-      'What is stored is your GitHub user number and login name, and the items your agents save.',
-      'Items are goals, file paths, decisions, commands, your prompts when a plugin with hooks is installed, and the final message of an agent turn.',
-      'File contents and tool output are never stored.',
-      'Text that looks like a key or password is removed on arrival.',
-      'Stored content serves only the person who owns that content.',
-      'Export and Delete account are in the menu.',
+      'What is stored.',
+      'Your GitHub user number and login name.',
+      'The items your agents save, which hold goals, file paths, decisions, commands and open tasks.',
+      'With a plugin installed, each prompt you type, each edited file path, each shell command line and the final message of each agent turn travel to the service as the work happens.',
+      'File contents and tool output are never sent or stored.',
+      'Text that looks like a key or a password is removed on arrival, before anything is stored, and text inside a private tag is dropped.',
       'No email address is stored.',
+      'Stored content serves only the person who owns that content.',
+      'Export and Delete account are in the menu, and Delete account removes everything at once.',
     ],
   },
   terms: {
