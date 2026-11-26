@@ -1,27 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { api, isMock } from '@/lib/api';
 import type { Me } from '@/lib/types';
 import { navigate, usePath } from '@/router';
-import { Legal } from '@/views/Legal';
-import { SignedIn } from '@/views/SignedIn';
 import { SignedOut } from '@/views/SignedOut';
 import { preloadScene } from '@/views/Space';
+
+const loadSignedIn = () => import('@/views/SignedIn');
+const SignedIn = lazy(() => loadSignedIn().then((m) => ({ default: m.SignedIn })));
+const Legal = lazy(() => import('@/views/Legal').then((m) => ({ default: m.Legal })));
+const blank = <div className="h-dvh" aria-busy="true" />;
 
 function Home() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const check = useCallback(() => {
     api
       .me()
-      .then(setMe)
+      .then((m) => {
+        if (m) void loadSignedIn();
+        setMe(m);
+      })
       .catch(() => setMe(null));
   }, []);
   useEffect(() => {
     preloadScene();
     check();
   }, [check]);
-  if (me === undefined) return <div className="h-dvh" aria-busy="true" />;
+  if (me === undefined) return blank;
   if (!me) return <SignedOut />;
-  return <SignedIn me={me} onSignedOut={() => setMe(null)} />;
+  return (
+    <Suspense fallback={blank}>
+      <SignedIn me={me} onSignedOut={() => setMe(null)} />
+    </Suspense>
+  );
 }
 
 function MockSession({ on }: { on: boolean }) {
@@ -37,8 +47,12 @@ function MockSession({ on }: { on: boolean }) {
 
 export function App() {
   const path = usePath();
-  if (path === '/privacy') return <Legal page="privacy" />;
-  if (path === '/terms') return <Legal page="terms" />;
+  if (path === '/privacy' || path === '/terms')
+    return (
+      <Suspense fallback={blank}>
+        <Legal page={path === '/privacy' ? 'privacy' : 'terms'} />
+      </Suspense>
+    );
   if (isMock && path === '/login') return <MockSession on />;
   if (isMock && path === '/logout') return <MockSession on={false} />;
   return <Home key={path} />;
