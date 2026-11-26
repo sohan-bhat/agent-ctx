@@ -69,6 +69,7 @@ export function SignedOut() {
           end={DEMO_END}
           time={time}
           clockOnly
+          segments={false}
           label="Demo of the shared space, one day of work by three agents"
           onTime={(t) => setTime(t)}
           onHold={onHold}

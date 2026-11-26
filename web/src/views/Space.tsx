@@ -78,9 +78,10 @@ export interface SpaceProps {
   onHold?: (holding: boolean) => void;
   onPanel?: (open: boolean) => void;
   prefer?: string | null;
+  segments?: boolean;
 }
 
-export function Space({ projects, agents, items, queue, start, end, time, clockOnly = false, actions, notice, aside, label, onTime, onHold, onPanel, prefer = null }: SpaceProps) {
+export function Space({ projects, agents, items, queue, start, end, time, clockOnly = false, actions, notice, aside, label, onTime, onHold, onPanel, prefer = null, segments = true }: SpaceProps) {
   const narrow = useNarrow();
   const webgl = useMemo(hasWebGL, []);
   const [ready, setReady] = useState(false);
@@ -128,7 +129,7 @@ export function Space({ projects, agents, items, queue, start, end, time, clockO
   const readout = clockOnly ? clock(time) : stamp(time);
   return (
     <div className="flex size-full min-h-0 flex-col">
-      {projects.length > 1 && (
+      {segments && projects.length > 1 && (
         <ToggleGroup type="single" variant="outline" spacing={0} value={focus ?? 'all'} onValueChange={(v) => {
             chose.current = true;
             setFocus(!v || v === 'all' ? null : v);
