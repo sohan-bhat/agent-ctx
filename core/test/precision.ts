@@ -8,7 +8,6 @@ import * as twoB from './corpus2b.ts';
 import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
 import * as lang from './corpus-lang.ts';
-import * as lang2 from './corpus-lang2.ts';
 
 export interface Labelled { q: string; project: string; kind: string; want: string[] }
 export interface TestSet { items: Item[]; queries: Labelled[]; projects: { key: string; names: string[] }[]; now: number }
@@ -61,7 +60,7 @@ export function measure(rows: Row[] = run()): Score {
 
 export const SET_LANG: TestSet = { items: lang.ITEMS, queries: lang.QUERIES, projects: lang.PROJECTS, now: lang.NOW };
 
-export const SET_LANG2: TestSet = { items: lang2.ITEMS, queries: lang2.QUERIES, projects: lang2.PROJECTS, now: lang2.NOW };
+export const SET_LANG2: TestSet = { items: lang.SECOND.items, queries: lang.SECOND.queries, projects: lang.SECOND.projects, now: lang.SECOND.now };
 
 export const SET_LANG3: TestSet = { items: lang.THIRD.items, queries: lang.THIRD.queries, projects: lang.THIRD.projects, now: lang.THIRD.now };
 
@@ -116,8 +115,8 @@ if (isMain()) {
   console.log(`lang2_precision_at_3 ${s2.precision_at_3.toFixed(2)}`);
   console.log(`lang2_empty_correct ${s2.empty_correct.toFixed(2)}`);
   console.log(`lang2_found ${s2.found.toFixed(2)}`);
-  for (const code of lang2.LANGS) {
-    const own = rows2.filter((r) => (r.query as lang2.Lang2Query).lang === code);
+  for (const code of lang.SECOND.langs) {
+    const own = rows2.filter((r) => r.query.project === lang.SECOND.projects[lang.SECOND.langs.indexOf(code)].key);
     console.log(`lang2_${code}_precision_at_3 ${measure(own).precision_at_3.toFixed(2)}`);
   }
   const rows3 = run(SET_LANG3);
