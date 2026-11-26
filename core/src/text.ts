@@ -31,8 +31,12 @@ const MARK = /^\p{M}$/u;
 const UNSPACED = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\u30FC]$/u;
 const ASCII = /^[a-z0-9]+$/;
 
+const STACK = /\p{M}{9,}/gu;
+const MARKS_KEPT = 8;
+
 function fold(text: string): string {
-  return text.normalize('NFKD').replace(FOLDED, '$1').normalize('NFC').toLowerCase();
+  const capped = text.replace(STACK, (m) => [...m].slice(0, MARKS_KEPT).join(''));
+  return capped.normalize('NFKD').replace(FOLDED, '$1').normalize('NFC').toLowerCase();
 }
 
 function word(w: string, out: string[]): void {

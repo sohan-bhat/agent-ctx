@@ -99,3 +99,11 @@ test('stop words, the stemmer and short words apply to ASCII words only', () => 
   assert.deepEqual(tokens('las reservas'), ['las', 'reserva']);
   assert.deepEqual(tokens('a ب c'), []);
 });
+
+test('a run of more than eight marks keeps only eight, so normalizing stays fast', () => {
+  const ka = String.fromCodePoint(0x915);
+  const i = String.fromCodePoint(0x93f);
+  const ta = String.fromCodePoint(0x924);
+  assert.deepEqual(tokens(ka + i.repeat(20) + ta), tokens(ka + i.repeat(8) + ta));
+  assert.notDeepEqual(tokens(ka + i.repeat(8) + ta), tokens(ka + i.repeat(7) + ta));
+});

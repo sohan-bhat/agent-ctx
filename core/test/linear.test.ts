@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import { sanitize, stripOwn, stripPrivate } from '../src/sanitize.ts';
 import { redact } from '../src/redact.ts';
+import { tokens } from '../src/text.ts';
 
 const K = 8192;
 const BAR = 20;
@@ -161,4 +162,41 @@ test('2,000 random 8 KB strings run under 20 ms in every call', (t) => {
     }
   }
   report(t, 'random', worst, where);
+});
+
+const cp = (code: number) => String.fromCodePoint(code);
+const SCRIPTS: [string, string][] = [
+  ['han run', fill('', '\u5728\u5EAB')],
+  ['kana run', fill('', '\u30B5\u30FC\u30D0\u30FC')],
+  ['thai run', fill('', '\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35')],
+  ['devanagari run', fill('', '\u092D\u0941\u0917\u0924\u093E\u0928')],
+  ['arabic run', fill('', '\u0627\u0644\u0645\u0648\u0627\u0639\u064A\u062F')],
+  ['stacked marks of one class', fill('a', cp(0x301))],
+  ['stacked marks of mixed classes', fill('a', cp(0x301) + cp(0x316) + cp(0x334) + cp(0x345))],
+  ['marks on han', fill('\u5728', cp(0x301) + cp(0x316))],
+  ['script switch every letter', fill('', 'a\u5728')],
+  ['script switch with marks', fill('', 'a' + cp(0x301) + '\u5728' + cp(0x316))],
+  ['hangul jamo', fill('', cp(0x1100) + cp(0x1161))],
+  ['camel case', fill('', 'aB')],
+];
+const MIXED = ['a', 'Z', '1', ' ', '\u00E9', 'e\u0301', '\u5728', '\u5EAB', '\u30B5', '\u30FC', '\u3042', '\u0E2A', '\u0E31', '\u092D', '\u0941', '\u0627', '\u064E', '\u0436', '\u03B1', cp(0x301), cp(0x316), cp(0x334), '\uFF21', '\u2163', cp(0x1f600), '-', '_', '.', '\n'];
+
+test('the splitter runs under 20 ms on 8 KB of mixed scripts', (t) => {
+  let worst = 0;
+  let where = '';
+  for (const [name, input] of SCRIPTS) {
+    const ms = timeBest(tokens, input);
+    if (ms > worst) [worst, where] = [ms, name];
+    assert.ok(ms <= BAR, `tokens on ${name} took ${ms.toFixed(1)} ms`);
+  }
+  let seed = 5;
+  const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  for (let k = 0; k < 2000; k++) {
+    let s = '';
+    while (s.length < K) s += MIXED[next() % MIXED.length];
+    const ms = timeBest(tokens, s.slice(0, K));
+    if (ms > worst) [worst, where] = [ms, `random seed ${k}`];
+    assert.ok(ms <= BAR, `tokens on random seed ${k} took ${ms.toFixed(1)} ms`);
+  }
+  report(t, 'splitter', worst, where);
 });
