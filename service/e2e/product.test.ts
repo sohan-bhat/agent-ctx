@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, request, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { cleanOrigin, currentOrigin, NAMES, PLUGINS, stamp } from '../../plugins/stamp.mjs';
@@ -170,6 +170,22 @@ test('the Claude Code hooks cover the planned events and nothing else', () => {
     for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']) assert.equal(matchers.filter((m) => m.split('|').includes(tool)).length, 1, tool);
     for (const [, g] of all) assert.equal(/agent.?ctx|mcp__/i.test(g.matcher ?? ''), false, g.matcher);
     assert.deepEqual(all.find(([e]) => e === 'SessionStart')?.[1].matcher, 'clear|compact');
+  });
+});
+
+test('the Codex manifest names the hooks file that the other tests read', () => {
+  eachCopy((dir) => {
+    const folder = join(dir, 'codex');
+    const ext = read(join(folder, 'plugin.json')).extensions as Record<string, { hooks?: unknown }> | undefined;
+    const path = ext?.['com.openai']?.hooks;
+    assert.equal(typeof path, 'string', JSON.stringify(ext));
+    const named = path as string;
+    assert.ok(named.startsWith('./'), named);
+    assert.equal(named.split(/[\\/]/).includes('..'), false, named);
+    const file = resolve(folder, named);
+    assert.ok(file.startsWith(folder + sep), named);
+    assert.ok(existsSync(file) && statSync(file).isFile(), named);
+    assert.equal(file, join(dir, HOOKS.codex), named);
   });
 });
 
