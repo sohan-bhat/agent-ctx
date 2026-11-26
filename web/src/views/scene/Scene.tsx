@@ -161,6 +161,21 @@ export default function Scene({ projects, agents, items, time, span, narrow, foc
     }
   };
 
+  useEffect(() => {
+    if (import.meta.env.MODE !== 'mock') return;
+    const w = window as unknown as { __space?: { spots: () => { id: string; look: string; x: number; y: number; area: number }[] } };
+    w.__space = {
+      spots: () =>
+        shownList().map((p) => {
+          const [x, y] = api.current?.project(p) ?? [0, 0];
+          return { id: p.id, look: p.look, x, y, area: p.w * p.d };
+        }),
+    };
+    return () => {
+      delete w.__space;
+    };
+  });
+
   const hovered = hover ? byId.get(hover) : undefined;
   const blocks = view.placed.filter((p) => p.shown && (p.look === 'solid' || p.look === 'post')).length;
   const flat = view.placed.filter((p) => p.shown && p.look === 'flat').length;
@@ -177,6 +192,7 @@ export default function Scene({ projects, agents, items, time, span, narrow, foc
       data-blocks={blocks}
       data-flat={flat}
       data-outlines={outlines}
+      data-pins={view.placed.filter((p) => p.shown && p.item.pinned && p.look !== 'cap').length}
       data-ready={ready ? '1' : '0'}
       onKeyDown={onKey}
       onPointerDown={() => onHold(true)}

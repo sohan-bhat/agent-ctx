@@ -19,7 +19,7 @@ export function ItemList({ projects, agents, items, time, visible, onOpen }: { p
           {rows.map(({ name, list }) => (
             <div key={name} className="mb-3">
               <h3 className="num mb-1 text-xs">{name === 'page' ? 'you' : name}</h3>
-              <ul className="grid">
+              <ul className="grid grid-cols-1">
                 {list.map((i) => (
                   <li key={i.id}>
                     <button type="button" className="flex min-h-11 w-full items-baseline gap-3 rounded-sm px-1 text-left hover:bg-accent sm:min-h-8" onClick={() => onOpen(i.id)}>
