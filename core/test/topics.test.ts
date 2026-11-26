@@ -167,3 +167,11 @@ test('with tool false or absent every output over sets 1, 2, 2b, 3 and 4 is byte
     assert.equal(h.digest('hex'), '265f43589fb8b946f6ba3cd206047b2511b85cb23b009295c32ef967ba6072bb', String(tool));
   }
 });
+
+test('long goals and long agent names are cut so twelve topics still fit 1,400 characters', () => {
+  const long = Array.from({ length: 14 }, (_, k) => ({ ...card(`Topic ${k} ` + 'about the harbor gauge calibration and the slow chart '.repeat(3), k + 1), origin: { agent: 'a-very-long-agent-product-name', via: 'tool' as const, source: 'agent' as const, at: NOW - (k + 1) * DAY } }));
+  const out = recall(input({ items: long, query: 'zebra', tool: true }));
+  assert.ok(out.text.length <= TOPIC_CHARS, String(out.text.length));
+  assert.equal(out.topics?.length, TOPICS);
+  assert.match(out.text, /\n\n2 more topics are stored\.\n\n/);
+});
