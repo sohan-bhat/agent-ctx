@@ -199,10 +199,14 @@ auth.get('/login/callback', async (c) => {
   return signIn(c, { person: `gh-${user.id}`, login: user.login.slice(0, 40) }, typeof saved.r === 'string' ? saved.r : '/');
 });
 
-auth.get('/logout', (c) => {
+function signOut(c: AppContext): Response {
   deleteCookie(c, SESSION, { path: '/', secure: true, prefix: 'host' });
   return c.redirect('/', 302);
-});
+}
+
+auth.get('/logout', (c) => signOut(c));
+
+auth.post('/logout', (c) => (sameOrigin(c) ? signOut(c) : plain(403, 'This form only works from this site.')));
 
 auth.get('/authorize', async (c) => {
   const oauth = c.env.OAUTH_PROVIDER;
