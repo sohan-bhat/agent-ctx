@@ -499,11 +499,14 @@ export class Person extends DurableObject<Env> {
       const prompt = val(a.prompt);
       if (!prompt) return '';
       const stripped = stripOwn(stripPrivate(prompt));
-      if (stripped.trim().length < 15) return '';
-      const kept = stripped.length <= 800 ? stripped : cut(stripped, 300);
-      if (!this.addEvent(sid, 'prompt', now, { text: kept })) return '';
-      if (quietPrompt(stripped)) return '';
       const first = !s.primed;
+      const kept = stripped.length <= 800 ? stripped : cut(stripped, 300);
+      if (stripped.trim().length < 15) {
+        if (!first || !stripped.trim() || /^[/!#]/.test(stripped.trim())) return '';
+      } else {
+        if (!this.addEvent(sid, 'prompt', now, { text: kept })) return '';
+        if (quietPrompt(stripped)) return '';
+      }
       const putBack = this.queued(s.project);
       const query = first ? undefined : cleanText(kept).text;
       const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, query, first, once: true, putBack, now });

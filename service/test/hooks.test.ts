@@ -52,6 +52,24 @@ describe('hooks through the event tool', () => {
     expect(r.text).toContain('> next: Stopped by an error. Migrate the shelf table to bins');
   });
 
+  it('the first prompt of a session gets the handoff even when it is one short word', async () => {
+    const cc = await agent('hooks-four', 'claude-code');
+    const send = (event: string, more: Record<string, unknown>) => call(cc.client, 'event', { host: 'claude-code', event, session: 'cc-4', cwd: CWD, ...more });
+    await send('UserPromptSubmit', { prompt: 'Write step one of the three step pantry job' });
+    await send('PostToolUse', { tool: 'Write', file: '/work/pantry/job.txt' });
+    await send('Stop', { message: 'Step one is written.' });
+    const jar = await devSignIn('hooks-four');
+    const codex = await mcp((await connect(jar, 'dcr', ['read', 'write'], 'Codex')).access);
+    const go = (session: string, prompt: string) => call(codex, 'event', { host: 'codex', event: 'UserPromptSubmit', session, cwd: CWD, prompt });
+    const out = context((await go('cx-4', 'continue')).text);
+    expect(out.added).toContain('HANDOFF from Claude Code on');
+    expect(out.added).toContain('> files: /work/pantry/job.txt');
+    expect(await go('cx-4', 'go on')).toEqual({ text: '', isError: false });
+    for (const [session, prompt] of [['cx-5', '/compact'], ['cx-6', '! ls'], ['cx-7', '# a note']]) expect(await go(session, prompt)).toEqual({ text: '', isError: false });
+    const p = env.PERSON.getByName('dev-hooks-four');
+    expect((await sql<{ n: number }>(p, "SELECT COUNT(*) AS n FROM events WHERE session = 'cx-4' AND t = 'prompt'"))[0].n).toBe(0);
+  });
+
   it('the session start after a clear returns the rules and the put back queue', async () => {
     const cc = await agent('hooks-three', 'claude-code');
     const send = (event: string, more: Record<string, unknown>) => call(cc.client, 'event', { host: 'claude-code', event, session: 'cc-3', cwd: CWD, ...more });

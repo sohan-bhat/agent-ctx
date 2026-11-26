@@ -101,11 +101,12 @@ describe('hook events', () => {
     const p = person();
     await p.checkpoint(CC, { folder: CWD, goal: 'Compact the pantry list layout' });
     expect(await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: '/compact the pantry list layout' }))).toEqual({ ok: true, text: '' });
-    expect(await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'ok go on' }))).toEqual({ ok: true, text: '' });
+    expect(await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: '! git status' }))).toEqual({ ok: true, text: '' });
     const rows = await sql<{ text: string }>(p, "SELECT text FROM events WHERE t = 'prompt'");
     expect(rows.map((r) => r.text)).toEqual(['/compact the pantry list layout']);
     const later = await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'now tidy the pantry list layout code' }));
     expect(added(later.text)).toContain('Compact the pantry list layout');
+    expect(await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'ok go on' }))).toEqual({ ok: true, text: '' });
   });
 
   it('each item reaches a session at most once through hooks', async () => {
