@@ -2,6 +2,18 @@ import { browser, context, drag, labels, overflow, pinch, press, ready, server, 
 
 const sizes = (process.env.SIZES ?? '1440x900,390x664,360x640').split(',').map((s) => s.split('x').map(Number));
 const results = [];
+async function fill(page) {
+  await page.waitForTimeout(900);
+  const e = await page.evaluate(() => window.__space?.extent() ?? null);
+  if (!e) return { ok: false, text: 'no extent' };
+  const fw = (e.x1 - e.x0) / e.w;
+  const fh = (e.y1 - e.y0) / e.h;
+  const short = e.w >= e.h ? fh : fw;
+  return { ok: short >= 0.7, text: `width ${(fw * 100).toFixed(0)} percent, height ${(fh * 100).toFixed(0)} percent` };
+}
+
+const shownPlates = (page) => page.evaluate(() => [...document.querySelectorAll('[data-label=plate]')].filter((e) => e.checkVisibility({ visibilityProperty: true })).length);
+
 const check = (name, ok, detail = '') => {
   results.push({ name, ok: !!ok });
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? `  ${detail}` : ''}`);
@@ -20,6 +32,8 @@ async function signedOut(b, url, w, h) {
     }, 10000);
     check(`${tag} signed out scene shows blocks`, s && s.blocks > 0, `blocks ${s?.blocks}`);
     check(`${tag} signed out shows the word demo`, await page.getByText('demo', { exact: true }).isVisible());
+    const f = await fill(page);
+    check(`${tag} demo plates fill the canvas`, f.ok, f.text);
     const box = await page.locator('[aria-roledescription=space]').boundingBox();
     const before = await labels(page);
     await drag(page, touch, cdp, box.x + box.width * 0.82, box.y + box.height * 0.9, box.x + box.width * 0.42, box.y + box.height * 0.9);
@@ -57,6 +71,17 @@ async function signedIn(b, url, w, h) {
     await ready(page);
     await page.waitForTimeout(800);
     const box = await page.locator('[aria-roledescription=space]').boundingBox();
+    const projects = page.locator('[aria-label=Projects]');
+    await projects.getByRole('radio', { name: 'All', exact: true }).click();
+    const all = await fill(page);
+    check(`${tag} All fills the canvas`, all.ok, all.text);
+    await projects.getByRole('radio', { name: 'harbor', exact: true }).click();
+    const one = await fill(page);
+    check(`${tag} one project fills the canvas`, one.ok, one.text);
+    const alone = await shownPlates(page);
+    check(`${tag} only the chosen plate shows`, alone === 1, `${alone} plate names`);
+    await projects.getByRole('radio', { name: 'All', exact: true }).click();
+    await page.waitForTimeout(700);
 
     const id = await openPanel(page, touch);
     check(`${tag} a press on a block opens the panel`, !!id, `item ${id}`);
@@ -131,6 +156,19 @@ async function signedIn(b, url, w, h) {
     check(`${tag} the Rules sheet adds a rule`, r1 === r0 + 1 && (await page.getByText(text).count()) > 0, `${r0} to ${r1}`);
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
+
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await page.getByRole('menuitem', { name: 'Merge projects' }).click();
+    await page.locator('[data-merge=merge-from]').click();
+    await page.getByRole('option', { name: 'field-notes' }).click();
+    await page.locator('[data-merge=merge-into]').click();
+    await page.getByRole('option', { name: 'harbor' }).click();
+    await page.getByRole('button', { name: 'Merge', exact: true }).click();
+    const closedMerge = await waitFor(() => page.evaluate(() => !document.querySelector('[role=dialog]')), 4000);
+    const names = () => page.evaluate(() => [...document.querySelectorAll('[aria-label=Projects] [role=radio]')].map((e) => e.textContent));
+    const merged = closedMerge && (await waitFor(async () => !(await names()).includes('field-notes'), 4000));
+    const left = (await names()).length;
+    check(`${tag} Merge projects folds one project into another`, merged && left === 3, `${left} choices left with All`);
 
     const o = await overflow(page);
     check(`${tag} signed in has nothing wider than the screen`, o.scroll <= 0 && !o.wide.length, JSON.stringify(o));
