@@ -9,7 +9,7 @@ test('the index exports every name the service needs', () => {
     'cleanRemote', 'folderName', 'resolveProject', 'projectName',
     'sanitize', 'sanitizeItem', 'stripPrivate', 'stripOwn',
     'eventKey', 'autoCard', 'autoHandoff', 'droppedAt',
-    'normalizeWords', 'proveWords', 'decideRule', 'ruleLine',
+    'decideRule', 'readRule', 'ruleLine', 'PENDING',
     'rankItems', 'recent', 'namedProjects',
     'recall', 'HEADER', 'FOOTER', 'EMPTY_RECALL',
     'quietPrompt', 'hookOutput',

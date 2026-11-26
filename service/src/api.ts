@@ -7,7 +7,7 @@ type ApiEnv = AppEnv & { Variables: { me: Who } };
 
 export const api = new Hono<ApiEnv>();
 
-function err(status: 400 | 401 | 403 | 404 | 426, error: string): Response {
+function err(status: 400 | 401 | 403 | 404 | 409 | 426, error: string): Response {
   return Response.json({ error }, { status });
 }
 
@@ -79,8 +79,9 @@ api.post('/rules', async (c) => {
 api.post('/rules/:id', async (c) => {
   const i = id(c.req.param('id'));
   const b = await body(c.req.raw);
-  if (!i || !b || (b.status !== 'active' && b.status !== 'off')) return err(400, 'Send status as active or off.');
-  const item = await person(c).setRule(i, b.status);
+  if (!i || !b || (b.status !== 'active' && b.status !== 'off') || (b.line !== undefined && typeof b.line !== 'string')) return err(400, 'Send status as active or off, and the line you saw.');
+  const item = await person(c).setRule(i, b.status, b.line as string | undefined);
+  if (item === 'changed') return err(409, 'This rule changed. Look at the rule again before you accept it.');
   return item ? c.json(item) : err(404, 'No such rule.');
 });
 

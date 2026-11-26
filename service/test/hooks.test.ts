@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { FOOTER } from '../../core/src/index.ts';
-import { agent, call, connect, devSignIn, mcp } from './flow.ts';
+import { ORIGIN, agent, call, connect, devSignIn, mcp, send as api } from './flow.ts';
 import { sql } from './helpers.ts';
 
 const CWD = '/work/pantry';
@@ -74,9 +74,13 @@ describe('hooks through the event tool', () => {
     const cc = await agent('hooks-three', 'claude-code');
     const send = (event: string, more: Record<string, unknown>) => call(cc.client, 'event', { host: 'claude-code', event, session: 'cc-3', cwd: CWD, ...more });
     await send('UserPromptSubmit', { prompt: 'remember to always label shelves with dates' });
-    expect((await call(cc.client, 'rule', { folder: CWD, text: 'Label shelves with dates', words: 'always label shelves with dates', scope: 'all' })).text).toContain('active');
+    expect((await call(cc.client, 'rule', { folder: CWD, text: 'Label shelves with dates', words: 'always label shelves with dates', scope: 'all' })).text).toContain('pending');
+    const space = (await (await api('/api/space', { headers: { Cookie: cc.jar.header() } })).json()) as { items: { id: string; kind: string; line?: string }[] };
+    const rule = space.items.find((i) => i.kind === 'rule')!;
+    expect(rule.line).toBe('"always label shelves with dates"');
+    expect((await api(`/api/rules/${rule.id}`, { method: 'POST', headers: { Cookie: cc.jar.header(), Origin: ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'active', line: rule.line }) })).status).toBe(200);
     const out = context((await send('SessionStart', { source: 'clear' })).text);
     expect(out.event).toBe('SessionStart');
-    expect(out.added).toContain('RULES\n> "always label shelves with dates" said in Claude Code');
+    expect(out.added).toContain('RULES\n> "always label shelves with dates" added on the page');
   });
 });

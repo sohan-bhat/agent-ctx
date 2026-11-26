@@ -105,7 +105,7 @@ test('with real rules, only real rule lines start a quoted rule', () => {
   const items = [
     item('card', { goal: POISON }, { days: 2 }),
     item('rule', { text: 'x', words: 'always run the formatter first', scope: 'project', status: 'active', proof: 'hook' }),
-    item('rule', { text: 'Keep recipes in metric', words: 'x', scope: 'all', status: 'active', proof: 'page' }, { project: Q }),
+    item('rule', { text: 'Keep recipes in metric', words: 'Keep recipes in metric', scope: 'all', status: 'active', proof: 'page' }, { project: Q }),
   ];
   const lines = recall(input(items)).text.split('\n');
   const ruleLines = lines.filter((l) => l.startsWith('> "'));

@@ -19,6 +19,7 @@ import {
   rankItems,
   recall,
   redact,
+  ruleLine,
   resolveProject,
   sanitize,
   sanitizeItem,
@@ -51,7 +52,8 @@ export interface CheckpointArgs extends Where { goal?: string; changed?: string[
 export interface HandoffArgs extends Where { goal?: string; done?: string; next?: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; key?: string }
 export interface RuleArgs extends Where { text: string; words: string; scope: 'project' | 'all'; key?: string }
 export interface EventArgs { host?: string; event?: string; session?: string; cwd?: string; prompt?: string; tool?: string; file?: string; command?: string; message?: string; summary?: string; reason?: string; source?: string; model?: string }
-export interface Space { projects: { key: string; name: string; items: number }[]; agents: AgentRow[]; items: Item[]; queue: string[]; reads: ReadRow[]; now: number }
+export type ItemView = Item & { line?: string };
+export interface Space { projects: { key: string; name: string; items: number }[]; agents: AgentRow[]; items: ItemView[]; queue: string[]; reads: ReadRow[]; now: number }
 export interface Me { bytes: number; max: number; callsToday: number; storedToday: number }
 
 const MINUTE = 60000;
@@ -115,6 +117,10 @@ function withLine(text: string, line: string, project: string, cap: number): str
     while (out.length > 3 && (out[out.length - 1] === '' || !out[out.length - 1].startsWith('>'))) out.pop();
   }
   return [...out, ...tail].join('\n');
+}
+
+export function view(i: Item): ItemView {
+  return i.kind === 'rule' ? { ...i, line: ruleLine(i.body as RuleBody) } : i;
 }
 
 function hash(s: string): string {
@@ -182,8 +188,8 @@ export class Person extends DurableObject<Env> {
     this.readsCache = null;
   }
 
-  private push(msg: unknown): void {
-    const text = JSON.stringify(msg);
+  private push(msg: { type: string; item?: Item; [k: string]: unknown }): void {
+    const text = JSON.stringify(msg.item ? { ...msg, item: view(msg.item) } : msg);
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(text);
@@ -600,47 +606,53 @@ export class Person extends DurableObject<Env> {
     });
   }
 
-  private prompts(grant: string, now: number, fromStore: boolean): string[] {
-    if (fromStore) {
-      return this.store
-        .q<{ text: string }>("SELECT e.text AS text FROM events e JOIN sessions s ON e.session = s.id WHERE s.grant_id = ? AND e.t = 'prompt' AND e.at >= ?", grant, now - DAY)
-        .map((r) => r.text);
+  private page(): string {
+    try {
+      return `${new URL(this.env.MCP_RESOURCE).origin}/`;
+    } catch {
+      return 'the agent-ctx page';
     }
-    const out: string[] = [];
-    for (const [sid, rows] of this.eventCache) {
-      if (this.sessionCache.get(sid)?.grant_id !== grant) continue;
-      for (const r of rows) if (r.t === 'prompt' && r.at >= now - DAY && r.text) out.push(r.text);
-    }
-    return out;
   }
 
-  async rule(c: Caller, a: RuleArgs): Promise<Result> {
+  private draftRule(c: Caller, a: RuleArgs, now: number): Result | { project: string; body: RuleBody; clean: Item } {
+    const scope = a.scope === 'project' ? 'project' : 'all';
+    const named = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+    if (scope === 'project' && !named(a.repo) && !named(a.folder)) return { ok: false, text: SAY.where };
+    const project = scope === 'all' ? '' : this.project(a, now);
+    if (project === null) return { ok: false, text: SAY.where };
+    const body: RuleBody = { text: typeof a.text === 'string' ? a.text : '', words: typeof a.words === 'string' ? a.words : '', scope, status: 'pending' };
+    try {
+      return { project, body, clean: fit(sanitizeItem(newItem('rule', project, body, this.origin(c, now, 'tool', 'agent', `g-${c.grant}`)))) };
+    } catch {
+      return { ok: false, text: SAY.clean };
+    }
+  }
+
+  async ruleDraft(c: Caller, a: RuleArgs): Promise<Result & { line?: string; held?: boolean }> {
     return this.measure(() => {
       const now = Date.now();
       const stop = this.gate(c, now, 'write', a);
       if (stop) return stop;
-      const scope = a.scope === 'project' ? 'project' : 'all';
-      const named = (v: unknown) => typeof v === 'string' && v.trim() !== '';
-      if (scope === 'project' && !named(a.repo) && !named(a.folder)) return { ok: false, text: SAY.where };
-      const project = scope === 'all' ? '' : this.project(a, now);
-      if (project === null) return { ok: false, text: SAY.where };
-      const memo = this.remembered(c, 'rule', project, [a.text, a.words, scope], a.key, now);
+      const d = this.draftRule(c, a, now);
+      if ('ok' in d) return d;
+      return { ok: true, text: '', line: ruleLine(d.clean.body as RuleBody), held: d.clean.held };
+    });
+  }
+
+  async rule(c: Caller, a: RuleArgs, seen?: string): Promise<Result> {
+    return this.measure(() => {
+      const now = Date.now();
+      const stop = this.gate(c, now, 'write', a);
+      if (stop) return stop;
+      const d = this.draftRule(c, a, now);
+      if ('ok' in d) return d;
+      const accepted = typeof seen === 'string' && !d.clean.held && ruleLine(d.clean.body as RuleBody) === seen;
+      const memo = this.remembered(c, 'rule', d.project, [a.text, a.words, d.body.scope, accepted], a.key, now);
       if (memo.hit) return memo.hit;
-      let words: string;
-      try {
-        words = cleanText(typeof a.words === 'string' ? a.words : '').text;
-      } catch {
-        return { ok: false, text: SAY.clean };
-      }
-      const today = new Date(now).toISOString().slice(0, 10);
-      const activatedToday = this.rulesList().filter((r) => (r.body as RuleBody).proof === 'hook' && new Date(r.created).toISOString().slice(0, 10) === today).length;
-      const input = { text: a.text, words, scope } as const;
-      let d = decideRule(input, { via: 'tool', prompts: this.prompts(c.grant, now, false), activatedToday });
-      if (d.status !== 'active') d = decideRule(input, { via: 'tool', prompts: this.prompts(c.grant, now, true), activatedToday });
-      const body: RuleBody = compact({ text: 'x', words: 'x', scope, status: d.status, proof: d.proof });
-      body.text = typeof a.text === 'string' ? a.text : '';
-      body.words = words;
-      return this.write(c, now, 'rule', project, body, d.status === 'active' ? 'person' : 'agent', memo.marks, d.reason);
+      const decision = decideRule({ via: 'tool', accepted });
+      const body: RuleBody = { ...d.body, status: decision.status, ...(decision.proof ? { proof: decision.proof } : {}) };
+      const text = decision.status === 'active' ? decision.reason : `Rule saved as pending. The person turns the rule on with Accept at ${this.page()}.`;
+      return this.write(c, now, 'rule', d.project, body, accepted ? 'person' : 'agent', memo.marks, text);
     });
   }
 
@@ -890,37 +902,37 @@ export class Person extends DurableObject<Env> {
     return {
       projects,
       agents: this.store.q<AgentRow>('SELECT * FROM agents ORDER BY first'),
-      items: this.store.newest(SPACE_ITEMS),
+      items: this.store.newest(SPACE_ITEMS).map(view),
       queue: this.store.q<{ item: string }>('SELECT item FROM queue ORDER BY at').map((r) => r.item),
       reads: this.readsList().slice(0, READS_KEPT),
       now: Date.now(),
     };
   }
 
-  private change(id: string, fn: (i: Item) => Item | null): Item | null {
+  private change(id: string, fn: (i: Item) => Item | null): ItemView | null {
     const i = this.store.item(id);
     if (!i) return null;
     const next = fn(i);
     if (!next) return null;
     this.putItem(next);
     this.push({ type: 'item', item: next });
-    return next;
+    return view(next);
   }
 
-  async pin(id: string, on: boolean): Promise<Item | null> {
+  async pin(id: string, on: boolean): Promise<ItemView | null> {
     return this.change(id, (i) => ({ ...i, pinned: !!on }));
   }
 
-  async keep(id: string): Promise<Item | null> {
+  async keep(id: string): Promise<ItemView | null> {
     return this.change(id, (i) => ({ ...i, held: false }));
   }
 
-  async putBack(id: string): Promise<Item | null> {
+  async putBack(id: string): Promise<ItemView | null> {
     const i = this.store.item(id);
     if (!i || i.kind === 'rule') return null;
     this.store.q('INSERT INTO queue(item, at) VALUES(?, ?) ON CONFLICT(item) DO UPDATE SET at = excluded.at', id, Date.now());
     this.push({ type: 'item', item: i });
-    return i;
+    return view(i);
   }
 
   async remove(id: string): Promise<boolean> {
@@ -942,18 +954,23 @@ export class Person extends DurableObject<Env> {
     const scope = a.scope === 'project' ? 'project' : 'all';
     const key = typeof a.project === 'string' ? a.project : '';
     if (scope === 'project' && !this.store.q('SELECT key FROM projects WHERE key = ?', key).length) return { ok: false, text: 'That project is not in this memory.' };
-    const d = decideRule({ text, words: text, scope }, { via: 'page', prompts: [], activatedToday: 0 });
+    const d = decideRule({ via: 'page' });
     const body: RuleBody = { text, words: text, scope, status: d.status, proof: d.proof };
     const origin: Origin = { agent: 'page', via: 'page', source: 'person', at: now };
-    return this.save(newItem('rule', key, body, origin), now, true);
+    const r = this.save(newItem('rule', key, body, origin), now, true);
+    return r.item ? { ...r, item: view(r.item) } : r;
   }
 
-  async setRule(id: string, status: 'active' | 'off'): Promise<Item | null> {
+  async setRule(id: string, status: 'active' | 'off', line?: string): Promise<ItemView | 'changed' | null> {
     if (status !== 'active' && status !== 'off') return null;
+    const cur = this.store.item(id);
+    if (!cur || cur.kind !== 'rule') return null;
+    if (typeof line === 'string' && ruleLine(cur.body as RuleBody) !== line) return 'changed';
     return this.change(id, (i) => {
       if (i.kind !== 'rule') return null;
       const b = i.body as RuleBody;
-      return { ...i, held: status === 'active' ? false : i.held, body: { ...b, status, proof: status === 'active' && b.status !== 'active' ? 'page' : b.proof } };
+      const on = status === 'active' && b.status !== 'active';
+      return { ...i, held: status === 'active' ? false : i.held, body: { ...b, status, ...(on ? { proof: 'page' as const } : {}) } };
     });
   }
 

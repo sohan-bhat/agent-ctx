@@ -142,7 +142,7 @@ describe('page methods', () => {
     const rule = await p.addRule({ text: 'Use metric units in every glaze note', scope: 'all' });
     expect((rule.item!.body as RuleBody)).toMatchObject({ status: 'active', proof: 'page' });
     expect((await p.recall(B, LOOM)).text).toContain('"Use metric units in every glaze note" added on the page');
-    expect(((await p.setRule(rule.item!.id, 'off'))!.body as RuleBody).status).toBe('off');
+    expect(((await p.setRule(rule.item!.id, 'off')) as Item).body as RuleBody).toMatchObject({ status: 'off' });
     expect((await p.recall(B, LOOM)).text).not.toContain('metric units');
     await p.checkpoint(A, { ...LOOM, goal: 'Loom card' });
     expect(await p.mergeProjects('github.com/acme/loom', 'github.com/acme/kiln')).toBe(true);

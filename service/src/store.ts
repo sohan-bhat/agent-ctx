@@ -1,4 +1,4 @@
-import { itemBytes, type Item, type Kind } from '../../core/src/index.ts';
+import { itemBytes, readRule, type Item, type Kind } from '../../core/src/index.ts';
 
 const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER) WITHOUT ROWID',
@@ -41,7 +41,7 @@ export function toItem(r: ItemRow): Item {
     id: r.id,
     project: r.project,
     kind: r.kind as Kind,
-    body: JSON.parse(r.body),
+    body: r.kind === 'rule' ? readRule(JSON.parse(r.body)) : JSON.parse(r.body),
     origin: JSON.parse(r.origin),
     flags: JSON.parse(r.flags),
     held: !!r.held,
