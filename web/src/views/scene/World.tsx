@@ -102,7 +102,7 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
   const homeZoom = useRef(1);
   const free = useRef(false);
   const view = layout.corners;
-  const viewKey = `${layout.phi}|${view.map((v) => v.toArray().map((n) => n.toFixed(2)).join()).join('|')}`;
+  const viewKey = `${view.map((v) => v.toArray().map((n) => n.toFixed(2)).join()).join('|')}`;
   useLayoutEffect(() => {
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
@@ -115,11 +115,11 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
     const c = controls.current;
     if (!c) return;
     const pad = homePad(size.width);
-    const all = fit(camera, layout.corners, HOME.theta, layout.phi, pad).zoom;
+    const all = fit(camera, layout.corners, HOME.theta, HOME.phi, pad).zoom;
     homeZoom.current = all;
     c.minZoom = all * 0.5;
     c.maxZoom = all * 14;
-    frameTo(c, camera, view, HOME.theta, layout.phi, pad, smooth && !reduced);
+    frameTo(c, camera, view, HOME.theta, HOME.phi, pad, smooth && !reduced);
   };
   const first = useRef(true);
   const lastFocus = useRef(focusKey);

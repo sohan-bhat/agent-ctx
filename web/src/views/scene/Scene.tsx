@@ -5,7 +5,7 @@ import type { Item, Read } from '@/lib/types';
 import { headline } from '@/lib/item';
 import { useReduced } from '@/lib/hooks';
 import { usePalette } from './palette';
-import { at, bestPhi, layout as plan, type Layout, type Placed } from './layout';
+import { at, layout as plan, type Layout, type Placed } from './layout';
 import { World, type WorldApi } from './World';
 import { itemId } from './Blocks';
 
@@ -48,10 +48,10 @@ export default function Scene({ projects, agents, items, reads, time, span, focu
   const base = useMemo(() => plan({ projects, agents, items, reads, aspect }), [projects, agents, items, reads, aspect]);
   const shown = useMemo(() => {
     const plate = focusKey ? base.plates.find((p) => p.key === focusKey) : undefined;
-    if (!plate) return { plates: base.plates, base: base.base, links: base.links, corners: base.corners, phi: base.phi };
-    return { plates: [plate], base: base.base.filter((b) => b.plate === plate.key), links: base.links.filter((l) => base.base.some((b) => b.plate === plate.key && l.id.startsWith(`${b.id}>`))), corners: plate.corners, phi: bestPhi(plate.corners, aspect) };
-  }, [base, focusKey, aspect]);
-  const view: Layout = useMemo(() => ({ plates: shown.plates, links: shown.links, box: base.box, corners: shown.corners, phi: shown.phi, top: base.top, placed: at(shown.base, time, span, base.top) }), [shown, base, time, span]);
+    if (!plate) return { plates: base.plates, base: base.base, links: base.links, corners: base.corners };
+    return { plates: [plate], base: base.base.filter((b) => b.plate === plate.key), links: base.links.filter((l) => base.base.some((b) => b.plate === plate.key && l.id.startsWith(`${b.id}>`))), corners: plate.corners };
+  }, [base, focusKey]);
+  const view: Layout = useMemo(() => ({ plates: shown.plates, links: shown.links, box: base.box, corners: shown.corners, top: base.top, placed: at(shown.base, time, span, base.top) }), [shown, base, time, span]);
   const byId = useMemo(() => new Map(view.placed.filter((p) => !p.id.endsWith('^')).map((p) => [p.id, p])), [view]);
   const [hover, setHover] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -186,7 +186,7 @@ export default function Scene({ projects, agents, items, reads, time, span, focu
           const [x, y] = api.current?.project(p) ?? [0, 0];
           return { id: p.id, look: p.look, x, y, area: p.w * p.d };
         }),
-      extent: () => (api.current ? { ...api.current.extent(), phi: view.phi } : null),
+      extent: () => api.current?.extent() ?? null,
     };
     return () => {
       delete w.__space;

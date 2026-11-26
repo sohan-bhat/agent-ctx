@@ -12,7 +12,7 @@ export const CAP = 0.07;
 export const FLAT = 0.012;
 export const PLATE = 0.18;
 export const EDGE = 0.045;
-export const HOME = { theta: Math.PI / 4, phi: 0.98 };
+export const HOME = { theta: Math.PI / 4, phi: 1.1 };
 const AREA = 1 / 1000;
 const FILL = 0.72;
 const MIN_SIDE = 3.2;
@@ -71,7 +71,6 @@ export interface Layout {
   links: Link[];
   box: Box3;
   corners: Vector3[];
-  phi: number;
   top: number;
 }
 
@@ -154,7 +153,6 @@ function tile(items: Item[], agents: string[]): { leaves: Map<string, { x0: numb
 
 const GAP_SIDE = 0.9;
 const GAP_ROW = 3.8;
-const PHIS = [0.98, 0.92, 1.04, 0.86, 1.1, 0.8, 1.16, 0.74, 0.68, 0.62];
 
 function arrange(sides: number[], cols: number): [number, number][] {
   const half = (s: number) => s / Math.SQRT2;
@@ -188,8 +186,8 @@ function cornersOf(cx: number, cz: number, side: number, posts: [number, number]
   return out;
 }
 
-function extent(points: Vector3[], phi: number): [number, number] {
-  const inv = viewQuat(HOME.theta, phi).invert();
+function extent(points: Vector3[]): [number, number] {
+  const inv = viewQuat(HOME.theta, HOME.phi).invert();
   let x0 = Infinity;
   let x1 = -Infinity;
   let y0 = Infinity;
@@ -205,21 +203,11 @@ function extent(points: Vector3[], phi: number): [number, number] {
   return [Math.max(1e-3, x1 - x0), Math.max(1e-3, y1 - y0)];
 }
 
-export function score(corners: Vector3[], phi: number, aspect: number): number {
-  const [bw, bh] = extent(corners, phi);
-  const [pw, ph] = extent(
-    corners.filter((c) => c.y <= 0),
-    phi,
-  );
+function balance(corners: Vector3[], aspect: number): number {
+  const [bw, bh] = extent(corners);
+  const [pw, ph] = extent(corners.filter((c) => c.y <= 0));
   const zoom = Math.min((aspect * 0.94) / bw, 0.9 / bh);
-  const fw = (pw * zoom) / aspect;
-  const fh = ph * zoom;
-  const short = aspect >= 1 ? fh : fw;
-  return Math.min(1, short / 0.73) * 3 + Math.min(fw, fh) * 1.5 - Math.abs(HOME.phi - phi);
-}
-
-export function bestPhi(corners: Vector3[], aspect: number): number {
-  return PHIS.reduce((best, phi) => (score(corners, phi, aspect) > score(corners, best, aspect) + 1e-4 ? phi : best), PHIS[0]);
+  return Math.min((pw * zoom) / aspect, ph * zoom);
 }
 
 export function layout({ projects, agents, items, reads, aspect }: LayoutInput): Omit<Layout, 'placed'> & { base: Omit<Placed, 'h' | 'shown' | 'y0'>[] } {
@@ -236,14 +224,14 @@ export function layout({ projects, agents, items, reads, aspect }: LayoutInput):
   });
   const sides = tiles.map((t) => t.side);
   const top = Math.min(H_MAX, Math.max(0.9, 0.26 * Math.max(...sides)));
-  let best = { s: -Infinity, centres: arrange(sides, 1), phi: HOME.phi };
+  let best = { s: -Infinity, centres: arrange(sides, 1) };
   for (let cols = 1; cols <= Math.min(keys.length, 6); cols++) {
     const centres = arrange(sides, cols);
-    const all = centres.flatMap(([cx, cz], i) => cornersOf(cx, cz, sides[i], posts[i], top));
-    for (const phi of PHIS) {
-      const s = score(all, phi, aspect);
-      if (s > best.s + 1e-4) best = { s, centres, phi };
-    }
+    const s = balance(
+      centres.flatMap(([cx, cz], i) => cornersOf(cx, cz, sides[i], posts[i], top)),
+      aspect,
+    );
+    if (s > best.s + 1e-4) best = { s, centres };
   }
   const plates: Plate[] = [];
   const base: Omit<Placed, 'h' | 'shown' | 'y0'>[] = [];
@@ -285,7 +273,7 @@ export function layout({ projects, agents, items, reads, aspect }: LayoutInput):
     links.push({ id: `${r.item}>${r.agent}>${r.at}`, slot: slotOf(agents, r.agent), at: Math.max(r.at, from.item.created), a: [from.cx, from.cz], b: [tx, tz] });
   }
   if (box.isEmpty()) box.set(new Vector3(-MIN_SIDE / 2, -PLATE, -MIN_SIDE / 2), new Vector3(MIN_SIDE / 2, H_MAX, MIN_SIDE / 2));
-  return { plates, base, links, box, corners: plates.flatMap((p) => p.corners), phi: best.phi, top };
+  return { plates, base, links, box, corners: plates.flatMap((p) => p.corners), top };
 }
 
 export function at(base: Omit<Placed, 'h' | 'shown' | 'y0'>[], time: number, span: number, top = H_MAX): Placed[] {

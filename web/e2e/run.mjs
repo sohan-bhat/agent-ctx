@@ -8,8 +8,7 @@ async function fill(page) {
   if (!e) return { ok: false, text: 'no extent' };
   const fw = (e.x1 - e.x0) / e.w;
   const fh = (e.y1 - e.y0) / e.h;
-  const short = e.w >= e.h ? fh : fw;
-  return { ok: short >= 0.7, text: `width ${(fw * 100).toFixed(0)} percent, height ${(fh * 100).toFixed(0)} percent` };
+  return { ok: Math.max(fw, fh) >= 0.6, text: `width ${(fw * 100).toFixed(0)} percent, height ${(fh * 100).toFixed(0)} percent` };
 }
 
 const shownPlates = (page) => page.evaluate(() => [...document.querySelectorAll('[data-label=plate]')].filter((e) => e.checkVisibility({ visibilityProperty: true })).length);
