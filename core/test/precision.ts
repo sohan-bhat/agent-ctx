@@ -1,14 +1,23 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { recall } from '../src/recall.ts';
-import { ITEMS, NOW, PROJECTS, QUERIES, type Query } from './corpus.ts';
+import type { Item } from '../src/model.ts';
+import * as one from './corpus.ts';
+import * as two from './corpus2.ts';
 
+export interface Labelled { q: string; project: string; kind: string; want: string[] }
+export interface TestSet { items: Item[]; queries: Labelled[]; projects: { key: string; names: string[] }[]; now: number }
 export interface Score { precision_at_3: number; empty_correct: number; found: number }
-export interface Row { query: Query; top: string[]; empty: boolean }
+export interface Row { query: Labelled; top: string[]; empty: boolean }
 
-export function run(): Row[] {
-  return QUERIES.map((query) => {
-    const out = recall({ project: query.project, items: ITEMS, projects: PROJECTS, query: query.q, first: false, session: 'eval', seen: [], now: NOW });
+export const SETS: Record<'set1' | 'set2', TestSet> = {
+  set1: { items: one.ITEMS, queries: one.QUERIES, projects: one.PROJECTS, now: one.NOW },
+  set2: { items: two.ITEMS, queries: two.QUERIES, projects: two.PROJECTS, now: two.NOW },
+};
+
+export function run(set: TestSet = SETS.set1): Row[] {
+  return set.queries.map((query) => {
+    const out = recall({ project: query.project, items: set.items, projects: set.projects, query: query.q, first: false, session: 'eval', seen: [], now: set.now });
     return { query, top: out.delivered.slice(0, 3), empty: out.text === '' };
   });
 }
@@ -48,8 +57,10 @@ function isMain(): boolean {
 }
 
 if (isMain()) {
-  const s = measure();
-  console.log(`precision_at_3 ${s.precision_at_3.toFixed(2)}`);
-  console.log(`empty_correct ${s.empty_correct.toFixed(2)}`);
-  console.log(`found ${s.found.toFixed(2)}`);
+  for (const name of ['set1', 'set2'] as const) {
+    const s = measure(run(SETS[name]));
+    console.log(`${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
+    console.log(`${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
+    console.log(`${name}_found ${s.found.toFixed(2)}`);
+  }
 }
