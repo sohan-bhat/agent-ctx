@@ -85,7 +85,7 @@ api.post('/rules/:id', async (c) => {
   const b = await body(c.req.raw);
   if (!i || !b || (b.status !== 'active' && b.status !== 'off') || (b.line !== undefined && typeof b.line !== 'string')) return err(400, 'Send status as active or off, and the line you saw.');
   const item = await person(c).setRule(i, b.status, b.line as string | undefined);
-  if (item === 'changed') return err(409, 'This rule changed. Look at the rule again before you accept it.');
+  if (item === 'changed') return err(409, 'This rule changed. Read the rule again before you accept.');
   return item ? c.json(item) : err(404, 'No such rule.');
 });
 
@@ -138,8 +138,8 @@ api.get('/live', async (c) => {
 
 const README = [
   'This folder is an export of one agent-ctx memory.',
-  'Each folder under projects holds items.jsonl with one item per line and handoff.md with the newest handoff.',
-  'The file rules.jsonl holds the rules and agents.jsonl holds the connected agents.',
+  'Each folder under projects contains items.jsonl with one item per line and handoff.md with the newest handoff.',
+  'The file rules.jsonl contains the rules and agents.jsonl contains the connected agents.',
 ].join('\n');
 
 function folderOf(key: string, used: Set<string>): string {

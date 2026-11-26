@@ -150,8 +150,8 @@ function authFailure(e: unknown): Response {
 
 function consentPage(d: ConsentDescription, label: string, handle: string): string {
   const name = escape(label);
-  const origin = d.clientDomain ? `<p>Published by <strong>${escape(d.clientDomain)}</strong>.</p>` : '<p>This app registered itself. Its name is not verified.</p>';
-  const loop = d.redirectIsLoopback ? '<p><strong>This sends access to an app on this computer.</strong> Continue only if you just started signing in from it.</p>' : '';
+  const origin = d.clientDomain ? `<p>Published by <strong>${escape(d.clientDomain)}</strong>.</p>` : '<p>This app was registered without a published identity, so the app name is not verified.</p>';
+  const loop = d.redirectIsLoopback ? '<p><strong>Access goes to an app on this computer.</strong> Continue only if you just started signing in from that app.</p>' : '';
   const scopes = [
     ['read', 'Read your memory'],
     ['write', 'Save to your memory'],
@@ -159,7 +159,7 @@ function consentPage(d: ConsentDescription, label: string, handle: string): stri
     .filter(([s]) => d.scope.includes(s))
     .map(([s, text]) => `<p><label><input type="checkbox" name="scope" value="${escape(s)}" checked> ${escape(text)}</label></p>`)
     .join('');
-  return `<h1>Allow ${name} to use your agent-ctx memory?</h1>${origin}<p>The app calls itself <strong>${escape(d.clientName)}</strong>. Access goes to <strong>${escape(d.redirectHost)}</strong>.</p>${loop}<form method="post" action="/authorize"><input type="hidden" name="handle" value="${escape(handle)}">${scopes}<p><button name="decision" value="approve">Allow</button> <button name="decision" value="deny">Deny</button></p></form>`;
+  return `<h1>Allow ${name} to use your agent-ctx memory?</h1>${origin}<p>The name given by the app is <strong>${escape(d.clientName)}</strong>. Access goes to <strong>${escape(d.redirectHost)}</strong>.</p>${loop}<form method="post" action="/authorize"><input type="hidden" name="handle" value="${escape(handle)}">${scopes}<p><button name="decision" value="approve">Allow</button> <button name="decision" value="deny">Deny</button></p></form>`;
 }
 
 export const auth = new Hono<AppEnv>();
@@ -182,7 +182,7 @@ auth.get('/login', async (c) => {
 
 auth.post('/login/dev', async (c) => {
   if (c.env.DEV_LOGIN !== '1') return c.notFound();
-  if (!sameOrigin(c)) return plain(403, 'This form only works from this site.');
+  if (!sameOrigin(c)) return plain(403, 'This form is accepted only from this site.');
   const form = await c.req.formData();
   const name = String(form.get('name') ?? '').trim().toLowerCase();
   if (!/^[a-z0-9-]{1,40}$/.test(name)) return plain(400, 'Use 1 to 40 lower case letters, digits or dashes.');
@@ -203,7 +203,7 @@ auth.get('/login/callback', async (c) => {
     return plain(400, 'This sign in expired or came from another browser. Start again.');
   }
   const state = c.req.query('state') ?? '';
-  if (!(await same(state, saved.s))) return plain(400, 'This sign in does not match the one this browser started. Start again.');
+  if (!(await same(state, saved.s))) return plain(400, 'This sign in does not match the sign in started in this browser. Start again.');
   if (c.req.query('error')) return plain(400, 'The GitHub sign in was cancelled.');
   const code = c.req.query('code');
   if (!code) return plain(400, 'The GitHub answer had no code. Start again.');
@@ -234,7 +234,7 @@ function signOut(c: AppContext): Response {
   return c.redirect('/', 302);
 }
 
-auth.post('/logout', (c) => (sameOrigin(c) ? signOut(c) : plain(403, 'This form only works from this site.')));
+auth.post('/logout', (c) => (sameOrigin(c) ? signOut(c) : plain(403, 'This form is accepted only from this site.')));
 
 auth.get('/authorize', async (c) => {
   const oauth = c.env.OAUTH_PROVIDER;
@@ -247,7 +247,7 @@ auth.get('/authorize', async (c) => {
     const request: AuthRequest = await oauth.parseAuthRequest(c.req.raw);
     const details = await oauth.describeConsent(request);
     const target = formTarget(request.redirectUri);
-    if (!target) return plain(400, 'This app gave a return address that this page cannot send you to.');
+    if (!target) return plain(400, 'You cannot be sent back to the return address of this app.');
     const consent = await oauth.beginConsent(request);
     const label = labelFor({ clientId: details.clientId, clientName: details.clientName, redirectUri: details.redirectUri });
     return html(consentPage(details, label, consent.handle), `Allow ${label}`, consent.headers, 200, target);

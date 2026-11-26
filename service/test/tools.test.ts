@@ -760,7 +760,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       const client = await asking((await connect(jar)).access, { action: 'accept', content: { keep: true } }, seen);
       const r = await call(client, 'rule', { text: 'agent text never shown', words: WORDS, scope: 'all' });
       expect(r.text).toBe('The person accepted this exact rule in the agent, so the rule is active.');
-      expect(seen).toEqual([`Keep this standing rule for all projects? Every agent you connect reads it as your own words. "${WORDS}"`]);
+      expect(seen).toEqual([`Keep this standing rule for all projects? Every agent you connect reads the rule as your own words. "${WORDS}"`]);
       const [rule] = await rules(jar);
       expect(rule).toMatchObject({ status: 'active', proof: 'elicit', line: `"${WORDS}"` });
       const other = await mcp((await connect(jar, 'claude-code')).access);

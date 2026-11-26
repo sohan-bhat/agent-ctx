@@ -731,7 +731,7 @@ export class Person extends DurableObject<Env> {
       body.goal = own(a.goal) ? (a.goal as string) : (this.promptGoal(c.grant, project, a.folder, now) ?? NOT_STATED);
       const memo = this.remembered(c, 'card', project, body, a.key, now);
       if (memo.hit) return memo.hit;
-      return this.write(c, now, 'card', project, body, 'agent', memo.marks, 'Checkpoint saved. Its open tasks are shown to the next agent at the start of its session.');
+      return this.write(c, now, 'card', project, body, 'agent', memo.marks, 'Checkpoint saved. The open tasks are shown to the next agent when that agent\'s session starts.');
     });
   }
 
@@ -1133,7 +1133,7 @@ export class Person extends DurableObject<Env> {
   async addRule(a: { text: string; scope: 'project' | 'all'; project?: string }): Promise<Result> {
     const now = Date.now();
     const text = typeof a.text === 'string' ? a.text.trim() : '';
-    if (!text) return { ok: false, text: 'A rule needs text.' };
+    if (!text) return { ok: false, text: 'A rule must have text.' };
     if (text.length > 600) return { ok: false, text: SAY.size };
     const scope = a.scope === 'project' ? 'project' : 'all';
     const key = typeof a.project === 'string' ? a.project : '';

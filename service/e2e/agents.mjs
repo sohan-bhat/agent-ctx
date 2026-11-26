@@ -567,11 +567,11 @@ async function skipCommand(argv) {
   const [cmd, ...rest] = argv;
   const tmp = process.env.E2E_TMP;
   const proofs = process.env.E2E_PROOFS;
-  if (!['tasks', 'rules', 'countSkip'].includes(cmd) || !proofs || (cmd !== 'countSkip' && !tmp)) {
-    console.log('Set E2E_PROOFS, and E2E_TMP to run, with E2E_PROJECTS for a projects folder outside any session scratchpad, then give tasks or rules with an optional model, a countSkip and a condition letter, where B adds an AGENTS.md line, or countSkip to tally the transcripts.');
+  if (!['tasks', 'rules', 'count'].includes(cmd) || !proofs || (cmd !== 'count' && !tmp)) {
+    console.log('Set E2E_PROOFS, and E2E_TMP to run, with E2E_PROJECTS for a projects folder outside any session scratchpad, then give tasks or rules with an optional model, a count and a condition letter, where B adds an AGENTS.md line, or count to tally the transcripts.');
     process.exit(cmd ? 1 : 0);
   }
-  if (cmd === 'countSkip') {
+  if (cmd === 'count') {
     const c = countSkip(proofs);
     writeFileSync(join(proofs, 'counts.json'), JSON.stringify(c, null, 1) + '\n');
     for (const t of c.totals) console.log(JSON.stringify(t));
@@ -592,8 +592,8 @@ async function topicsCommand(argv) {
   const tmp = process.env.E2E_TMP;
   const proofs = process.env.E2E_PROOFS;
   const root = process.env.E2E_PROJECTS;
-  if (!['seed', 'run', 'countTopics', 'list'].includes(cmd) || !proofs || (cmd !== 'list' && cmd !== 'countTopics' && !tmp) || (cmd === 'run' && !root)) {
-    console.log('Set E2E_PROOFS, E2E_TMP and E2E_PROJECTS, then give list, seed, run or countTopics.');
+  if (!['seed', 'run', 'count', 'list'].includes(cmd) || !proofs || (cmd !== 'list' && cmd !== 'count' && !tmp) || (cmd === 'run' && !root)) {
+    console.log('Set E2E_PROOFS, E2E_TMP and E2E_PROJECTS, then give list, seed, run or count.');
     process.exit(cmd ? 1 : 0);
   }
   const mapFile = join(proofs, 'seeded-cards.json');
@@ -607,7 +607,7 @@ async function topicsCommand(argv) {
     }
     console.log(`Spent ${spentSoFar(join(proofs, 'runs.jsonl')).toFixed(5)} dollars in this folder.`);
   }
-  if (cmd === 'countTopics') {
+  if (cmd === 'count') {
     const c = countTopics(proofs, mapFile);
     writeFileSync(join(proofs, 'counts.json'), JSON.stringify(c, null, 1) + '\n');
     console.log(JSON.stringify({ ...c, rows: undefined }));

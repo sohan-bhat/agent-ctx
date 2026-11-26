@@ -6,17 +6,17 @@ export const MAX: Max = { perMinute: 60, perDay: 2000, storedPerDay: 500, agents
 
 export const SAY = {
   minute: 'Too many calls this minute. Wait a minute and try again.',
-  day: 'This account reached its 2,000 calls for today. Calls work again tomorrow.',
-  stored: 'This account stored 500 items today. More can be stored tomorrow.',
-  size: 'This text is too large to store. Keep it under 2 KB.',
+  day: 'The limit of 2,000 calls for today is reached. Calls are accepted again tomorrow.',
+  stored: '500 items were stored in this account today. More can be stored tomorrow.',
+  size: 'This text is too large to store. Keep the text under 2 KB.',
   agents: 'This account already has 20 connected agents.',
   full: 'The memory is full. Remove or pin fewer items on the agent-ctx page to store more.',
   clean: 'This text could not be cleaned, so nothing was stored.',
-  scope: 'This connection may only read. Connect again with write access to save.',
+  scope: 'This connection has read access only. Connect again with write access to save.',
   noread: 'This connection has no read access.',
-  where: 'A project rule needs the repo or the folder of that project.',
+  where: 'Give the repo or the folder of the project for a project rule.',
   projects: 'This account already has 200 projects with saved items. Remove the items of an old project on the agent-ctx page to add a new one.',
-  place: 'Pass repo or folder so this is saved to the right project.',
+  place: 'Pass repo or folder so the text is saved to the right project.',
   placeRead: 'Pass repo or folder to get the handoff and recent work of this project.',
 };
 
@@ -224,7 +224,7 @@ export const SIGN_IN_ROUTES = new Set(['/authorize', '/login', '/login/callback'
 export const CLIENT_TTL = 30 * 86400;
 export const REGISTRATIONS_PER_DAY = 150;
 export const SLOW_DOWN = 'Too many requests from this address. Wait a minute and try again.';
-export const REGISTRATIONS_FULL = 'New sign ins from apps that register themselves are paused until tomorrow. Apps with a published identity, such as Claude Code and Codex, still sign in.';
+export const REGISTRATIONS_FULL = 'New sign ins of self registered apps are paused until tomorrow. Sign in stays open for apps with a published identity, such as Claude Code and Codex.';
 
 export function limiterFor(e: Env, path: string): RateLimit | null {
   if (path === REGISTER_ROUTE) return e.REGISTER_LIMIT;

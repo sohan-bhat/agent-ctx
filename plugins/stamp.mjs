@@ -21,7 +21,7 @@ export function currentOrigin(from = PLUGINS) {
   const codex = JSON.parse(readFileSync(join(from, 'codex', 'mcp.json'), 'utf8')).mcpServers?.['agent-ctx']?.url;
   const claude = JSON.parse(readFileSync(join(from, 'claude-code', '.claude-plugin', 'plugin.json'), 'utf8')).mcpServers?.['agent-ctx']?.url;
   const origins = [...new Set([codex, claude].map((u) => new URL(String(u)).origin))];
-  if (origins.length !== 1) throw new Error(`The plugin files name ${origins.length} origins. Fix them by hand first.`);
+  if (origins.length !== 1) throw new Error(`The plugin files contain ${origins.length} origins. Fix the plugin files by hand first.`);
   return origins[0];
 }
 

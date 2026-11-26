@@ -17,9 +17,9 @@ export const FAILED = 'Memory could not be loaded. Do not assume that nothing is
 
 const DESCRIBE = {
   recall:
-    "Call first, before reading or changing files. Another agent may have left a handoff, rules or dead ends here. repo is git remote get-url origin, folder the working folder. A result may list topics. Call again with ids to read them.",
+    "Call first, before reading or changing files. Another agent may have left a handoff, rules or dead ends here. repo is git remote get-url origin, folder the working folder. A result may list topics. Call again with ids to read those topics.",
   checkpoint: 'Call before your final reply after any file change. Save goal in one line, changed, decisions with reasons, dead_ends and open for the agent after you.',
-  handoff: 'Save state for the next agent. goal, next and question help most, then done, blockers, files and check.',
+  handoff: 'Save state for the next agent. goal, next and question matter most, then done, blockers, files and check.',
   rule: "Save a standing rule. words is the person's exact words.",
   event: 'For plugin hooks. Agents never call this tool.',
 };
@@ -101,7 +101,7 @@ function canAsk(server: McpServer): boolean {
 }
 
 function askText(line: string, scope: string): string {
-  return `Keep this standing rule for ${scope === 'project' ? 'this project' : 'all projects'}? Every agent you connect reads it as your own words. ${line}`;
+  return `Keep this standing rule for ${scope === 'project' ? 'this project' : 'all projects'}? Every agent you connect reads the rule as your own words. ${line}`;
 }
 
 function caller(ctx: Ctx): { props: Props; who: Caller } | null {

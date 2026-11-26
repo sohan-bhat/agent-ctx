@@ -19,7 +19,7 @@ async function up() {
 }
 
 async function start(dir) {
-  if (await up()) throw new Error('A service already answers on port 8790. Stop that one first.');
+  if (await up()) throw new Error('Port 8790 is already in use by a service. Stop that service first.');
   const log = openSync(join(dir, 'service.log'), 'a');
   const env = { ...process.env, DISABLE_TELEMETRY: '1', WRANGLER_SEND_METRICS: 'false' };
   const child = spawn('npm', ['--prefix', join(ROOT, 'service'), 'run', 'dev', '--', '--persist-to', join(dir, 'state'), '--var', 'DEV_LOGIN:1'], { detached: true, stdio: ['ignore', log, log], env });
@@ -29,7 +29,7 @@ async function start(dir) {
     if (await up()) return child.pid;
     await sleep(1000);
   }
-  throw new Error('The service did not answer within two minutes. Read service.log.');
+  throw new Error('No answer came from the service within two minutes. Read service.log.');
 }
 
 async function stop(dir) {
@@ -81,7 +81,7 @@ const send = (path, init) => fetch(`${ORIGIN}${path}`, { redirect: 'manual', ...
 export async function devSignIn(name) {
   const jar = new Jar();
   const r = await send('/login/dev', { method: 'POST', headers: { Origin: ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ name, return: '/' }) });
-  if (r.status !== 302) throw new Error(`Dev sign in gave ${r.status}.`);
+  if (r.status !== 302) throw new Error(`The dev sign in ended with status ${r.status}.`);
   jar.take(r);
   return jar;
 }
@@ -93,7 +93,7 @@ export async function connect(jar, clientName, port) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ redirect_uris: [redirect], client_name: clientName, token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] }),
   });
-  if (reg.status !== 201) throw new Error(`Registration gave ${reg.status}.`);
+  if (reg.status !== 201) throw new Error(`The registration ended with status ${reg.status}.`);
   const clientId = (await reg.json()).client_id;
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash('sha256').update(verifier).digest());
@@ -101,21 +101,21 @@ export async function connect(jar, clientName, port) {
   const page = jar.take(await send(`/authorize?${q}`, { headers: { Cookie: jar.header() } }));
   const text = await page.text();
   const handle = /name="handle" value="([^"]+)"/.exec(text)?.[1];
-  if (page.status !== 200 || !handle) throw new Error(`The consent page gave ${page.status}.`);
+  if (page.status !== 200 || !handle) throw new Error(`The consent page came back with status ${page.status}.`);
   const label = /<h1>Allow (.+?) to use/.exec(text)?.[1] ?? '';
   const form = new URLSearchParams({ handle, decision: 'approve' });
   form.append('scope', 'read');
   form.append('scope', 'write');
   const ok = jar.take(await send('/authorize', { method: 'POST', headers: { Cookie: jar.header(), 'Content-Type': 'application/x-www-form-urlencoded', Origin: ORIGIN }, body: form }));
   const code = new URL(ok.headers.get('Location') ?? '', ORIGIN).searchParams.get('code');
-  if (ok.status !== 302 || !code) throw new Error(`Approval gave ${ok.status}.`);
+  if (ok.status !== 302 || !code) throw new Error(`The approval ended with status ${ok.status}.`);
   const t = await send('/oauth/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirect, client_id: clientId, code_verifier: verifier, resource: RESOURCE }),
   });
   const body = await t.json();
-  if (!body.access_token) throw new Error(`The token call gave ${t.status}.`);
+  if (!body.access_token) throw new Error(`The token call ended with status ${t.status}.`);
   return { label, clientId, access: body.access_token, scope: body.scope };
 }
 
@@ -153,7 +153,7 @@ async function rpc(token, session, body) {
 
 export async function open(token) {
   const init = await rpc(token, null, { jsonrpc: '2.0', id: ++id, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e-probe', version: '1.0.0' } } });
-  if (init.status !== 200) throw new Error(`initialize gave ${init.status}`);
+  if (init.status !== 200) throw new Error(`initialize ended with status ${init.status}`);
   await rpc(token, init.session, { jsonrpc: '2.0', method: 'notifications/initialized' });
   return {
     async call(name, args) {
@@ -175,7 +175,7 @@ async function serviceCommand(argv) {
     process.exit(cmd ? 1 : 0);
   }
   try {
-    if (cmd === 'start') console.log(`The service answers at ${ORIGIN} with pid group ${await start(dir)}.`);
+    if (cmd === 'start') console.log(`The service is up at ${ORIGIN} with pid group ${await start(dir)}.`);
     else console.log((await stop(dir)) ? 'The service stopped.' : 'No service from this folder was running.');
   } catch (e) {
     console.log(e instanceof Error ? e.message : String(e));
@@ -193,7 +193,7 @@ async function signInCommand(argv) {
   const a = await connect(jar, 'Claude Code', 41001);
   const b = await connect(jar, 'Codex', 41002);
   writeFileSync(out, JSON.stringify({ person: `dev-${person}`, cookie: jar.header(), A: a, B: b }, null, 2), { mode: 0o600 });
-  console.log(`Two agents of dev-${person} are signed in. Side A shows as ${a.label} and side B as ${b.label}, scopes ${a.scope} and ${b.scope}.`);
+  console.log(`Two agents of dev-${person} are signed in. Side A appears as ${a.label} and side B as ${b.label}, with scopes ${a.scope} and ${b.scope}.`);
 }
 
 const main = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);

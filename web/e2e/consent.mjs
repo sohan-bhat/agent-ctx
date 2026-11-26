@@ -111,7 +111,7 @@ async function run(b, dir) {
     const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
     check('the consent page shows the agent label', /Allow .*Consent Probe.* to use your agent-ctx memory\?/.test(text), text.slice(0, 80));
     check('the consent page shows the redirect host', text.includes(`127.0.0.1:${ear.port}`) || text.includes('127.0.0.1'));
-    check('the consent page shows the loopback warning', /This sends access to an app on this computer/.test(text));
+    check('the consent page shows the loopback warning', /Access goes to an app on this computer/.test(text));
     const csp = (await page.request.get(page.url()).then((r) => r.headers()['content-security-policy']).catch(() => '')) ?? '';
     const allow = await decide(page, 'Allow', () => ear.hits.find((u) => u.searchParams.get('state') === 'allow-loop'));
     const code = allow.hit?.searchParams.get('code');

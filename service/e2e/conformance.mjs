@@ -72,7 +72,7 @@ async function authorization(jar, reports) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ redirect_uris: [redirect], client_name: 'Conformance Authorization', token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] }),
   });
-  if (reg.status !== 201) throw new Error(`Registration for the authorization run gave ${reg.status}.`);
+  if (reg.status !== 201) throw new Error(`The registration for the authorization run ended with status ${reg.status}.`);
   const clientId = (await reg.json()).client_id;
   let approved = false;
   let failure = null;
@@ -80,13 +80,13 @@ async function authorization(jar, reports) {
     try {
       const page = jar.take(await send(address.replace(`http://${UPSTREAM.host}:${UPSTREAM.port}`, ''), { headers: { Cookie: jar.header() } }));
       const handle = /name="handle" value="([^"]+)"/.exec(await page.text())?.[1];
-      if (page.status !== 200 || !handle) throw new Error(`The consent page gave ${page.status}.`);
+      if (page.status !== 200 || !handle) throw new Error(`The consent page came back with status ${page.status}.`);
       const form = new URLSearchParams({ handle, decision: 'approve' });
       form.append('scope', 'read');
       form.append('scope', 'write');
       const ok = jar.take(await send('/authorize', { method: 'POST', redirect: 'manual', headers: { Cookie: jar.header(), 'Content-Type': 'application/x-www-form-urlencoded', Origin: `http://${UPSTREAM.host}:${UPSTREAM.port}` }, body: form }));
       const back = ok.headers.get('Location');
-      if (ok.status !== 302 || !back) throw new Error(`Approval gave ${ok.status}.`);
+      if (ok.status !== 302 || !back) throw new Error(`The approval ended with status ${ok.status}.`);
       await fetch(back);
     } catch (e) {
       failure = e instanceof Error ? e.message : String(e);
@@ -128,17 +128,17 @@ async function main() {
     const t = await connect(jar, 'Conformance Suite', 42201);
     gate = await withToken(t.access);
     const url = `http://localhost:${gate.port}/mcp`;
-    console.log(`The suite reaches the service through a local relay at ${url} that adds the bearer token of a real sign in.`);
+    console.log(`The suite is pointed at a local relay at ${url}, where the bearer token of a real sign in is added on the way to the service.`);
     let failed = 0;
     for (const rev of REVISIONS) {
       const flags = ['server', '--url', url, '--requirements', rev, '-o', join(reports, rev), ...(raw ? [] : ['--expected-failures', BASELINE])];
       const r = await run(flags);
       writeFileSync(join(reports, `${rev}.txt`), r.out);
-      console.log(`\nRequirement set ${rev} ${raw ? 'without' : 'with'} the baseline exited ${r.code}.\n${summary(r.out)}`);
+      console.log(`\nRequirement set ${rev} ${raw ? 'without' : 'with'} the baseline ended with exit code ${r.code}.\n${summary(r.out)}`);
       if (r.code !== 0) failed++;
     }
     const auth = await authorization(jar, reports);
-    console.log(`\nAuthorization server scenarios exited ${auth.code}.\n${summary(auth.out)}`);
+    console.log(`\nThe authorization server scenarios ended with exit code ${auth.code}.\n${summary(auth.out)}`);
     if (auth.code !== 0) failed++;
     code = failed ? 1 : 0;
   } catch (e) {
