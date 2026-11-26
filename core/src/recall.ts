@@ -1,8 +1,7 @@
 import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, cut } from './caps.ts';
 import type { CardBody, DroppedBody, HandoffBody, Item, RuleBody } from './model.ts';
 import { projectName } from './project.ts';
-import { rankHybrid, type HybridSettings } from './hybrid.ts';
-import { namedProjects, namesOf, recent } from './rank.ts';
+import { namedProjects, namesOf, rankItems, recent } from './rank.ts';
 import { ruleLine } from './rules.ts';
 import { looseMatches, resolveIds, shortIds, topicList, type LooseSettings } from './topics.ts';
 
@@ -18,10 +17,6 @@ export interface RecallInput {
   now: number;
   live?: string[];
   once?: boolean;
-  vectors?: Map<string, Int8Array>;
-  queryVector?: Int8Array | null;
-  namedVectors?: Map<string, Int8Array>;
-  hybrid?: Partial<HybridSettings>;
   ids?: string[];
   tool?: boolean;
   loose?: Partial<LooseSettings>;
@@ -289,16 +284,13 @@ export function recall(input: RecallInput): RecallOutput {
       earlier.push(block(i));
     }
   } else {
-    const vectors = input.vectors ?? new Map<string, Int8Array>();
-    const qv = input.queryVector ?? null;
-    for (const h of rankHybrid(pool(project), vectors, query, qv, now, input.hybrid).slice(0, 3)) {
+    for (const h of rankItems(pool(project), query, now).slice(0, 3)) {
       shown.add(h.item.id);
       earlier.push(block(h.item));
     }
     for (const { key, query: q } of namedQueries(query, input.projects ?? [], project)) {
       const where = ` in ${nameOf(key, 'another-project')}`;
-      const nv = input.namedVectors?.get(key) ?? qv;
-      for (const h of rankHybrid(pool(key), vectors, q, nv, now, { ...input.hybrid, max: 2 }).slice(0, 2)) {
+      for (const h of rankItems(pool(key), q, now).slice(0, 2)) {
         if (shown.has(h.item.id)) continue;
         shown.add(h.item.id);
         earlier.push(block(h.item, where));

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { measure, reachable, run, SETS, SET2B, SET_LANG } from './precision.ts';
-import { loadVectors, runHybrid } from './vectors.ts';
 import { ITEMS, PROJECTS, QUERIES } from './corpus.ts';
 import * as two from './corpus2.ts';
 
@@ -52,15 +51,6 @@ test('recall over set two stays quiet on whole prompts', () => {
 
 test('every vague chat line in set one gives the empty string', () => {
   for (const r of run(SETS.set1).filter((x) => x.query.kind === 'chat')) assert.equal(r.empty, true, r.query.q);
-});
-
-test('the hybrid over the tuning sets stays at its tuned numbers', () => {
-  const file = loadVectors();
-  assert.ok(file, 'vectors.json');
-  const two = measure(runHybrid(SETS.set2, file!));
-  assert.ok(two.precision_at_3 >= 0.91 && two.empty_correct >= 0.98 && two.found >= 0.92, JSON.stringify(two));
-  const twoB = measure(runHybrid(SET2B, file!));
-  assert.ok(twoB.precision_at_3 >= 0.89 && twoB.empty_correct >= 0.95 && twoB.found >= 0.69, JSON.stringify(twoB));
 });
 
 test('on the tool path the right card stays reachable on the tuning sets', () => {

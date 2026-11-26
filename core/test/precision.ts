@@ -7,7 +7,6 @@ import * as two from './corpus2.ts';
 import * as twoB from './corpus2b.ts';
 import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
-import { loadVectors, missing, runHybrid } from './vectors.ts';
 import type { LooseSettings } from '../src/topics.ts';
 import * as lang from './corpus-lang.ts';
 import * as lang2 from './corpus-lang2.ts';
@@ -97,18 +96,6 @@ if (isMain()) {
     console.log(`${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
     console.log(`${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
     console.log(`${name}_found ${s.found.toFixed(2)}`);
-  }
-  const file = loadVectors();
-  for (const [name, set] of all) {
-    const lack = missing(file, set);
-    if (!file || lack) {
-      console.log(`hybrid_${name} incomplete, vectors.json lacks ${lack} texts`);
-      continue;
-    }
-    const s = measure(runHybrid(set, file));
-    console.log(`hybrid_${name}_precision_at_3 ${s.precision_at_3.toFixed(2)}`);
-    console.log(`hybrid_${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
-    console.log(`hybrid_${name}_found ${s.found.toFixed(2)}`);
   }
   const tool: [string, TestSet][] = [['set2', SETS.set2], ['set2b', SET2B], ['set3', SET3], ['set4', SET4]];
   for (const [name, set] of tool) console.log(`tool_${name}_reachable ${reachable(set).toFixed(2)}`);
