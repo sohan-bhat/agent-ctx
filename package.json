@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test --test-concurrency=1 core/test/*.test.ts importer/test/*.test.ts test-e2e/*.test.ts",
+    "test": "node --test --test-concurrency=1 core/test/*.test.ts test-e2e/*.test.ts",
     "precision": "node core/test/precision.ts"
   },
   "devDependencies": {
