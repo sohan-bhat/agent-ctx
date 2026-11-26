@@ -239,3 +239,29 @@ test('a store under the mark comes back identical', () => {
   assert.equal(out, items);
   assert.deepEqual(out, items);
 });
+
+test('a folded quarantined card stays held with its flags', () => {
+  const bad = card(2, { held: true, flags: ['override'] });
+  const f = foldCard(bad);
+  assert.equal(f.held, true);
+  assert.deepEqual(f.flags, ['override']);
+});
+
+test('a merged card keeps the hold and the flags of every member', () => {
+  const group = [card(1), card(2, { held: true, flags: ['override'] }), card(3, { flags: ['markup'] })].map(foldCard);
+  const m = mergeFolded(group);
+  assert.equal(m.held, true);
+  assert.deepEqual([...m.flags].sort(), ['markup', 'override']);
+  const clean = mergeFolded([card(4), card(5)].map(foldCard));
+  assert.equal(clean.held, false);
+  assert.deepEqual(clean.flags, []);
+});
+
+test('a quarantined card stays held through a whole ceiling plan', () => {
+  const items = [card(0, { held: true, flags: ['shell'] }), ...Array.from({ length: 30 }, (_, k) => card(k + 1))];
+  const limit = Math.floor(totalBytes(items.map(foldCard)) / 1.05);
+  const { items: out } = underCeiling(items, limit, AT_80);
+  const goals = out.filter((i) => (i.body as CardBody).goal.includes('Calibrate sensor batch 0 '));
+  assert.ok(goals.length >= 1);
+  assert.ok(goals.every((i) => i.held && i.flags.includes('shell')));
+});
