@@ -6,6 +6,7 @@ import {
   autoCard,
   autoHandoff,
   bytes,
+  clean,
   cut,
   decideRule,
   droppedAt,
@@ -92,8 +93,9 @@ function val(v: unknown): string | undefined {
   return v;
 }
 
-function cleanText(s: string): { text: string; flags: string[] } {
-  const r = sanitize(redact(stripOwn(stripPrivate(s))));
+function cleanText(s: string, limit?: number): { text: string; flags: string[] } {
+  const base = stripOwn(stripPrivate(s));
+  const r = sanitize(limit === undefined ? redact(base) : clean(base, limit));
   return { text: r.text, flags: r.flags };
 }
 
@@ -769,7 +771,7 @@ export class Person extends DurableObject<Env> {
 
   private session(c: Caller, sid: string, a: EventArgs, now: number): Live | null {
     const raw = val(a.model);
-    const model = raw ? cut(redact(raw), 80) : undefined;
+    const model = raw ? clean(raw, 80) : undefined;
     let s = this.sessionCache.get(sid);
     if (!s) {
       const row = this.store.q<SessionRow>('SELECT * FROM sessions WHERE id = ?', sid)[0];
@@ -799,9 +801,8 @@ export class Person extends DurableObject<Env> {
   }
 
   private addEvent(s: Live, t: EvType, now: number, raw: { text?: string; path?: string; ok?: boolean; limit?: number }): EventRow | null {
-    const text = raw.text !== undefined ? cleanText(raw.text) : undefined;
+    const text = raw.text !== undefined ? cleanText(raw.text, raw.limit) : undefined;
     const path = raw.path !== undefined ? cleanText(raw.path) : undefined;
-    if (text && raw.limit !== undefined) text.text = cut(text.text, raw.limit);
     const flags = [...new Set([...(text?.flags ?? []), ...(path?.flags ?? [])])];
     const ev: Ev = compact({ t, at: now, text: text?.text, path: path?.text });
     const row: EventRow = { session: s.id, key: eventKey(s.id, ev), t, at: now, text: ev.text ?? null, path: ev.path ?? null, ok: raw.ok === undefined ? null : raw.ok ? 1 : 0, flags: flags.length ? JSON.stringify(flags) : null };
