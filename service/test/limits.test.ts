@@ -72,9 +72,9 @@ describe('limits', () => {
           break;
         }
         x.store.put({ ...r.item!, pinned: true });
-        if (x.store.totalBytes() > TEN_MB) return { last: 'over', total: x.store.totalBytes(), sum: x.store.sumBytes() };
+        if (x.limits.bytes() > TEN_MB) return { last: 'over', total: x.limits.bytes(), sum: x.store.sumBytes() };
       }
-      return { last, total: x.store.totalBytes(), sum: x.store.sumBytes() };
+      return { last, total: x.limits.bytes(), sum: x.store.sumBytes() };
     });
     expect(out.last).toBe(SAY.full);
     expect(out.total).toBe(out.sum);
@@ -95,11 +95,11 @@ describe('limits', () => {
         sent += goal.length;
         const r = await x.checkpoint(A, { ...KILN, goal });
         if (!r.ok) refused++;
-        const total = x.store.totalBytes();
+        const total = x.limits.bytes();
         peak = Math.max(peak, total);
         if (i % 500 === 0 && x.store.sumBytes() !== total) drift++;
       }
-      return { peak, refused, drift, sum: x.store.sumBytes(), total: x.store.totalBytes() };
+      return { peak, refused, drift, sum: x.store.sumBytes(), total: x.limits.bytes() };
     });
     expect(out.peak).toBeLessThanOrEqual(TEN_MB);
     expect(out.sum).toBeLessThanOrEqual(TEN_MB);

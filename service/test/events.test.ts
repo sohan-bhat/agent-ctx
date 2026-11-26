@@ -1,7 +1,8 @@
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { FOOTER, HEADER, type CardBody, type HandoffBody, type Item, type RuleBody } from '../../core/src/index.ts';
 import { SAY } from '../src/limits.ts';
-import type { EventArgs } from '../src/person.ts';
+import type { EventArgs, Person } from '../src/person.ts';
 import { caller, open, person, sql } from './helpers.ts';
 
 const CC = caller('Claude Code', 'grant-cc');
@@ -204,13 +205,13 @@ describe('hook events', () => {
 
   it('a session keeps at most 400 events', async () => {
     const p = person();
+    await open(p);
     await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'first prompt about the pantry shelves' }));
-    const now = Date.now();
-    for (let i = 0; i < 450; i++) await sql(p, "INSERT INTO events(key, session, t, at, text, path, ok, flags) VALUES(?, 's1', 'edit', ?, NULL, ?, NULL, NULL)", `k${i}`, now + i, `src/f${i}.ts`);
-    await sql(p, "UPDATE meta SET v = '0' WHERE k = 'maintained'");
-    await p.recall(CC, { folder: CWD });
+    for (let i = 0; i < 450; i++) await p.event(CC, ev('s1', 'PostToolUse', { tool: 'Edit', file: `src/f${i}.ts` }));
     expect((await sql<{ n: number }>(p, "SELECT COUNT(*) AS n FROM events WHERE session = 's1'"))[0].n).toBe(400);
-    expect((await sql<{ path: string }>(p, "SELECT path FROM events WHERE session = 's1' ORDER BY at DESC LIMIT 1"))[0].path).toBe('src/f449.ts');
+    const paths = (await sql<{ path: string }>(p, "SELECT path FROM events WHERE session = 's1' AND t = 'edit'")).map((r) => r.path);
+    expect(paths).toContain('src/f449.ts');
+    expect(paths).not.toContain('src/f0.ts');
   });
 
   it('old events are deleted', async () => {
@@ -218,7 +219,9 @@ describe('hook events', () => {
     await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'an old prompt about pantry shelves' }));
     await sql(p, 'UPDATE events SET at = at - ?', 15 * 86400000);
     await sql(p, 'UPDATE sessions SET last = last - ?', 15 * 86400000);
-    await sql(p, "UPDATE meta SET v = '0' WHERE k = 'maintained'");
+    await runInDurableObject(p, (x: Person) => {
+      x.limits.state().maintained = 0;
+    });
     await p.event(CC, ev('s2', 'UserPromptSubmit', { prompt: 'a new prompt about pantry shelves' }));
     const rows = await sql<{ session: string }>(p, 'SELECT session FROM events');
     expect(rows.map((r) => r.session)).toEqual(['s2']);

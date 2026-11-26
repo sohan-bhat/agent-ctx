@@ -126,7 +126,7 @@ describe('reads', () => {
     const many = (await p.space()).reads;
     expect(many).toHaveLength(200);
     expect(many.every((r) => r.agent === 'Codex')).toBe(true);
-    expect((await sql<{ n: number }>(p, 'SELECT COUNT(*) AS n FROM reads'))[0].n).toBe(200);
+    expect(JSON.parse((await sql<{ v: string }>(p, "SELECT v FROM meta WHERE k = 'reads'"))[0].v)).toHaveLength(200);
   });
 });
 
