@@ -4,9 +4,11 @@ import { mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Jar } from '../../test-e2e/oauth.mjs';
-import { browser, waitFor, web } from './lib.mjs';
+import { browser, engine, waitFor, web } from './lib.mjs';
 
-const ORIGIN = process.env.ORIGIN ?? 'http://localhost:8795';
+const ORIGIN = process.env.ORIGIN ?? (engine === 'webkit' ? 'https://localhost:8795' : 'http://localhost:8795');
+const TLS = ORIGIN.startsWith('https:');
+if (TLS) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const RESOURCE = `${ORIGIN}/mcp`;
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const results = [];
@@ -32,7 +34,8 @@ async function service(dir) {
   const env = { ...process.env, DISABLE_TELEMETRY: '1', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: path.join(dir, 'wrangler') };
   const svc = path.join(web, '..', 'service');
   const port = new URL(ORIGIN).port;
-  const child = spawn(path.join(svc, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', port, '--var', 'DEV_LOGIN:1', '--var', `MCP_RESOURCE:${RESOURCE}`], { cwd: svc, detached: true, stdio: ['ignore', log, log], env });
+  const args = ['dev', '--port', port, '--var', 'DEV_LOGIN:1', '--var', `MCP_RESOURCE:${RESOURCE}`, ...(TLS ? ['--local-protocol', 'https'] : [])];
+  const child = spawn(path.join(svc, 'node_modules', '.bin', 'wrangler'), args, { cwd: svc, detached: true, stdio: ['ignore', log, log], env });
   for (let i = 0; i < 120 && !(await up()); i++) await sleep(1000);
   if (!(await up())) throw new Error('The service did not start.');
   return async () => {
@@ -101,10 +104,10 @@ async function agent(token) {
 
 const HARBOR = { repo: 'https://github.com/kelpworks/harbor.git', folder: '/work/harbor' };
 const LANTERN = { repo: 'https://github.com/kelpworks/lantern.git', folder: '/work/lantern' };
-const GOALS = { search: 'Add slip search by date range', taps: 'Stop double bookings from two quick taps', tiles: 'Render tiles in parallel', glyphs: 'Cache decoded glyphs between tiles', filter: 'Add the dock filter to search', held: 'Set up the build box', live: 'Send receipts after a booking', refund: 'Finish the refund flow' };
+const GOALS = { search: 'Add berth search by arrival week', taps: 'Guard berth holds against a double submit', tiles: 'Split the tile export across workers', glyphs: 'Keep shaped labels between zoom levels', filter: 'Add a pier filter to berth search', held: 'Prepare the render host', live: 'Email a berth confirmation', refund: 'Finish partial berth refunds' };
 
 async function seed(a, b) {
-  await a.call('checkpoint', { ...HARBOR, goal: GOALS.search, changed: ['src/search/range.ts'], decisions: ['store dates as UTC days because local midnight shifted bookings'], commands: ['npm test'] });
+  await a.call('checkpoint', { ...HARBOR, goal: GOALS.search, changed: ['src/search/range.ts'], decisions: ['index arrivals by ISO week because weekday sorting broke across years'], commands: ['npm test'] });
   await a.call('checkpoint', { ...HARBOR, goal: GOALS.taps, changed: ['src/booking/reserve.ts'], decisions: ['lock the slip row inside the transaction'] });
   await b.call('checkpoint', { ...LANTERN, goal: GOALS.tiles, changed: ['src/render/mod.rs'], commands: ['cargo test'] });
   await b.call('checkpoint', { ...LANTERN, goal: GOALS.glyphs, changed: ['src/text/glyphs.rs'] });
@@ -166,17 +169,23 @@ async function run(b, w, h, dir) {
   const tag = `${w}x${h}`;
   const name = `real-${w}-${Date.now().toString(36)}`;
   const touch = w < 600;
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, hasTouch: touch, ...(engine === 'firefox' ? {} : { isMobile: touch }), acceptDownloads: true, ignoreHTTPSErrors: TLS });
+  await ctx.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (e) => console.info(`csp-violation ${location.pathname} ${e.effectiveDirective} ${e.blockedURI} ${JSON.stringify(e.sample)}`));
+  });
   const page = await ctx.newPage();
   const errors = [];
   const expectedMisses = [];
   const service = [];
+  const violations = [];
   page.on('console', (m) => {
+    if (m.text().startsWith('csp-violation /login')) service.push(m.text().slice(0, 160));
+    else if (m.text().startsWith('csp-violation')) violations.push(`${step} ${m.text().slice(0, 200)}`);
     if (m.type() !== 'error') return;
     const t = m.text();
     if (new URL(page.url()).pathname.startsWith('/login')) service.push(t.slice(0, 160));
-    else if (/Failed to load resource: the server responded with a status of 401/.test(t)) expectedMisses.push(t);
-    else errors.push(`${step} ${(t.match(/sha256-[A-Za-z0-9+/=]+/g) ?? []).join(' ')} ${t.slice(0, 120)}`);
+    else if (/status of 401/.test(t)) expectedMisses.push(t);
+    else errors.push(`${step} ${(t.match(/sha256-[A-Za-z0-9+/=]+/g) ?? []).join(' ')} ${t.slice(0, 120)} ${m.location()?.url ?? ''}:${m.location()?.lineNumber ?? ''}`);
   });
   let step = 'load';
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
@@ -193,6 +202,9 @@ async function run(b, w, h, dir) {
     check(`${tag} the page arrives with its security headers`, /script-src 'self'/.test(hdr['content-security-policy'] ?? '') && hdr['x-content-type-options'] === 'nosniff' && hdr['referrer-policy'] === 'no-referrer' && hdr['x-frame-options'] === 'DENY');
     await page.getByRole('link', { name: 'Sign in with GitHub' }).waitFor();
     await signInPage(page, name);
+    const signedIn = await waitFor(() => page.getByRole('button', { name: 'Add agent' }).count(), 8000);
+    check(`${tag} the dev form signs the page in`, !!signedIn);
+    if (!signedIn) throw new Error('The page stayed signed out after the dev form.');
     await ready(page);
 
     const names = await waitFor(async () => (await page.locator('[data-agent="Claude Code"]').count()) && (await page.locator('[data-agent="Codex"]').count()), 5000);
@@ -211,7 +223,7 @@ async function run(b, w, h, dir) {
     step = 'panel';
     const shown = await openItem(page, GOALS.search);
     const panelText = await page.locator('[data-panel]').textContent().catch(() => '');
-    check(`${tag} the panel shows the real item text`, shown && panelText.includes('store dates as UTC days') && panelText.includes('Claude Code'));
+    check(`${tag} the panel shows the real item text`, shown && panelText.includes('index arrivals by ISO week') && panelText.includes('Claude Code'));
     await page.locator('[data-panel] [role=switch]').click();
     await waitFor(async () => (await page.locator('[data-panel] [role=switch]').getAttribute('aria-checked')) === 'true', 3000);
     await closePanel(page);
@@ -310,7 +322,7 @@ async function run(b, w, h, dir) {
     check(`${tag} Delete account empties everything and signs out`, !!signedOut && after && after.items.length === 0 && after.agents.length === 0 && (probe.status === 401 || probe.isError || probe.text === ''), `items ${after?.items.length}, agents ${after?.agents.length}, old token ${probe.status}`);
     await pageApi(fresh, 'DELETE', '/account');
 
-    check(`${tag} no console error on the page`, !errors.length, errors.join(' | ') || `${expectedMisses.length} sign in probes answered 401 as designed`);
+    check(`${tag} no console error on the page`, !errors.length && !violations.length, errors.length || violations.length ? `${errors.join(' | ')} | violations ${violations.join(' | ')}` : `${expectedMisses.length} sign in probes answered 401 as designed`);
     if (service.length) console.log(`NOTE ${tag} the service sign in form logged ${[...new Set(service)].join(' | ')}`);
   } finally {
     await ctx.close();
