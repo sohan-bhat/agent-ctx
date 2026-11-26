@@ -2,6 +2,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { browser, context, engine, press, ready, server, web } from './lib.mjs';
 
+if (process.argv[2] === 'icon') {
+  const SIZE = 512;
+  const svg = fs.readFileSync(path.join(web, 'public', 'favicon.svg'), 'utf8').replace('<svg ', `<svg width="${SIZE}" height="${SIZE}" `);
+  const file = process.env.OUT ?? path.join(web, '..', 'plugins', 'src', 'claude-code', '.claude-plugin', 'icon.png');
+  const b = await browser();
+  try {
+    const ctx = await b.newContext({ viewport: { width: SIZE, height: SIZE }, deviceScaleFactor: 1, colorScheme: 'light' });
+    const page = await ctx.newPage();
+    await page.setContent(`<!doctype html><html><head><style>html,body{margin:0;background:transparent}svg{display:block}</style></head><body>${svg}</body></html>`);
+    await page.screenshot({ path: file, omitBackground: true, clip: { x: 0, y: 0, width: SIZE, height: SIZE } });
+    await ctx.close();
+    console.log(`Wrote a ${SIZE} px icon to ${path.relative(path.join(web, '..'), file)}.`);
+  } finally {
+    await b.close();
+  }
+  process.exit(0);
+}
+
 const out = process.env.OUT ?? path.join(web, '..', '..', '..', 'shots', 'build-c');
 fs.mkdirSync(out, { recursive: true });
 const schemes = (process.env.SCHEMES ?? 'light,dark').split(',');
