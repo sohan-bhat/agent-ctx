@@ -6,17 +6,18 @@ import { stem, tokens } from './text.ts';
 export const DAY = 86400000;
 export const MIN_MATCH = 2;
 export const BAR = 0.22;
-export const COVER = 0.4;
-export const REL = 0.3;
+export const COVER = 0.45;
+export const REL = 0.8;
 export const COMMON = 0.5;
-export const UNKNOWN = 0.5;
+export const UNKNOWN = 1;
 
 export interface Hit { item: Item; score: number; matched: number }
 
 const CHAT = new Set(
   (
     'next done did fix fixed check checked continue carry ahead good great nice cool fine perfect awesome alright sound sounds think know mean said say tell told show give take put keep start stop finish finished run ran work works working worked wrong issue problem error bug change changes update updates add remove build test tests file files code page step steps part rest last first again better best idea plan point question answer help maybe probably actually today later time bit lot stuff something anything everything nothing little big small happen happened seem seems looks went come came thought ready wait hmm lol btw idk ' +
-    'remember recall earlier decide decided decision decisions discuss discussed talk talked mention mentioned leave left whatever session agent'
+    'remember recall earlier decide decided decision decisions discuss discussed talk talked mention mentioned leave left whatever session agent ' +
+    'again already still please thank thanks want wanted need try tried think guess remind somewhere somehow thing stuck fail fails failed failing broke broken break breaks write wrote written support handle sure able else another kind sort whole hey yep nope basically'
   )
     .split(' ')
     .map(stem),
