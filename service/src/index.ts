@@ -22,7 +22,11 @@ app.get('/', async (c) => {
 
 app.notFound((c) => c.text('Not found.', 404));
 
-export default new OAuthProvider<Env>({
+export const OPEN_ROUTES = new Set(['/oauth/register', '/oauth/token', '/authorize', '/login', '/login/callback', '/login/dev']);
+export const CLIENT_TTL = 30 * 86400;
+const SLOW_DOWN = 'Too many requests from this address. Wait a minute and try again.';
+
+const provider = new OAuthProvider<Env>({
   apiRoute: '/mcp',
   apiHandler: { fetch: (request: Request, e: Env, ctx: ExecutionContext) => mcpHandler(request, e, ctx) },
   defaultHandler: { fetch: (request: Request, e: Env, ctx: ExecutionContext) => app.fetch(request, e, ctx) },
@@ -35,4 +39,16 @@ export default new OAuthProvider<Env>({
   clientIdMetadataDocumentEnabled: true,
   accessTokenTTL: 86400,
   refreshTokenIdleTTL: 30 * 86400,
+  clientRegistrationTTL: CLIENT_TTL,
 });
+
+export default {
+  async fetch(request: Request, e: Env, ctx: ExecutionContext): Promise<Response> {
+    if (OPEN_ROUTES.has(new URL(request.url).pathname)) {
+      const key = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+      const { success } = await e.OPEN_LIMIT.limit({ key });
+      if (!success) return new Response(SLOW_DOWN, { status: 429, headers: { 'Retry-After': '60', 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+    }
+    return provider.fetch(request, e, ctx);
+  },
+} satisfies ExportedHandler<Env>;

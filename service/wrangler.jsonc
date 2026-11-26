@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "vars": { "MCP_RESOURCE": "http://localhost:8790/mcp" },
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }],
+  "ratelimits": [{ "name": "OPEN_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
   "durable_objects": { "bindings": [{ "name": "PERSON", "class_name": "Person" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Person"] }],
   "assets": {
