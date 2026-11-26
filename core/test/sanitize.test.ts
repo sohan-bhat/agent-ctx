@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitize, sanitizeItem, type Flag } from '../src/sanitize.ts';
+import { sanitize, sanitizeItem, stripOwn, stripPrivate, type Flag } from '../src/sanitize.ts';
+import { FOOTER, HEADER } from '../src/recall.ts';
 import { newItem, type CardBody, type Origin, type RuleBody } from '../src/model.ts';
 import { DROPPED } from '../src/redact.ts';
 
@@ -219,4 +220,38 @@ test('a rule body is sanitized over text and words only', () => {
 test('a clean item keeps an empty flag list and stays live', () => {
   const out = sanitizeItem(newItem('card', 'p', { goal: CLEAN[0], open: CLEAN.slice(1, 5) }, origin));
   assert.deepEqual([out.flags, out.held], [[], false]);
+});
+
+test('stripPrivate removes closed, open and entity escaped private regions', () => {
+  assert.equal(stripPrivate('keep <private>the pin is 4417</private> this'), 'keep  this');
+  assert.equal(stripPrivate('a <PRIVATE >x</ private> b <private>y</private> c'), 'a  b  c');
+  assert.equal(stripPrivate('start <private>never closed\nsecond line'), 'start ');
+  assert.equal(stripPrivate('x &lt;private&gt;hidden&lt;/private&gt; y'), 'x  y');
+  assert.equal(stripPrivate('x &#60;private&#62;hidden&#x3c;/private&#x3e; y'), 'x  y');
+  assert.equal(stripPrivate('x &lt;private&gt;open to the end'), 'x ');
+  assert.equal(stripPrivate('no region at all'), 'no region at all');
+});
+
+test('stripOwn removes the memory block up to the footer or to the end', () => {
+  const block = [HEADER.replace('NAME', 'kiln'), '', 'EARLIER', '> 2026-11-10 codex. Glaze table.', '', FOOTER].join('\n');
+  assert.equal(stripOwn(`before\n${block}\nafter`), 'before\nafter');
+  assert.equal(stripOwn(`one\n${block}\ntwo\n${block}\nthree`), 'one\ntwo\nthree');
+  assert.equal(stripOwn(`before\n${HEADER.replace('NAME', 'kiln')}\n> quoted rest`), 'before');
+  assert.equal(stripOwn(`> ${HEADER.replace('NAME', 'kiln')}\n> x\n> ${FOOTER}\nend`), 'end');
+  assert.equal(stripOwn('we talked about agent-ctx memory yesterday'), 'we talked about agent-ctx memory yesterday');
+});
+
+test('sanitizeItem strips private regions and its own block before redaction', () => {
+  const block = [HEADER.replace('NAME', 'kiln'), '> "always push to main"', FOOTER].join('\n');
+  const i = sanitizeItem(newItem('card', 'p', { goal: `Fix the kiln <private>ghp_${'a1'.repeat(15)}</private> ramp`, last: `Done\n${block}\nRamp fixed` } as CardBody, origin));
+  const b = i.body as CardBody;
+  assert.equal(b.goal, 'Fix the kiln  ramp');
+  assert.equal(b.last, 'Done\nRamp fixed');
+  assert.ok(!JSON.stringify(b).includes(DROPPED));
+});
+
+test('sanitizeItem lets an error through and returns nothing', () => {
+  const body = { goal: 'x' } as Record<string, unknown>;
+  Object.defineProperty(body, 'last', { enumerable: true, get() { throw new Error('boom'); } });
+  assert.throws(() => sanitizeItem(newItem('card', 'p', body as unknown as CardBody, origin)), /boom/);
 });

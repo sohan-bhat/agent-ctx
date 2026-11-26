@@ -1,5 +1,6 @@
 import { redact } from './redact.ts';
 import type { Body, Item, RuleBody } from './model.ts';
+import { FOOTER } from './recall.ts';
 
 export type Flag = 'hidden' | 'role' | 'override' | 'shell' | 'markup';
 
@@ -90,6 +91,32 @@ export function sanitize(text: string): { text: string; flags: Flag[] } {
   return { text: s, flags: ORDER.filter((f) => flags.has(f)) };
 }
 
+const LT = '(?:<|&lt;|&#0*60;|&#x0*3c;)';
+const GT = '(?:>|&gt;|&#0*62;|&#x0*3e;)';
+const PRIVATE = new RegExp(String.raw`${LT}[ \t]*private[ \t]*${GT}[\s\S]*?(?:${LT}[ \t]*\/[ \t]*private[ \t]*${GT}|$)`, 'gi');
+const OWN_START = /^[ \t>]*agent-ctx memory\b/i;
+
+export function stripPrivate(text: string): string {
+  if (typeof text !== 'string') return '';
+  return text.replace(PRIVATE, '');
+}
+
+export function stripOwn(text: string): string {
+  if (typeof text !== 'string') return '';
+  if (!/agent-ctx memory/i.test(text)) return text;
+  const out: string[] = [];
+  let inside = false;
+  for (const line of text.split('\n')) {
+    if (!inside && OWN_START.test(line)) inside = true;
+    if (inside) {
+      if (line.includes(FOOTER)) inside = false;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function mapStrings(v: unknown, fn: (s: string) => string): unknown {
   if (typeof v === 'string') return fn(v);
   if (Array.isArray(v)) return v.map((x) => mapStrings(x, fn));
@@ -106,7 +133,7 @@ const HOLD = new Set<string>(['role', 'override', 'shell']);
 export function sanitizeItem(item: Item): Item {
   const flags = new Set<string>(item.flags ?? []);
   const clean = (s: string): string => {
-    const r = sanitize(redact(s));
+    const r = sanitize(redact(stripOwn(stripPrivate(s))));
     for (const f of r.flags) flags.add(f);
     return r.text;
   };
