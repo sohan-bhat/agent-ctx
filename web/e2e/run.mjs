@@ -566,7 +566,8 @@ try {
   } finally {
     await b.close();
   }
-  await part('list without WebGL', () => noWebGL(srv.url));
+  if (engine === 'chromium') await part('list without WebGL', () => noWebGL(srv.url));
+  else console.log(`NOTE ${engine} has no flag to turn WebGL off, so the list check runs in Chrome only`);
 } finally {
   await srv.stop();
 }
