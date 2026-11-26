@@ -77,6 +77,7 @@ describe('tools', () => {
     for (const r of [await p.checkpoint(ro, { ...KILN, goal: 'x' }), await p.handoff(ro, { ...KILN, goal: 'x', next: 'y' }), await p.rule(ro, { text: 'x', words: 'some words here ok', scope: 'all' })]) {
       expect(r).toEqual({ ok: false, text: SAY.scope });
     }
+    expect((await p.event(ro, { event: 'UserPromptSubmit', session: 's', cwd: '/w', prompt: 'please fix the failing test' })).text).toBe('');
     expect((await sql<{ n: number }>(p, 'SELECT COUNT(*) AS n FROM items'))[0].n).toBe(0);
     expect((await sql<{ n: number }>(p, 'SELECT COUNT(*) AS n FROM events'))[0].n).toBe(0);
   });

@@ -316,6 +316,15 @@ export class Person extends DurableObject<Env> {
     return res;
   }
 
+  private queued(project: string): Item[] {
+    const ids = this.store.q<{ item: string }>('SELECT item FROM queue ORDER BY at').map((r) => r.item);
+    return this.store.items(ids).filter((i) => i.project === project);
+  }
+
+  private unqueue(ids: string[]): void {
+    for (const id of ids) this.store.q('DELETE FROM queue WHERE item = ?', id);
+  }
+
   async recall(c: Caller, a: RecallArgs): Promise<Result> {
     return this.measure(() => {
       const now = Date.now();
@@ -417,6 +426,195 @@ export class Person extends DurableObject<Env> {
       this.remember(memo.marks, out, now);
       return out;
     });
+  }
+
+  async event(c: Caller, a: EventArgs): Promise<Result> {
+    return this.measure(() => {
+      const now = Date.now();
+      const name = val(a.event) ?? '';
+      const host = val(a.host) ?? '';
+      const asks = name === 'UserPromptSubmit' || name === 'SessionStart';
+      const stop = this.gate(c, now, 'write', null);
+      if (stop) return { ok: true, text: '' };
+      try {
+        return { ok: true, text: this.onEvent(c, a, name, host, now) };
+      } catch {
+        return { ok: true, text: asks ? hookOutput(host, name, FAILED) : '' };
+      }
+    });
+  }
+
+  private session(c: Caller, sid: string, a: EventArgs, now: number): SessionRow {
+    const model = val(a.model);
+    const row = this.store.q<SessionRow>('SELECT * FROM sessions WHERE id = ?', sid)[0];
+    if (row) {
+      if (model && row.model !== model) row.model = model;
+      row.last = now;
+      this.store.q('UPDATE sessions SET last = ?, model = ? WHERE id = ?', now, row.model, sid);
+      return row;
+    }
+    const s: SessionRow = { id: sid, agent: c.agent, model: model ?? null, project: this.project({ folder: val(a.cwd) }, now), start: now, last: now, primed: 0, grant_id: c.grant };
+    this.store.q('INSERT INTO sessions(id, agent, model, project, start, last, primed, grant_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)', s.id, s.agent, s.model, s.project, s.start, s.last, s.primed, s.grant_id);
+    return s;
+  }
+
+  private addEvent(sid: string, t: EvType, now: number, raw: { text?: string; path?: string; ok?: boolean }): boolean {
+    const text = raw.text !== undefined ? cleanText(raw.text) : undefined;
+    const path = raw.path !== undefined ? cleanText(raw.path) : undefined;
+    const flags = [...new Set([...(text?.flags ?? []), ...(path?.flags ?? [])])];
+    const ev: Ev = compact({ t, at: now, text: text?.text, path: path?.text });
+    const key = eventKey(sid, ev);
+    const ok = raw.ok === undefined ? null : raw.ok ? 1 : 0;
+    const rows = this.store.q<{ key: string }>(
+      'INSERT INTO events(key, session, t, at, text, path, ok, flags) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING RETURNING key',
+      key,
+      sid,
+      t,
+      now,
+      ev.text ?? null,
+      ev.path ?? null,
+      ok,
+      flags.length ? JSON.stringify(flags) : null,
+    );
+    return rows.length > 0;
+  }
+
+  private onEvent(c: Caller, a: EventArgs, name: string, host: string, now: number): string {
+    const sid = val(a.session);
+    if (!sid) return '';
+    const tool = val(a.tool);
+    if (tool && OWN_TOOL.test(tool)) return '';
+    this.maintain(now);
+    const s = this.session(c, sid, a, now);
+    const reader = `s-${sid}`;
+    if (name === 'UserPromptSubmit') {
+      const prompt = val(a.prompt);
+      if (!prompt) return '';
+      const stripped = stripOwn(stripPrivate(prompt));
+      if (stripped.trim().length < 15) return '';
+      const kept = stripped.length <= 800 ? stripped : cut(stripped, 300);
+      if (!this.addEvent(sid, 'prompt', now, { text: kept })) return '';
+      if (quietPrompt(stripped)) return '';
+      const first = !s.primed;
+      const putBack = this.queued(s.project);
+      const query = first ? undefined : cleanText(kept).text;
+      const res = this.memory({ project: s.project, reader, grant: c.grant, query, first, once: true, putBack, now });
+      this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
+      if (first) this.store.q('UPDATE sessions SET primed = 1 WHERE id = ?', sid);
+      const paused = first ? this.limits.paused(now) : null;
+      const text = paused ? withLine(res.text, paused, s.project, 3000) : res.text;
+      return hookOutput(host, name, text);
+    }
+    if (name === 'PostToolUse' || name === 'PostToolUseFailure') {
+      const file = val(a.file);
+      const command = val(a.command);
+      if (file) this.addEvent(sid, 'edit', now, { path: file });
+      if (command) this.addEvent(sid, 'command', now, { text: cut(command, 300), ok: name === 'PostToolUse' });
+      return '';
+    }
+    if (name === 'Stop' || name === 'StopFailure') {
+      const message = val(a.message);
+      this.addEvent(sid, 'stop', now, { text: message ? stripOwn(message) : '', ok: name === 'Stop' });
+      this.rebuild(s, now, true);
+      return '';
+    }
+    if (name === 'PostCompact') {
+      const summary = val(a.summary);
+      if (summary) this.addEvent(sid, 'compact', now, { text: summary });
+      this.dropped(s, now);
+      return '';
+    }
+    if (name === 'SessionStart') {
+      const source = val(a.source);
+      if (source !== 'clear' && source !== 'compact') return '';
+      const putBack = this.queued(s.project);
+      const res = this.memory({ project: s.project, reader, grant: c.grant, first: true, once: true, putBack, rulesOnly: true, now });
+      this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
+      return hookOutput(host, name, res.text);
+    }
+    if (name === 'SessionEnd') {
+      this.rebuild(s, now, false);
+      return '';
+    }
+    return '';
+  }
+
+  private events(sid: string): { evs: Ev[]; flags: string[] } {
+    const rows = this.store.q<EventRow>('SELECT * FROM events WHERE session = ? ORDER BY at', sid);
+    if (rows.length > EVENTS_PER_SESSION) {
+      const drop = rows.splice(0, rows.length - EVENTS_PER_SESSION);
+      for (const r of drop) this.store.q('DELETE FROM events WHERE key = ?', r.key);
+    }
+    const flags = new Set<string>();
+    for (const r of rows) for (const f of r.flags ? (JSON.parse(r.flags) as string[]) : []) flags.add(f);
+    const evs = rows.map((r) => compact({ t: r.t as EvType, at: r.at, text: r.text ?? undefined, path: r.path ?? undefined, ok: r.ok === null ? undefined : r.ok === 1 }) as Ev);
+    return { evs, flags: [...flags] };
+  }
+
+  private auto(s: SessionRow, kind: 'card' | 'handoff', body: CardBody | HandoffBody, flags: string[], now: number): void {
+    const k = `auto-${kind}:${s.id}`;
+    const id = this.store.meta<string | null>(k, null);
+    const old = id ? this.store.item(id) : null;
+    const source: Source = kind === 'card' && !(body as CardBody).last ? 'person' : 'agent';
+    const origin = compact({ agent: s.agent, model: s.model ?? undefined, session: `s-${s.id}`, via: 'hook' as Via, source, at: now }) as Origin;
+    const item: Item = { ...newItem(kind, s.project, body, origin), flags };
+    if (old) {
+      item.id = old.id;
+      item.pinned = old.pinned;
+      if (kind === 'card') item.created = old.created;
+    }
+    const r = this.save(item, now, !old);
+    if (r.ok && !old && r.item) this.store.setMeta(k, r.item.id);
+  }
+
+  private rebuild(s: SessionRow, now: number, handoff: boolean): void {
+    const { evs, flags } = this.events(s.id);
+    const card = autoCard(evs);
+    if (card) this.auto(s, 'card', card, flags, now);
+    if (!handoff) return;
+    const lastPrompt = evs.reduce((n, e, i) => (e.t === 'prompt' && e.text ? i : n), -1);
+    const failed = evs.some((e, i) => i > lastPrompt && e.t === 'stop' && e.ok === false);
+    const h = autoHandoff(evs.filter((e) => !(e.t === 'stop' && e.ok === false)));
+    if (!h) return;
+    if (failed) h.next = `Stopped by an error. ${h.next.replace(/^Unfinished request\. /, '')}`;
+    this.auto(s, 'handoff', h, flags, now);
+  }
+
+  private dropped(s: SessionRow, now: number): void {
+    const k = `dropped:${s.id}`;
+    for (const id of this.store.meta<string[]>(k, [])) {
+      const n = this.store.remove(id);
+      if (n) {
+        this.store.setTotal(this.store.totalBytes() - n);
+        this.push({ type: 'remove', id });
+      }
+    }
+    const { evs, flags } = this.events(s.id);
+    const ids: string[] = [];
+    const origin = compact({ agent: s.agent, model: s.model ?? undefined, session: `s-${s.id}`, via: 'hook' as Via, source: 'agent' as Source, at: now }) as Origin;
+    for (const body of droppedAt(evs, now)) {
+      const r = this.save({ ...newItem('dropped', s.project, body, origin), flags }, now, true);
+      if (r.ok && r.item) ids.push(r.item.id);
+    }
+    this.store.setMeta(k, ids);
+  }
+
+  private maintain(now: number): void {
+    const last = this.store.meta<number>('maintained', 0);
+    if (now - last < HOUR) return;
+    this.store.setMeta('maintained', now);
+    const old = now - KEEP_EVENTS;
+    const gone = this.store.q<{ id: string }>('SELECT id FROM sessions WHERE last < ?', old).map((r) => r.id);
+    this.store.q('DELETE FROM events WHERE at < ?', old);
+    for (const id of gone) {
+      this.store.q('DELETE FROM sessions WHERE id = ?', id);
+      this.store.q('DELETE FROM seen WHERE reader = ?', `s-${id}`);
+      for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
+    }
+    for (const r of this.store.q<{ k: string; v: string }>("SELECT k, v FROM meta WHERE k LIKE 'key:%' OR k LIKE 'body:%'")) {
+      const at = (JSON.parse(r.v) as { at?: number }).at ?? 0;
+      if (now - at > DAY) this.store.dropMeta(r.k);
+    }
   }
 
   async me(): Promise<Me> {
