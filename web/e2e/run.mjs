@@ -205,11 +205,14 @@ async function openByPress(page, touch) {
 
 async function keyboard(b, url) {
   const { ctx, page, errors } = await context(b, { w: 1440, h: 900, signedIn: true, flags: { quiet: '1' } });
+  const tab = engine === 'webkit' ? 'Alt+Tab' : 'Tab';
+  if (engine === 'webkit') console.log('NOTE In WebKit, as in Safari by default, buttons and links are reached with Option and Tab, so Alt+Tab is pressed in this walk');
+  if (engine === 'firefox') console.log('NOTE In Playwright Firefox a microtask queued in a keydown listener is executed only after the Tab focus move, so focus stays in a Radix roving group on Shift+Tab, and Menu is reached with Tab from the page start instead');
   try {
     await page.goto(url);
     await ready(page);
     await page.waitForTimeout(600);
-    const add = await tabTo(page, (f) => f?.text === 'Add agent');
+    const add = await tabTo(page, (f) => f?.text === 'Add agent', tab);
     check('keys reach Add agent by Tab', add);
     await page.keyboard.press('Enter');
     const listed = await waitFor(() => page.locator('[data-product]').count(), 3000);
@@ -218,7 +221,7 @@ async function keyboard(b, url) {
     const f1 = await focused(page);
     check('Escape closes Add agent and focus returns to it', listed && f1?.text === 'Add agent', JSON.stringify(f1));
 
-    const scene = await tabTo(page, (f) => f?.space);
+    const scene = await tabTo(page, (f) => f?.space, tab);
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
     const opened = await waitFor(() => page.locator('[data-panel]').count(), 4000);
@@ -236,14 +239,15 @@ async function keyboard(b, url) {
     await page.waitForTimeout(300);
     check('Escape closes the panel and focus returns to the scene', (await focused(page))?.space);
 
-    const menu = await tabTo(page, (f) => f?.label === 'Menu', 'Shift+Tab', 12);
+    if (engine === 'firefox') await page.locator('a[href="#space"]').focus();
+    const menu = await tabTo(page, (f) => f?.label === 'Menu', engine === 'firefox' ? tab : `Shift+${tab}`, 12);
     await page.keyboard.press('Enter');
     await waitFor(() => page.getByRole('menuitem', { name: 'Rules' }).count(), 2000);
     await tabTo(page, (f) => f?.text === 'Rules', 'ArrowDown', 8);
     await page.keyboard.press('Enter');
     await page.getByRole('textbox', { name: 'New rule' }).waitFor();
     const r0 = await page.locator('[data-rule]').count();
-    const input = await tabTo(page, (f) => f?.name === 'rule', 'Tab', 30);
+    const input = await tabTo(page, (f) => f?.name === 'rule', tab, 30);
     await page.keyboard.type('Write tests before the fix');
     await page.keyboard.press('Enter');
     const added = await waitFor(async () => (await page.locator('[data-rule]').count()) === r0 + 1, 3000);
