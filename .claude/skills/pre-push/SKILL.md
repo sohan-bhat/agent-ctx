@@ -10,6 +10,7 @@ Run from the repository root, in this order, and stop at the first failure.
 1. `npm run typecheck` and `npm test`. Core, importer and plugin tests.
 2. `npm --prefix service run typecheck` and `npm --prefix service test`. The Worker in the Vitest plugin.
 3. `node test-e2e/real.mjs`. Starts the real local runtime, signs two agents in and reads a checkpoint back. The unit suite cannot show that the Worker starts.
+   Then `npm --prefix service run conformance`. Runs the official MCP conformance suite at both requirement sets and the authorization server scenarios against the real local runtime, with the baseline in service/conformance-baseline.yml. A real fault is fixed and never added to that baseline.
 4. `npm --prefix web run build`, then `node web/e2e/run.mjs` and `node web/e2e/more.mjs`. The page against mock data, with the accessibility and keyboard checks.
 5. `node web/e2e/consent.mjs`. A real browser through the sign in page for agents. Run after any change to service/src/auth.ts.
 6. `node web/e2e/real.mjs`. The page against the real local service.

@@ -34,11 +34,14 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
     npm --prefix service run typecheck
     npm --prefix service test
     node test-e2e/real.mjs
+    npm --prefix service run conformance
     npm --prefix web run build
     node web/e2e/run.mjs
     node web/e2e/more.mjs
     node web/e2e/consent.mjs
     node web/e2e/real.mjs
+
+The conformance step runs the official MCP conformance suite, both requirement sets 2025-11-25 and 2026-07-28 and the authorization server scenarios, against the real local runtime. Every failure it may show is listed with a reason in service/conformance-baseline.yml. Never add a real fault there.
 
 The unit suites do not prove that the Worker starts or that a browser can finish sign in. The script test-e2e/real.mjs starts the real local runtime, and web/e2e/consent.mjs takes a real browser through the sign in page for agents. Run both after any change to service/src.
 

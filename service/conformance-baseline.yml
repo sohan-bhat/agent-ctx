@@ -1,0 +1,57 @@
+server:
+  - tools-call-simple-text # needs the reference fixture tool test_simple_text, this server has five memory tools only
+  - tools-call-image # needs the fixture tool test_image_content
+  - tools-call-audio # needs the fixture tool test_audio_content
+  - tools-call-embedded-resource # needs the fixture tool test_embedded_resource
+  - tools-call-mixed-content # needs the fixture tool test_multiple_content_types
+  - tools-call-error # needs the fixture tool test_error_handling
+  - tools-call-with-progress # needs the fixture tool test_tool_with_progress, no tool here sends progress
+  - tools-call-with-logging # needs the logging capability, which this server does not declare
+  - tools-call-sampling # needs the fixture tool test_sampling, this server never asks the client to sample
+  - tools-call-elicitation # needs the fixture tool test_elicitation
+  - elicitation-sep1034-defaults # needs the fixture tool test_elicitation_sep1034_defaults
+  - elicitation-sep1330-enums # needs the fixture tool test_elicitation_sep1330_enums
+  - logging-set-level # needs the logging capability, which this server does not declare
+  - completion-complete # needs the completions capability, which this server does not declare
+  - resources-list # needs resources, this server offers none
+  - resources-read-text # needs resources, this server offers none
+  - resources-read-binary # needs resources, this server offers none
+  - resources-templates-read # needs resource templates, this server offers none
+  - resources-subscribe # needs resource subscriptions, this server offers none
+  - resources-unsubscribe # needs resource subscriptions, this server offers none
+  - caching:sep-2549-resources-list-caching-hints # calls resources/list, this server offers no resources
+  - caching:sep-2549-resources-templates-list-caching-hints # calls resources/templates/list, this server offers no resources
+  - prompts-get-simple # needs the fixture prompt test_simple_prompt, this server has the prompts continue and save
+  - prompts-get-with-args # needs the fixture prompt test_prompt_with_arguments
+  - prompts-get-embedded-resource # needs the fixture prompt test_prompt_with_embedded_resource
+  - prompts-get-with-image # needs the fixture prompt test_prompt_with_image
+  - json-schema-2020-12 # needs the fixture tool json_schema_2020_12_tool
+  - server-stateless:sep-2575-server-rejects-undeclared-capability # needs the diagnostic tool test_missing_capability
+  - server-stateless:sep-2575-missing-capability-http-400 # needs the diagnostic tool test_missing_capability
+  - server-stateless:sep-2575-http-server-no-independent-requests-on-stream # needs the diagnostic tool test_streaming_elicitation
+  - server-stateless:sep-2575-server-no-log-without-loglevel # needs the diagnostic tool test_logging_tool, this server sends no log messages
+  - input-required-result-basic-elicitation # needs the fixture tool test_input_required_result_elicitation, the rule tool covers elicitation in service tests
+  - input-required-result-basic-sampling # needs the fixture tool test_input_required_result_sampling, this server never asks to sample
+  - input-required-result-basic-list-roots # needs the fixture tool test_input_required_result_list_roots, this server never asks for roots
+  - input-required-result-request-state # needs the fixture tool test_input_required_result_request_state, request state is covered in service tests
+  - input-required-result-multiple-input-requests # needs the fixture tool test_input_required_result_multiple_inputs
+  - input-required-result-multi-round # needs a multi round fixture tool, the rule tool asks once
+  - input-required-result-non-tool-request # needs the fixture prompt test_input_required_result_prompt
+  - input-required-result-result-type # needs the fixture tool test_input_required_result_elicitation
+  - input-required-result-tampered-state # needs the fixture tool test_input_required_result_tampered_state, tampered state is covered in service tests
+  - input-required-result-capability-check # needs the fixture tool test_input_required_result_capabilities, the rule tool checks the elicitation capability in service tests
+  - http-custom-header-server-validation # needs a tool with x-mcp-header annotations, this server has none
+  - tasks-lifecycle # the tasks extension, which this server does not offer
+  - tasks-capability-negotiation # the tasks extension, which this server does not offer
+  - tasks-wire-fields # the tasks extension, which this server does not offer
+  - tasks-request-state-removal # the tasks extension, which this server does not offer
+  - tasks-mrtr-input # the tasks extension, which this server does not offer
+  - tasks-request-headers # the tasks extension, which this server does not offer
+  - tasks-dispatch-and-envelope # the tasks extension, which this server does not offer
+  - tasks-required-task-error # the tasks extension, which this server does not offer
+  - tasks-mrtr-composition # the tasks extension, which this server does not offer
+  - input-required-result-missing-input-response # needs the fixture tool test_input_required_result_elicitation, the suite warns on the missing tool
+  - input-required-result-ignore-extra-params # needs the fixture tool test_input_required_result_elicitation, the suite warns on the missing tool
+  - sep-2164-resource-not-found:sep-2164-error-code # suite fault, this server offers no resources so resources/read is an unknown method and -32601 is the right code
+  - sep-2164-resource-not-found:sep-2164-data-uri # suite fault, the same unknown method answer carries no resource uri
+  - server-sse-multiple-streams:server-sse-multiple-streams-session # suite fault, the transport says a server MAY assign a session id and this stateless server assigns none
