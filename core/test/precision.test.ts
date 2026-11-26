@@ -37,16 +37,16 @@ test('set two has 40 cards a project, 120 labelled queries and the planned mix',
 
 test('recall over set one reaches the quality bar', () => {
   const s = measure(run(SETS.set1));
-  assert.ok(s.precision_at_3 >= 0.85, `precision_at_3 ${s.precision_at_3}`);
-  assert.ok(s.empty_correct >= 0.9, `empty_correct ${s.empty_correct}`);
-  assert.ok(s.found >= 0.8, `found ${s.found}`);
+  assert.ok(s.precision_at_3 >= 0.98, `precision_at_3 ${s.precision_at_3}`);
+  assert.ok(s.empty_correct >= 0.98, `empty_correct ${s.empty_correct}`);
+  assert.ok(s.found >= 0.92, `found ${s.found}`);
 });
 
 test('recall over set two stays quiet on whole prompts', () => {
   const s = measure(run(SETS.set2));
-  assert.ok(s.precision_at_3 >= 0.91, `precision_at_3 ${s.precision_at_3}`);
+  assert.ok(s.precision_at_3 >= 0.92, `precision_at_3 ${s.precision_at_3}`);
   assert.ok(s.empty_correct >= 0.98, `empty_correct ${s.empty_correct}`);
-  assert.ok(s.found >= 0.76, `found ${s.found}`);
+  assert.ok(s.found >= 0.84, `found ${s.found}`);
 });
 
 test('every vague chat line in set one gives the empty string', () => {
