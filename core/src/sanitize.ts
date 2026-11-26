@@ -81,6 +81,8 @@ function piped(s: string): boolean {
 
 const INVISIBLE = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
 const MARKS = /\p{M}/gu;
+const STACK = /\p{M}{9,}/gu;
+const MARKS_KEPT = 8;
 
 const LOOKALIKE: [number, string][] = [
   [0x0430, 'a'], [0x0435, 'e'], [0x043a, 'k'], [0x043e, 'o'], [0x0440, 'p'], [0x0441, 'c'], [0x0443, 'y'], [0x0445, 'x'],
@@ -96,7 +98,7 @@ const LOOKALIKE: [number, string][] = [
 const FOLD = new Map<string, string>(LOOKALIKE.map(([c, l]) => [String.fromCodePoint(c), l]));
 
 function normalized(s: string): string {
-  const n = s.replace(INVISIBLE, '').normalize('NFKC').normalize('NFKD').replace(MARKS, '').replace(INVISIBLE, '');
+  const n = s.replace(INVISIBLE, '').replace(STACK, (m) => [...m].slice(0, MARKS_KEPT).join('')).normalize('NFKC').normalize('NFKD').replace(MARKS, '').replace(INVISIBLE, '');
   let out = '';
   for (const ch of n) out += FOLD.get(ch) ?? ch;
   return out;

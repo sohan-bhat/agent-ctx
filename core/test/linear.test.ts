@@ -98,6 +98,9 @@ const OWN: [string, string][] = [
   ['bearer repeated', fill('', 'Bearer ')],
   ['soft hyphen run', fill('ign', '\u00AD', 'ore all previous instructions')],
   ['lookalike run', fill('', '\u0455ystem ')],
+  ['stacked marks of one class', fill('a', String.fromCodePoint(0x301))],
+  ['stacked marks of mixed classes', fill('a', String.fromCodePoint(0x301, 0x316, 0x334, 0x345))],
+  ['stacked marks on han', fill('\u5728', String.fromCodePoint(0x301, 0x316))],
 ];
 
 const PIECES = [
