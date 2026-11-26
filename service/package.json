@@ -8,7 +8,8 @@
     "dev": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler dev --port 8790",
     "types": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler types --include-runtime=false --strict-vars=false",
     "test": "vitest run",
-    "typecheck": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler types --include-runtime=false --strict-vars=false && tsc -p tsconfig.json && tsc -p test/tsconfig.json"
+    "typecheck": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler types --include-runtime=false --strict-vars=false && tsc -p tsconfig.json && tsc -p test/tsconfig.json",
+    "load": "LOAD=1 vitest run --reporter=verbose"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.4.0",
