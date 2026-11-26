@@ -5,7 +5,7 @@ import type { CardBody, Item } from '../../core/src/index.ts';
 import { devSignIn, send } from '../test/flow.ts';
 import { caller, open } from '../test/helpers.ts';
 
-const SEED = Number(env.MONTH_SEED ?? '1');
+const SEED = Number((env as unknown as { MONTH_SEED?: string }).MONTH_SEED ?? '1');
 
 interface Write { label: Label; id: string }
 

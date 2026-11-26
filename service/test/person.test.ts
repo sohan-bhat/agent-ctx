@@ -99,8 +99,8 @@ describe('tools', () => {
 
   it('recall with dropped puts back dropped items of the project', async () => {
     const p = person();
-    await p.checkpoint(A, { ...KILN, goal: 'seed' });
     await sql(p, "INSERT INTO items(id, project, kind, body, origin, flags, held, pinned, folded, created, bytes) VALUES('d1', 'github.com/acme/kiln', 'dropped', ?, ?, '[]', 0, 0, 0, ?, 10)", JSON.stringify({ label: 'prompt', text: 'Add the cone chart to the glaze page', size: 36 }), JSON.stringify({ agent: 'Codex', via: 'hook', source: 'person', at: Date.now() }), Date.now());
+    await p.checkpoint(A, { ...KILN, goal: 'seed' });
     const out = await p.recall(B, { ...KILN, dropped: true });
     expect(out.text).toContain('PUT BACK');
     expect(out.text).toContain('Add the cone chart');

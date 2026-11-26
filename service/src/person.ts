@@ -6,6 +6,10 @@ import {
   autoCard,
   autoHandoff,
   bytes,
+  isProtected,
+  mergeCard,
+  overlap,
+  sameCard,
   clean,
   cut,
   decideRule,
@@ -47,7 +51,7 @@ import { Limits, SAY } from './limits.ts';
 import { buildExport } from './export.ts';
 
 export interface Caller { agent: string; grant: string; scopes: string[] }
-export interface Result { ok: boolean; text: string; item?: Item; noProject?: boolean }
+export interface Result { ok: boolean; text: string; item?: Item; noProject?: boolean; merged?: 'same' | 'added' }
 export interface Where { repo?: string; folder?: string }
 export interface RecallArgs extends Where { query?: string; dropped?: boolean; ids?: string[] }
 export interface CheckpointArgs extends Where { goal?: string; changed?: string[]; decisions?: string[]; commands?: string[]; dead_ends?: string[]; open?: string[]; key?: string }
@@ -85,6 +89,10 @@ const COMMAND_CHARS = 300;
 const PLACEHOLDER = /^\$\{[^}]*\}$/;
 const FAILED = 'Memory could not be loaded. Do not assume that nothing is stored.';
 export const NOT_STATED = 'Not stated';
+export const SAME_CARD = 'Nothing new to save. This checkpoint matches a saved card of the same work.';
+export const ADDED_CARD = 'Checkpoint added to the saved card of the same work.';
+export const NOTHING_NEW = 'Nothing new found. Every line came from agent-ctx memory, so nothing was saved.';
+const KEPT_FLAGS = new Set(['role', 'override', 'shell']);
 
 function val(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
@@ -258,7 +266,7 @@ export class Person extends DurableObject<Env> {
     this.store.q('DELETE FROM events WHERE session = ?', id);
     this.store.q('DELETE FROM sessions WHERE id = ?', id);
     this.store.dropDelivered(`s-${id}`);
-    for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
+    for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `auto-card-merged:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
     this.sessionCache.delete(id);
     this.eventCache.delete(id);
     this.deliveredCache.delete(`s-${id}`);
@@ -403,6 +411,36 @@ export class Person extends DurableObject<Env> {
     return this.limits.max.storeBytes - this.limits.extra();
   }
 
+  private mergeable(i: Item, incoming: Item, now: number): boolean {
+    if (i.kind !== 'card' || incoming.kind !== 'card' || i.held || incoming.held || i.folded || incoming.pinned || isProtected(i, now)) return false;
+    if ((i.flags ?? []).some((f) => KEPT_FLAGS.has(f))) return false;
+    if ((i.origin?.source ?? '') !== (incoming.origin?.source ?? '')) return false;
+    if (i.project !== incoming.project) return false;
+    return !this.store.q('SELECT item FROM queue WHERE item = ?', i.id).length;
+  }
+
+  private mergeTarget(incoming: Item, now: number): Item | null {
+    if (incoming.kind !== 'card') return null;
+    let best: Item | null = null;
+    let score = 0;
+    for (const i of this.pool(incoming.project)) {
+      if (i.kind !== 'card' || !sameCard(i, incoming) || !this.mergeable(i, incoming, now)) continue;
+      const o = overlap(i, incoming).jaccard;
+      if (o > score) {
+        best = i;
+        score = o;
+      }
+    }
+    return best;
+  }
+
+  private forgetDelivered(id: string): void {
+    for (const r of this.store.q<{ reader: string; items: string }>('SELECT reader, items FROM delivered WHERE items LIKE ?', `%"${id}"%`)) {
+      this.store.setDelivered(r.reader, (JSON.parse(r.items) as string[]).filter((x) => x !== id));
+      this.deliveredCache.get(r.reader)?.delete(id);
+    }
+  }
+
   private save(item: Item, now: number, counted: boolean, after?: (saved: Item) => void): Result {
     if (counted) {
       const r = this.limits.canStore(now);
@@ -417,10 +455,21 @@ export class Person extends DurableObject<Env> {
     } catch {
       return { ok: false, text: SAY.clean };
     }
+    let prev = this.store.bytesOf(clean.id);
+    let merged: 'added' | undefined;
+    if (clean.kind === 'card' && !prev) {
+      const target = this.mergeTarget(clean, now);
+      if (target) {
+        const next = mergeCard(target, clean, now);
+        if (next === target) return { ok: true, text: '', item: target, merged: 'same' };
+        clean = next;
+        merged = 'added';
+        prev = this.store.bytesOf(clean.id);
+      }
+    }
     const limit = this.itemRoom();
     const size = itemBytes(clean);
     let total = this.limits.bytes();
-    let prev = this.store.bytesOf(clean.id);
     if (total - prev + size > FOLD_AT * limit && total > this.limits.folded() + 0.02 * limit) {
       total = this.fold(now);
       prev = this.store.bytesOf(clean.id);
@@ -433,10 +482,11 @@ export class Person extends DurableObject<Env> {
     this.limits.setBytes(total - prev + size);
     if (counted) this.limits.stored(now);
     this.limits.clear();
+    if (merged) this.forgetDelivered(clean.id);
     after?.(clean);
     this.limits.flush(now, true);
     this.push({ type: 'item', item: clean });
-    return { ok: true, text: '', item: clean };
+    return merged ? { ok: true, text: '', item: clean, merged } : { ok: true, text: '', item: clean };
   }
 
   private fold(now: number): number {
@@ -649,10 +699,14 @@ export class Person extends DurableObject<Env> {
   }
 
   private write(c: Caller, now: number, kind: 'card' | 'handoff' | 'rule', project: string, body: CardBody | HandoffBody | RuleBody, source: Source, marks: string[], text: string): Result {
-    const r = this.save(newItem(kind, project, body, this.origin(c, now, 'tool', source, `g-${c.grant}`)), now, true, (saved) => {
-      for (const m of marks) this.limits.setMark(m, { id: saved.id, at: now, text });
+    const said = (m?: 'same' | 'added') => (m === 'same' ? SAME_CARD : m === 'added' ? ADDED_CARD : text);
+    const fresh = newItem(kind, project, body, this.origin(c, now, 'tool', source, `g-${c.grant}`));
+    const r = this.save(fresh, now, true, (saved) => {
+      for (const m of marks) this.limits.setMark(m, { id: saved.id, at: now, text: said(saved.id === fresh.id ? undefined : 'added') });
     });
-    return r.ok ? { ...r, text } : r;
+    if (!r.ok) return r;
+    const { merged, ...rest } = r;
+    return { ...rest, text: said(merged) };
   }
 
   async checkpoint(c: Caller, a: CheckpointArgs): Promise<Result> {
@@ -662,15 +716,19 @@ export class Person extends DurableObject<Env> {
       if (stop) return stop;
       const project = this.project(a, now);
       if (!project) return { ok: false, text: this.refusal ?? SAY.place };
+      const own = (v: unknown) => (typeof v === 'string' ? stripOwn(stripPrivate(v)).trim() : '');
+      const list = (v: unknown) => strings(v)?.filter((x) => own(x));
+      const given = [a.goal, a.changed, a.decisions, a.commands, a.dead_ends, a.open].some((v) => (Array.isArray(v) ? !!strings(v)?.length : typeof v === 'string' && v.trim() !== ''));
       const body: CardBody = compact({
         goal: 'x',
-        changed: strings(a.changed)?.map((path) => ({ path })),
-        decisions: strings(a.decisions)?.map((what) => ({ what })),
-        commands: strings(a.commands),
-        dead_ends: strings(a.dead_ends),
-        open: strings(a.open),
+        changed: list(a.changed)?.map((path) => ({ path })),
+        decisions: list(a.decisions)?.map((what) => ({ what })),
+        commands: list(a.commands),
+        dead_ends: list(a.dead_ends),
+        open: list(a.open),
       });
-      body.goal = typeof a.goal === 'string' && a.goal.trim() ? a.goal : (this.promptGoal(c.grant, project, a.folder, now) ?? NOT_STATED);
+      if (given && !own(a.goal) && !body.changed && !body.decisions && !body.commands && !body.dead_ends && !body.open) return { ok: true, text: NOTHING_NEW };
+      body.goal = own(a.goal) ? (a.goal as string) : (this.promptGoal(c.grant, project, a.folder, now) ?? NOT_STATED);
       const memo = this.remembered(c, 'card', project, body, a.key, now);
       if (memo.hit) return memo.hit;
       return this.write(c, now, 'card', project, body, 'agent', memo.marks, 'Checkpoint saved. Its open tasks are shown to the next agent at the start of its session.');
@@ -943,16 +1001,35 @@ export class Person extends DurableObject<Env> {
     const source: Source = kind === 'card' && !(body as CardBody).last ? 'person' : 'agent';
     const origin = compact({ agent: s.agent, model: s.model ?? undefined, session: `s-${s.id}`, via: 'hook' as Via, source, at: now }) as Origin;
     const item: Item = { ...newItem(kind, s.project, body, origin), flags };
+    const joined = kind === 'card' && !!old && this.autoId(s, 'card-merged') === old.id;
+    if (joined && old) {
+      let clean: Item;
+      try {
+        clean = fit(sanitizeItem({ ...item, id: old.id, created: old.created }));
+      } catch {
+        return;
+      }
+      if (!this.mergeable(old, clean, now)) return;
+      const next = mergeCard(old, clean, now);
+      if (next !== old && this.save(next, now, false).ok) this.forgetDelivered(old.id);
+      return;
+    }
     if (old) {
       item.id = old.id;
       item.pinned = old.pinned;
       if (kind === 'card') item.created = old.created;
     }
-    this.save(item, now, !old, (saved) => {
-      if (old) return;
-      s.auto[kind] = saved.id;
-      this.store.setMeta(`auto-${kind}:${s.id}`, saved.id);
+    const remember = (id: string, merged: boolean) => {
+      s.auto[kind] = id;
+      this.store.setMeta(`auto-${kind}:${s.id}`, id);
+      if (!merged) return;
+      s.auto['card-merged'] = id;
+      this.store.setMeta(`auto-card-merged:${s.id}`, id);
+    };
+    const r = this.save(item, now, !old, (saved) => {
+      if (!old) remember(saved.id, saved.id !== item.id);
     });
+    if (!old && r.merged === 'same' && r.item) remember(r.item.id, true);
   }
 
   private rebuild(s: Live, now: number, handoff: boolean): void {
