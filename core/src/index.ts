@@ -9,6 +9,7 @@ export * from './recall.ts';
 export * from './fold.ts';
 export * from './synonyms.ts';
 export * from './hybrid.ts';
+export * from './topics.ts';
 export * from './hooks.ts';
 export { redact, hasSecret, DROPPED } from './redact.ts';
 export { tokens } from './text.ts';

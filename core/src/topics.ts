@@ -9,7 +9,7 @@ export const TOPICS = 12;
 
 export interface LooseSettings { fields: 'goal' | 'all'; weight: 'count' | 'idf'; syn: number; prefix: number }
 
-export const LOOSE: LooseSettings = { fields: 'all', weight: 'idf', syn: 0.5, prefix: 0 };
+export const LOOSE: LooseSettings = { fields: 'all', weight: 'idf', syn: 0.5, prefix: 5 };
 
 function shared(a: string, b: string): number {
   let k = 0;

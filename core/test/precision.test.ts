@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { measure, run, SETS, SET2B } from './precision.ts';
+import { measure, reachable, run, SETS, SET2B } from './precision.ts';
 import { loadVectors, runHybrid } from './vectors.ts';
 import { ITEMS, PROJECTS, QUERIES } from './corpus.ts';
 import * as two from './corpus2.ts';
@@ -61,4 +61,11 @@ test('the hybrid over the tuning sets stays at its tuned numbers', () => {
   assert.ok(two.precision_at_3 >= 0.91 && two.empty_correct >= 0.98 && two.found >= 0.92, JSON.stringify(two));
   const twoB = measure(runHybrid(SET2B, file!));
   assert.ok(twoB.precision_at_3 >= 0.89 && twoB.empty_correct >= 0.95 && twoB.found >= 0.69, JSON.stringify(twoB));
+});
+
+test('on the tool path the right card stays reachable on the tuning sets', () => {
+  const two = reachable(SETS.set2);
+  const twoB = reachable(SET2B);
+  assert.ok(two >= 0.96, String(two));
+  assert.ok(twoB >= 0.85, String(twoB));
 });

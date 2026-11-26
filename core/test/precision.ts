@@ -8,6 +8,7 @@ import * as twoB from './corpus2b.ts';
 import * as three from './corpus3.ts';
 import * as four from './corpus4.ts';
 import { loadVectors, missing, runHybrid } from './vectors.ts';
+import type { LooseSettings } from '../src/topics.ts';
 
 export interface Labelled { q: string; project: string; kind: string; want: string[] }
 export interface TestSet { items: Item[]; queries: Labelled[]; projects: { key: string; names: string[] }[]; now: number }
@@ -58,6 +59,21 @@ export function measure(rows: Row[] = run()): Score {
   };
 }
 
+export const TOOL_KINDS = new Set(['short', 'other', 'cross']);
+
+export function reachable(set: TestSet, loose: Partial<LooseSettings> = {}): number {
+  let asked = 0;
+  let reached = 0;
+  for (const query of set.queries) {
+    if (!TOOL_KINDS.has(query.kind)) continue;
+    asked++;
+    const out = recall({ project: query.project, items: set.items, projects: set.projects, query: query.q, first: false, session: 'eval', seen: [], now: set.now, tool: true, loose });
+    const shown = new Set([...out.delivered, ...(out.topics ?? [])]);
+    if (query.want.some((id) => shown.has(id))) reached++;
+  }
+  return asked ? reached / asked : 0;
+}
+
 function isMain(): boolean {
   try {
     return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
@@ -86,4 +102,6 @@ if (isMain()) {
     console.log(`hybrid_${name}_empty_correct ${s.empty_correct.toFixed(2)}`);
     console.log(`hybrid_${name}_found ${s.found.toFixed(2)}`);
   }
+  const tool: [string, TestSet][] = [['set2', SETS.set2], ['set2b', SET2B], ['set3', SET3], ['set4', SET4]];
+  for (const [name, set] of tool) console.log(`tool_${name}_reachable ${reachable(set).toFixed(2)}`);
 }
