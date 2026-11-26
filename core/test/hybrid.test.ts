@@ -5,7 +5,8 @@ import { DIM, cosine, quantize, rankHybrid } from '../src/hybrid.ts';
 import { rankItems, type Hit } from '../src/rank.ts';
 import { recall } from '../src/recall.ts';
 import type { Item } from '../src/model.ts';
-import { SETS, SET3, SET4, type TestSet } from './precision.ts';
+import { SETS, SET2B, SET3, SET4, type TestSet } from './precision.ts';
+import { loadVectors, missing, textsOf } from './vectors.ts';
 
 const NOW = Date.parse('2026-11-20T12:00:00Z');
 const DAY = 86400000;
@@ -161,4 +162,13 @@ test('with fill off, embedding candidates come only when words found nothing', (
 
 test('the default settings add nothing to a query that words already answer', () => {
   assert.deepEqual(rankHybrid(pool, vectors, 'club roster export', query, NOW).map((h) => h.item.id), ['far1']);
+});
+
+test('vectors.json covers every text of sets 1, 2 and 2b and missing counts what a file lacks', () => {
+  const file = loadVectors();
+  assert.ok(file && file.dim === DIM);
+  for (const set of [SETS.set1, SETS.set2, SET2B]) assert.equal(missing(file, set), 0);
+  assert.equal(missing(null, SETS.set1), textsOf(SETS.set1).length);
+  const some = { ...file!, entries: Object.fromEntries(Object.entries(file!.entries).slice(0, 10)) };
+  assert.ok(missing(some, SETS.set2) > 0);
 });
