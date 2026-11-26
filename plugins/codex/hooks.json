@@ -1,0 +1,44 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "agent-ctx",
+            "tool": "event",
+            "timeout": 5,
+            "input": { "host": "codex", "event": "UserPromptSubmit", "session": "${session_id}", "cwd": "${cwd}", "prompt": "${prompt}" }
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "agent-ctx",
+            "tool": "event",
+            "timeout": 3,
+            "input": { "host": "codex", "event": "PostToolUse", "session": "${session_id}", "cwd": "${cwd}", "tool": "${tool_name}", "command": "${tool_input.command}" }
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "agent-ctx",
+            "tool": "event",
+            "timeout": 5,
+            "input": { "host": "codex", "event": "Stop", "session": "${session_id}", "cwd": "${cwd}", "message": "${last_assistant_message}" }
+          }
+        ]
+      }
+    ]
+  }
+}

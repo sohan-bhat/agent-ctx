@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agent-ctx": {
+      "type": "streamable-http",
+      "url": "https://agent-ctx.invalid/mcp",
+      "extensions": { "com.openai": { "auth": { "type": "oauth", "client": { "mode": "cimd" } } } }
+    }
+  }
+}
