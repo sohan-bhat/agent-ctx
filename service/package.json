@@ -9,7 +9,8 @@
     "types": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler types --include-runtime=false --strict-vars=false",
     "test": "vitest run",
     "typecheck": "node -e \"require('fs').mkdirSync('public',{recursive:true})\" && wrangler types --include-runtime=false --strict-vars=false && tsc -p tsconfig.json && tsc -p test/tsconfig.json",
-    "load": "LOAD=1 vitest run --reporter=verbose"
+    "load": "LOAD=1 vitest run --reporter=verbose",
+    "conformance": "node ../test-e2e/conformance.mjs"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.4.0",
@@ -23,6 +24,7 @@
     "@cloudflare/vitest-plugin": "1.9.2",
     "@cloudflare/workers-types": "5.20261125.1",
     "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.12",
     "typescript": "6.0.3",
     "vitest": "4.1.11",
     "wrangler": "4.168.0"
