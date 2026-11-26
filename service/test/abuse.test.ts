@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import * as entry from '../src/index.ts';
-import { CLIENT_TTL, SLOW_DOWN } from '../src/open.ts';
+import { CLIENT_TTL, SLOW_DOWN } from '../src/limits.ts';
 import { awayFromMinuteEdge } from './helpers.ts';
 import { send } from './flow.ts';
 

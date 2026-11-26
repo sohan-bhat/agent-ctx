@@ -48,7 +48,7 @@ import {
 } from '../../core/src/index.ts';
 import { Store, TABLES, newer, type AgentRow, type EventRow, type ReadRow, type SessionRow } from './store.ts';
 import { Limits, SAY } from './limits.ts';
-import { buildExport } from './export.ts';
+import { buildExport } from './api.ts';
 
 export interface Caller { agent: string; grant: string; scopes: string[] }
 export interface Result { ok: boolean; text: string; item?: Item; noProject?: boolean; merged?: 'same' | 'added' }

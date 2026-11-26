@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { expect, it } from 'vitest';
-import { REGISTRATIONS_FULL, REGISTRATIONS_PER_DAY, registrationCap } from '../src/open.ts';
+import { REGISTRATIONS_FULL, REGISTRATIONS_PER_DAY, registrationCap } from '../src/limits.ts';
 import { address, agent, call, send } from './flow.ts';
 
 const register = () =>

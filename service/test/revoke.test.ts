@@ -3,7 +3,7 @@ import { createExecutionContext, runInDurableObject, waitOnExecutionContext } fr
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.ts';
 import type { Person } from '../src/person.ts';
-import { REGISTRATIONS_PER_DAY, addressKey } from '../src/open.ts';
+import { REGISTRATIONS_PER_DAY, addressKey } from '../src/limits.ts';
 import { CIMD_URL } from './outbound.ts';
 import { ORIGIN, RESOURCE, call, connect, devSignIn, fromSomewhere, mcp, pkce, send } from './flow.ts';
 import { caller, open, person } from './helpers.ts';

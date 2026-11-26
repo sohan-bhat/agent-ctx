@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLAUDE_CODE_CLIENT, CLAUDE_REDIRECT, OTHER, labelFor } from '../src/agents.ts';
+import { CLAUDE_CODE_CLIENT, CLAUDE_REDIRECT, OTHER, labelFor } from '../src/auth.ts';
 
 describe('agent labels', () => {
   it('a client with a published identity or a documented return address gets its product label', () => {
