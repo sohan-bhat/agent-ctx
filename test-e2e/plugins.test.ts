@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SRC, cleanOrigin, stamp } from '../scripts/stamp.mjs';
+import { SRC, STAMPED, cleanOrigin, stamp } from '../scripts/stamp.mjs';
 
 type Json = Record<string, unknown>;
 interface Handler { type?: string; server?: string; tool?: string; input?: Record<string, string>; [k: string]: unknown }
@@ -207,6 +207,23 @@ test('the stamp takes an origin alone', () => {
   const dir = mkdtempSync(join(tmpdir(), 'stamp-'));
   try {
     assert.throws(() => stamp('https://agent-ctx.invalid', dir, 'two words'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the stamp never deletes a folder that an earlier stamp did not write', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stamp-'));
+  try {
+    mkdirSync(join(dir, 'claude-code'));
+    writeFileSync(join(dir, 'claude-code', 'notes.txt'), 'mine');
+    assert.throws(() => stamp('https://agent-ctx.invalid', dir), /earlier stamp did not write/);
+    assert.equal(readFileSync(join(dir, 'claude-code', 'notes.txt'), 'utf8'), 'mine');
+    const fresh = join(dir, 'fresh');
+    stamp('https://agent-ctx.invalid', fresh);
+    assert.ok(existsSync(join(fresh, STAMPED)));
+    stamp('http://localhost:8790', fresh);
+    assert.ok(readFileSync(join(fresh, 'claude-code', '.claude-plugin', 'plugin.json'), 'utf8').includes('http://localhost:8790'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

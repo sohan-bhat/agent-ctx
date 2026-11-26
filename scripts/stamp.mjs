@@ -1,10 +1,11 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const SRC = join(ROOT, 'plugins', 'src');
 const MARK = '__ORIGIN__';
+export const STAMPED = '.agent-ctx-stamp';
 
 export function cleanOrigin(raw) {
   let u;
@@ -40,8 +41,11 @@ export function stamp(origin, outDir, bearer) {
   const out = resolve(outDir);
   if (out === SRC || out.startsWith(SRC + sep)) throw new Error('The output folder must sit outside plugins/src.');
   if (bearer !== undefined && (typeof bearer !== 'string' || !/^[\x21-\x7e]+$/.test(bearer))) throw new Error('The bearer token must be one word of plain characters.');
+  if (existsSync(out) && readdirSync(out).length && !existsSync(join(out, STAMPED))) throw new Error('The output folder already holds files that an earlier stamp did not write. Give an empty or new folder.');
   const plugins = readdirSync(SRC, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
   for (const name of plugins) rmSync(join(out, name), { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, STAMPED), 'Written by scripts/stamp.mjs. A later stamp replaces the plugin folders here.\n');
   const written = [];
   for (const file of walk(SRC)) {
     const rel = relative(SRC, file);

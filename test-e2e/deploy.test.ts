@@ -71,3 +71,11 @@ test('a dry run stamps the plugins and bundles the production Worker with no acc
     assert.equal(existsSync(join(SERVICE, 'wrangler.deploy.jsonc')), false);
   });
 });
+
+test('production keeps logs on and traces off, since raw text crosses the object call before redaction', () => {
+  const cfg = JSON.parse(readFileSync(join(SERVICE, 'wrangler.jsonc'), 'utf8')) as { observability: unknown; env: { production: { observability: unknown; vars: Record<string, string> } } };
+  const want = { enabled: true, logs: { enabled: true }, traces: { enabled: false } };
+  assert.deepEqual(cfg.env.production.observability, want);
+  assert.deepEqual(cfg.observability, want);
+  assert.equal(cfg.env.production.vars.REGISTRATIONS_PER_DAY, '150');
+});
