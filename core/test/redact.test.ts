@@ -106,3 +106,11 @@ test('ordinary sentences with token, key, secret and password stay untouched', (
   ];
   for (const p of plain) assert.equal(redact(p), p);
 });
+
+test('a bare key with slashes or dots is dropped while paths and package names stay', () => {
+  for (const key of ['wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', '8f3kZp_Lq2-Wm9xT.Vn4cRb7Ys1Ae6Ud0Hg5Jk']) {
+    const out = redact(`copy ${key} into the vault`);
+    assert.equal(out, `copy ${DROPPED} into the vault`);
+  }
+  for (const s of ['src/features/onboarding/StepTwoWelcomeScreen.tsx', 'com.example.myApplication.MainActivity2', 'build/output/Release2024/AppBundle.zip']) assert.equal(redact(s), s);
+});
