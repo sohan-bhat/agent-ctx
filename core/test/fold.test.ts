@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyPlan, foldCard, foldPlan, isProtected, mergeFolded, totalBytes, underCeiling } from '../src/fold.ts';
-import { ITEM_BYTES, itemBytes, type Body, type CardBody, type Item, type Kind } from '../src/model.ts';
+import { SAME_CONTAINS, SAME_JACCARD, SAME_MIN_TERMS, applyPlan, foldCard, foldPlan, isProtected, mergeCard, mergeFolded, overlap, sameCard, totalBytes, underCeiling } from '../src/fold.ts';
+import { ITEM_BYTES, itemBytes, newItem, type Body, type CardBody, type Item, type Kind, type Origin } from '../src/model.ts';
+import { MONTH_DAYS, MONTH_START, month, type Checkpoint, type Step } from './month.ts';
 
 const DAY = 86400000;
 const START = Date.parse('2026-08-01T00:00:00Z');
@@ -263,4 +264,144 @@ test('a quarantined card stays held through a whole ceiling plan', () => {
   const goals = out.filter((i) => (i.body as CardBody).goal.includes('Calibrate sensor batch 0 '));
   assert.ok(goals.length >= 1);
   assert.ok(goals.every((i) => i.held && i.flags.includes('shell')));
+});
+
+{
+  const AT = Date.UTC(2026, 10, 1);
+  const A: Origin = { agent: 'Codex', via: 'tool', source: 'agent', at: AT };
+  const B: Origin = { agent: 'Claude Code', via: 'tool', source: 'agent', at: AT + 1000 };
+
+  function card(c: Checkpoint, project = 'github.com/acme/pantry', origin: Origin = A): Item {
+    const body: CardBody = { goal: c.goal, changed: c.changed.map((path) => ({ path })), decisions: c.decisions.map((what) => ({ what })), dead_ends: c.dead_ends, open: c.open, commands: c.commands };
+    return newItem('card', project, body, origin);
+  }
+
+  test('on seed 1 every repeat is the same card and no twin or other pair is', () => {
+    const m = month(1);
+    for (const s of m.steps) {
+      if (s.kind !== 'checkpoint' || s.label.type === 'distinct' || s.label.type === 'chat') continue;
+      const p = m.pieces[s.label.piece];
+      assert.ok(sameCard(card(p.card), card(s.card, undefined, B)), `${s.label.type} of ${p.n}`);
+    }
+    for (const a of m.pieces) for (const b of m.pieces) {
+      if (a.n >= b.n || a.project !== b.project) continue;
+      assert.equal(sameCard(card(a.card), card(b.card)), false, `${a.n} and ${b.n}${a.twin === b.n ? ' twins' : ''}`);
+    }
+  });
+
+  test('the thresholds sit inside the gap seen on seed 1', () => {
+    assert.ok(SAME_JACCARD > 0.45 && SAME_JACCARD < 0.83);
+    assert.ok(SAME_CONTAINS > 0.63 && SAME_CONTAINS < 0.96);
+  });
+
+  test('short cards that differ in one word stay apart, since that word can be the whole difference', () => {
+    const short = (where: string) => card({ goal: `Fix the login redirect on ${where}`, changed: ['src/login.ts'], decisions: [], dead_ends: [], open: [], commands: [] });
+    assert.equal(sameCard(short('safari'), short('firefox')), false);
+    assert.equal(SAME_MIN_TERMS, 12);
+  });
+
+  test('cards of two projects, tiny cards, rules and handoffs are never the same card', () => {
+    const p = month(1).pieces[0].card;
+    assert.equal(sameCard(card(p), card(p, 'github.com/acme/kiln')), false);
+    const tiny = card({ goal: 'Fix bug', changed: [], decisions: [], dead_ends: [], open: [], commands: [] });
+    assert.equal(sameCard(tiny, card({ ...tiny.body, changed: [], decisions: [], dead_ends: [], open: [], commands: [] } as unknown as Checkpoint)), false);
+    const rule = { ...card(p), kind: 'rule' as const };
+    const handoff = { ...card(p), kind: 'handoff' as const };
+    assert.equal(sameCard(rule, card(p)), false);
+    assert.equal(sameCard(handoff, card(p)), false);
+    assert.equal(sameCard(card(p), card(p)), true);
+  });
+
+  test('a merge that adds no line returns the stored card itself', () => {
+    const p = month(1).pieces[3].card;
+    const old = card(p);
+    const again = card({ ...p, decisions: [...p.decisions].reverse(), goal: `Again ${p.goal}`, changed: [...p.changed].reverse() }, undefined, B);
+    assert.equal(mergeCard(old, again, AT + 5000), old);
+    const shouting = card({ ...p, open: p.open.map((o) => `  ${o.toUpperCase()}  `) }, undefined, B);
+    assert.equal(mergeCard(old, shouting, AT + 5000), old);
+  });
+
+  test('a merge joins lists newest first without repeats, keeps the id and the date, and names the newest writer', () => {
+    const p = month(1).pieces[5].card;
+    const old = card(p);
+    const incoming = card({ ...p, goal: 'Fixed it for good', dead_ends: [...p.dead_ends, 'checked it again on an old ipad'], open: [] }, undefined, B);
+    const merged = mergeCard(old, incoming, AT + 9000);
+    const b = merged.body as CardBody;
+    assert.equal(merged.id, old.id);
+    assert.equal(merged.created, old.created);
+    assert.equal(merged.origin.agent, 'Claude Code');
+    assert.equal(merged.origin.at, AT + 9000);
+    assert.equal(b.goal, 'Fixed it for good');
+    assert.deepEqual(b.dead_ends, [p.dead_ends[0], 'checked it again on an old ipad']);
+    assert.deepEqual(b.open, p.open);
+    assert.deepEqual(b.decisions?.map((d) => d.what).sort(), [...p.decisions].sort());
+    assert.equal(b.changed?.length, 2);
+  });
+
+  test('an unstated goal keeps the stored goal, and the merged card fits the item size', () => {
+    const p = month(1).pieces[7].card;
+    const old = card(p);
+    const big = card({ ...p, goal: 'Not stated', open: Array.from({ length: 40 }, (_, k) => `follow up item number ${k} ${'x'.repeat(60)}`) }, undefined, B);
+    const merged = mergeCard(old, big, AT + 1);
+    assert.equal((merged.body as CardBody).goal, p.goal);
+    assert.ok(itemBytes(merged) <= ITEM_BYTES);
+    assert.ok(overlap(old, merged).contains > 0);
+  });
+}
+
+const lines = (c: Checkpoint) => [...c.decisions, ...c.dead_ends, ...c.open];
+
+test('the same seed gives the same month and another seed another month', () => {
+  assert.deepEqual(month(1), month(1));
+  assert.notDeepEqual(month(1).steps, month(2).steps);
+});
+
+for (const seed of [1, 2]) {
+  test(`seed ${seed} holds the counts and labels the brief names`, () => {
+    const m = month(seed);
+    const of = (t: string) => m.steps.filter((s) => s.label.type === t);
+    assert.equal(m.pieces.length, 60);
+    assert.equal(of('distinct').length, 60);
+    assert.equal(of('exact').length, 90);
+    assert.equal(of('reworded').length, 90);
+    assert.equal(of('chat').length, 60);
+    assert.equal(of('recalled').length, 30);
+    assert.deepEqual([0, 1].map((p) => m.pieces.filter((x) => x.project === p).length), [30, 30]);
+    const twins = m.pieces.filter((p) => p.twin !== null && p.n < p.twin);
+    assert.ok(twins.length >= 10);
+    for (const a of twins) {
+      const b = m.pieces[a.twin!];
+      assert.equal(a.card.goal, b.card.goal);
+      assert.deepEqual(a.card.changed, b.card.changed);
+      assert.equal(a.facts.filter((f) => b.facts.includes(f)).length, 0);
+    }
+    for (let k = 1; k < m.steps.length; k++) assert.ok(m.steps[k].at >= m.steps[k - 1].at);
+    for (const s of m.steps) assert.ok(s.at >= MONTH_START && s.at < MONTH_START + MONTH_DAYS * 86400000);
+    const first = new Map(of('distinct').map((s) => [(s.label as { piece: number }).piece, s.at]));
+    for (const s of [...of('exact'), ...of('reworded'), ...of('recalled')]) assert.ok(s.at > first.get((s.label as { piece: number }).piece)!);
+    const who = new Set(m.steps.map((s) => s.who));
+    assert.deepEqual([...who].sort(), [0, 1]);
+  });
+
+  test(`seed ${seed} rewords with the same facts, a new opening word and at most one line more or less`, () => {
+    const m = month(seed);
+    for (const s of m.steps.filter((x): x is Extract<Step, { kind: 'checkpoint' }> => x.kind === 'checkpoint' && x.label.type !== 'distinct')) {
+      const p = m.pieces[(s.label as { piece: number }).piece];
+      if (s.label.type === 'exact') {
+        assert.deepEqual(s.card, p.card);
+        continue;
+      }
+      assert.notEqual(s.card.goal.split(' ')[0], p.card.goal.split(' ')[0]);
+      const had = lines(p.card);
+      const has = lines(s.card);
+      const lost = had.filter((l) => !has.includes(l)).length;
+      const added = has.filter((l) => !had.includes(l)).length;
+      assert.ok(lost + added <= 1, `${lost} ${added}`);
+      assert.deepEqual([...s.card.changed].sort(), [...p.card.changed].sort());
+    }
+  });
+}
+
+test('chat sessions hold only short or quiet prompts', () => {
+  for (const s of month(1).steps) if (s.kind === 'chat') for (const p of s.prompts) assert.ok(p.length < 15 || /^[/!#]/.test(p), p);
 });
