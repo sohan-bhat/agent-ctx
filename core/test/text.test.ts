@@ -19,19 +19,22 @@ test('each word family gives one stem', () => {
     ['parse', 'parsed', 'parsing'],
     ['migrate', 'migrated', 'migrating'],
     ['release', 'released', 'releases'],
+    ['save', 'saved', 'saving', 'saves'],
+    ['file', 'files'],
+    ['code', 'codes'],
+    ['name', 'names', 'named'],
   ];
   for (const f of families) assert.equal(new Set(f.map(stem)).size, 1, f.join(' '));
   assert.equal(stem('compute'), 'comput');
+  assert.equal(stem('save'), 'sav');
 });
 
-test('short words and words ending in ee keep their e', () => {
-  for (const w of ['file', 'code', 'name', 'tree', 'agree', 'degree']) assert.equal(stem(w), w);
-  assert.equal(stem('files'), 'file');
-  assert.equal(stem('codes'), 'code');
+test('words of three characters or fewer and words ending in ee keep their e', () => {
+  for (const w of ['use', 'one', 'ice', 'tree', 'agree', 'degree']) assert.equal(stem(w), w);
 });
 
 test('tokens split camel case, drop stop words, short words and long numbers', () => {
-  assert.deepEqual(tokens('The windGust filter in src/WindVane.ts'), ['wind', 'gust', 'filter', 'wind', 'vane', 'ts']);
+  assert.deepEqual(tokens('The windGust filter in src/WindVane.ts'), ['wind', 'gust', 'filter', 'wind', 'van', 'ts']);
   assert.deepEqual(tokens('a 1 22 123456 x'), ['22']);
   assert.deepEqual(tokens('HTTPServer'), ['http', 'server']);
   assert.deepEqual(tokens(''), []);

@@ -17,7 +17,7 @@ function suffix(w: string): string {
 export function stem(w: string): string {
   if (w.length <= 3) return w;
   const s = suffix(w);
-  if (s.length > 4 && s.endsWith('e') && !s.endsWith('ee')) return s.slice(0, -1);
+  if (s.length >= 4 && s.endsWith('e') && !s.endsWith('ee')) return s.slice(0, -1);
   return s;
 }
 
