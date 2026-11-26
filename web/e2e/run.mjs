@@ -69,7 +69,8 @@ async function signedIn(b, url, w, h) {
       const pins1 = (await space(page)).pins;
       check(`${tag} Pin changes state`, now && now !== was && pins1 === pins0 + (was === 'true' ? -1 : 1), `${was} to ${now}, pins ${pins0} to ${pins1}`);
       await page.keyboard.press('Escape');
-      await waitFor(() => page.evaluate(() => !document.querySelector('[data-panel]')), 3000);
+      await waitFor(() => page.evaluate(() => !document.querySelector('[data-panel], [data-slot=sheet-overlay], [data-slot=popover-content]')), 3000);
+      await page.waitForTimeout(300);
     }
 
     if (touch) {
