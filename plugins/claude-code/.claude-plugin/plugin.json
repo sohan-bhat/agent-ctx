@@ -6,6 +6,7 @@
     "name": "agent-ctx"
   },
   "license": "MIT",
+  "privacyPolicyUrl": "https://agent-ctx.invalid/privacy",
   "mcpServers": {
     "agent-ctx": {
       "type": "http",

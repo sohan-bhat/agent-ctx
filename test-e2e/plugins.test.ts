@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cleanOrigin, stamp } from '../scripts/stamp.mjs';
 
@@ -75,12 +75,30 @@ test('every address in a stamped copy has the one origin', () => {
   });
 });
 
-test('a stamped copy holds only JSON and one README', () => {
+test('each plugin in a stamped copy holds only JSON and one README', () => {
   eachCopy((dir) => {
     const files = plugins(dir).map((f) => relative(dir, f));
-    const other = files.filter((f) => !f.endsWith('.json'));
-    assert.deepEqual(other.map((f) => basename(f)), ['README.md'], files.join(' '));
+    for (const plugin of ['claude-code', 'codex']) {
+      const other = files.filter((f) => f.startsWith(`${plugin}/`) && !f.endsWith('.json'));
+      assert.deepEqual(other, [`${plugin}/README.md`], files.join(' '));
+    }
     for (const f of files.filter((x) => x.endsWith('.json'))) assert.doesNotThrow(() => read(join(dir, f)), f);
+  });
+});
+
+test('the Claude Code README says what leaves the machine and how to remove the plugin in 40 to 60 plain words', () => {
+  eachCopy((dir) => {
+    const text = readFileSync(join(dir, 'claude-code', 'README.md'), 'utf8');
+    const words = text.replace(/^#.*$/m, '').split(/\s+/).filter(Boolean);
+    assert.ok(words.length >= 40 && words.length <= 60, String(words.length));
+    assert.equal(/[\u2013\u2014;()]|\w: /.test(text), false, text);
+    for (const need of ['prompts', 'file paths', 'commands', 'reply', 'tool output', '/plugin uninstall agent-ctx']) assert.ok(text.includes(need), need);
+  });
+});
+
+test('the Claude Code manifest names the privacy page of the one origin', () => {
+  eachCopy((dir, origin) => {
+    assert.equal(read(join(dir, 'claude-code', '.claude-plugin', 'plugin.json')).privacyPolicyUrl, `${origin}/privacy`);
   });
 });
 
