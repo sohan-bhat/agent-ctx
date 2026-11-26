@@ -7,9 +7,9 @@ export const DAY = 86400000;
 export const MIN_MATCH = 2;
 export const BAR = 0.22;
 export const COVER = 0.4;
-export const REL = 0;
+export const REL = 0.3;
 export const COMMON = 0.5;
-export const UNKNOWN = 1;
+export const UNKNOWN = 0.5;
 
 export interface Hit { item: Item; score: number; matched: number }
 
