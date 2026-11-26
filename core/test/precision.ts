@@ -65,6 +65,8 @@ export const SET_LANG: TestSet = { items: lang.ITEMS, queries: lang.QUERIES, pro
 
 export const SET_LANG2: TestSet = { items: lang2.ITEMS, queries: lang2.QUERIES, projects: lang2.PROJECTS, now: lang2.NOW };
 
+export const SET_LANG3: TestSet = { items: lang.THIRD.items, queries: lang.THIRD.queries, projects: lang.THIRD.projects, now: lang.THIRD.now };
+
 export const TOOL_KINDS = new Set(['short', 'other', 'cross']);
 
 export function reachable(set: TestSet, loose: Partial<LooseSettings> = {}): number {
@@ -131,5 +133,14 @@ if (isMain()) {
   for (const code of lang2.LANGS) {
     const own = rows2.filter((r) => (r.query as lang2.Lang2Query).lang === code);
     console.log(`lang2_${code}_precision_at_3 ${measure(own).precision_at_3.toFixed(2)}`);
+  }
+  const rows3 = run(SET_LANG3);
+  const s3 = measure(rows3);
+  console.log(`lang3_precision_at_3 ${s3.precision_at_3.toFixed(2)}`);
+  console.log(`lang3_empty_correct ${s3.empty_correct.toFixed(2)}`);
+  console.log(`lang3_found ${s3.found.toFixed(2)}`);
+  for (const code of lang.THIRD.langs) {
+    const own = rows3.filter((r) => r.query.project === lang.THIRD.projects[lang.THIRD.langs.indexOf(code)].key);
+    console.log(`lang3_${code}_precision_at_3 ${measure(own).precision_at_3.toFixed(2)}`);
   }
 }

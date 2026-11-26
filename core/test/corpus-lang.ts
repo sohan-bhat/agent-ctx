@@ -142,3 +142,111 @@ export const QUERIES: LangQuery[] = [
   q('zh', 'chat', '好的，继续'),
   q('zh', 'chat', '谢谢，看起来不错'),
 ];
+
+type Lang3 = 'es' | 'de' | 'fr' | 'pt' | 'it';
+const LANGS3: Lang3[] = ['es', 'de', 'fr', 'pt', 'it'];
+const KEYS3: Record<Lang3, string> = {
+  es: 'github.com/acme/riego',
+  de: 'github.com/acme/radverleih',
+  fr: 'github.com/acme/covoiturage',
+  pt: 'github.com/acme/condominio',
+  it: 'github.com/acme/museo',
+};
+const NOW3 = Date.parse('2026-11-26T15:00:00Z');
+let k3 = 0;
+
+function c3(id: string, lang: Lang3, goal: string, what: string, why: string, path: string): Item {
+  const at = NOW3 - (++k3 % 30) * DAY - k3 * 3600000;
+  const body: CardBody = { goal, decisions: [{ what, why }], changed: [{ path }] };
+  return { id, project: KEYS3[lang], kind: 'card', body, origin: { agent: AGENTS[k3 % AGENTS.length], via: 'tool', source: 'agent', at, session: `${id}-s` }, flags: [], held: false, pinned: false, folded: false, created: at };
+}
+
+const q3 = (lang: Lang3, kind: 'answer' | 'chat', text: string, ...want: string[]) => ({ q: text, project: KEYS3[lang], kind, lang, want });
+
+export const THIRD = {
+  now: NOW3,
+  langs: LANGS3,
+  projects: LANGS3.map((l) => ({ key: KEYS3[l], names: [] as string[] })),
+  items: [
+    c3('es3-1', 'es', 'Lectura de humedad del suelo cada hora', 'los sensores mandan la lectura por LoRa a la pasarela', 'en el campo no hay wifi ni cobertura móvil', 'src/sensores/humedad.ts'),
+    c3('es3-2', 'es', 'Apagar el riego cuando llueve', 'consultar la previsión del tiempo antes de abrir las válvulas', 'se regaba justo antes de una tormenta', 'src/riego/lluvia.ts'),
+    c3('es3-3', 'es', 'Alerta por fuga en la tubería', 'avisar si el caudal sigue alto con las válvulas cerradas', 'una fuga vació el depósito durante la noche', 'src/alertas/fuga.ts'),
+    c3('es3-4', 'es', 'Gráfica del consumo de agua por parcela', 'sumar los litros por día en la base de datos', 'la gráfica tardaba mucho con datos por minuto', 'src/informes/consumo.ts'),
+    c3('es3-5', 'es', 'Batería baja en los sensores', 'enviar un aviso cuando la batería baja del veinte por ciento', 'varios sensores se apagaron sin que nadie lo notara', 'src/sensores/bateria.ts'),
+    c3('es3-6', 'es', 'Horario de riego por cultivo', 'guardar un horario distinto para cada tipo de cultivo', 'los tomates y el maíz necesitan cantidades muy diferentes', 'src/riego/horario.ts'),
+
+    c3('de3-1', 'de', 'Fahrrad per App entsperren', 'das Schloss über Bluetooth mit einem Einmalcode öffnen', 'an vielen Stationen gibt es kein stabiles Netz', 'src/schloss/bluetooth.ts'),
+    c3('de3-2', 'de', 'Abrechnung nach Minuten', 'die Fahrtzeit auf volle Minuten aufrunden und am Ende abbuchen', 'Kunden beschwerten sich über Pauschalpreise für kurze Fahrten', 'src/preise/minuten.ts'),
+    c3('de3-3', 'de', 'Akkustand der E-Bikes anzeigen', 'den Akkustand alle fünf Minuten von der Station abfragen', 'Leute liehen Räder mit leerem Akku aus', 'src/stationen/akku.ts'),
+    c3('de3-4', 'de', 'Schadensmeldung mit Foto', 'Fotos vom Schaden direkt an die Werkstatt schicken', 'defekte Räder standen tagelang an der Station', 'src/werkstatt/meldung.ts'),
+    c3('de3-5', 'de', 'Karte der freien Räder', 'die Karte nur mit Stationen im sichtbaren Bereich laden', 'die Karte wurde auf alten Handys sehr langsam', 'src/karte/stationen.tsx'),
+    c3('de3-6', 'de', 'Kaution bei der ersten Ausleihe', 'eine Kaution auf der Kreditkarte vormerken statt abbuchen', 'viele neue Kunden brachen die Anmeldung ab', 'src/zahlung/kaution.ts'),
+
+    c3('fr3-1', 'fr', 'Partage des frais entre passagers', 'diviser le prix du trajet selon les kilomètres de chaque passager', 'les passagers du début payaient autant que ceux de la fin', 'src/frais/partage.ts'),
+    c3('fr3-2', 'fr', 'Notation du conducteur après le trajet', 'demander une note seulement quand le trajet est terminé', 'des notes arrivaient avant même le départ', 'src/avis/note.ts'),
+    c3('fr3-3', 'fr', 'Point de rendez-vous sur la carte', 'proposer les arrêts de bus proches comme points de rendez-vous', 'les passagers attendaient au mauvais coin de rue', 'src/carte/rendezvous.ts'),
+    c3('fr3-4', 'fr', 'Vérification du permis de conduire', 'comparer la photo du permis avec un selfie', 'de faux comptes proposaient des trajets', 'src/comptes/permis.ts'),
+    c3('fr3-5', 'fr', 'Messagerie entre conducteur et passagers', 'masquer les numéros de téléphone dans les messages', 'des passagers recevaient des appels après le trajet', 'src/messages/masque.ts'),
+    c3('fr3-6', 'fr', 'Annulation de dernière minute', 'rembourser le passager en entier si le conducteur annule', 'des passagers perdaient leur argent sans faute de leur part', 'src/paiement/annulation.ts'),
+
+    c3('pt3-1', 'pt', 'Aviso de encomenda na portaria', 'o porteiro fotografa a etiqueta e o morador recebe uma notificação', 'encomendas ficavam dias esquecidas na portaria', 'src/portaria/encomendas.ts'),
+    c3('pt3-2', 'pt', 'Boleto do condomínio com vencimento', 'gerar o boleto todo dia primeiro com vencimento no dia dez', 'moradores reclamavam que o boleto chegava atrasado', 'src/financeiro/boleto.ts'),
+    c3('pt3-3', 'pt', 'Votação online em assembleia', 'permitir um voto por apartamento com confirmação por e-mail', 'poucos moradores iam às assembleias presenciais', 'src/assembleia/votacao.ts'),
+    c3('pt3-4', 'pt', 'Liberação de visitantes pelo celular', 'o morador gera um código temporário para o visitante', 'a portaria ligava para o morador a cada visita', 'src/portaria/visitantes.ts'),
+    c3('pt3-5', 'pt', 'Leitura dos medidores de gás', 'o zelador digita a leitura no aplicativo uma vez por mês', 'as planilhas de papel tinham muitos erros', 'src/medidores/gas.ts'),
+    c3('pt3-6', 'pt', 'Mural de avisos do prédio', 'fixar os avisos importantes no topo do mural', "avisos de manutenção da caixa d'água se perdiam entre outros posts", 'src/mural/avisos.ts'),
+
+    c3('it3-1', 'it', 'Biglietti con orario di ingresso', "vendere i biglietti a fasce di mezz'ora", 'le sale erano troppo affollate la domenica', 'src/biglietti/fasce.ts'),
+    c3('it3-2', 'it', 'Audioguida sul telefono', 'scaricare le tracce audio prima della visita', 'nelle sale sotterranee il segnale non arriva', 'src/audioguida/download.ts'),
+    c3('it3-3', 'it', 'Accessibilità per visitatori ciechi', 'aggiungere descrizioni audio dettagliate delle opere principali', 'un gruppo di visitatori ciechi aveva chiesto un percorso dedicato', 'src/accessibilita/descrizioni.ts'),
+    c3('it3-4', 'it', 'Conteggio dei visitatori nelle sale', 'leggere i sensori alle porte e mostrare il numero in tempo reale', "i custodi non sapevano quando chiudere l'ingresso", 'src/sale/conteggio.ts'),
+    c3('it3-5', 'it', 'Mostre temporanee nel catalogo', 'segnare le opere in prestito con una data di fine', 'il catalogo mostrava opere già restituite', 'src/catalogo/mostre.ts'),
+    c3('it3-6', 'it', 'Biglietto ridotto per studenti', "chiedere la tessera universitaria solo all'ingresso", 'gli studenti non riuscivano a caricare la tessera online', 'src/biglietti/ridotto.ts'),
+  ],
+  queries: [
+    q3('es', 'answer', '¿Cómo llegan las lecturas de humedad desde el campo?', 'es3-1'),
+    q3('es', 'answer', '¿Qué pasa con el riego si va a llover?', 'es3-2'),
+    q3('es', 'answer', '¿Cómo detectamos una fuga en la tubería?', 'es3-3'),
+    q3('es', 'answer', 'La gráfica de consumo de agua carga muy lento', 'es3-4'),
+    q3('es', 'answer', '¿Cuándo avisamos de que la batería de un sensor está baja?', 'es3-5'),
+    q3('es', 'answer', '¿Dónde se configura el horario de riego de cada cultivo?', 'es3-6'),
+    q3('es', 'chat', 'Perfecto, muchas gracias'),
+    q3('es', 'chat', 'Buenas, ¿estás ahí?'),
+
+    q3('de', 'answer', 'Wie wird das Schloss am Fahrrad geöffnet?', 'de3-1'),
+    q3('de', 'answer', 'Wird pro Minute oder pauschal abgerechnet?', 'de3-2'),
+    q3('de', 'answer', 'Woher kennt die App den Akkustand der E-Bikes?', 'de3-3'),
+    q3('de', 'answer', 'Wohin gehen die Fotos von einem Schaden?', 'de3-4'),
+    q3('de', 'answer', 'Die Karte mit den freien Rädern lädt auf alten Handys ewig', 'de3-5'),
+    q3('de', 'answer', 'Warum wird die Kaution nur vorgemerkt?', 'de3-6'),
+    q3('de', 'chat', 'Super, danke dir'),
+    q3('de', 'chat', 'Hallo, bist du noch da?'),
+
+    q3('fr', 'answer', 'Comment calcule-t-on la part de chaque passager ?', 'fr3-1'),
+    q3('fr', 'answer', 'Quand le passager peut-il noter le conducteur ?', 'fr3-2'),
+    q3('fr', 'answer', 'Où se retrouvent le conducteur et les passagers ?', 'fr3-3'),
+    q3('fr', 'answer', 'Comment vérifie-t-on le permis de conduire ?', 'fr3-4'),
+    q3('fr', 'answer', 'Les numéros de téléphone sont-ils visibles dans la messagerie ?', 'fr3-5'),
+    q3('fr', 'answer', 'Que se passe-t-il si le conducteur annule au dernier moment ?', 'fr3-6'),
+    q3('fr', 'chat', 'Super, merci beaucoup'),
+    q3('fr', 'chat', 'Salut, ça va ?'),
+
+    q3('pt', 'answer', 'Como o morador fica sabendo que chegou uma encomenda?', 'pt3-1'),
+    q3('pt', 'answer', 'Qual é o vencimento do boleto do condomínio?', 'pt3-2'),
+    q3('pt', 'answer', 'Como funciona a votação online da assembleia?', 'pt3-3'),
+    q3('pt', 'answer', 'Como libero a entrada de um visitante?', 'pt3-4'),
+    q3('pt', 'answer', 'Quem faz a leitura dos medidores de gás?', 'pt3-5'),
+    q3('pt', 'answer', 'Os avisos importantes ficam fixados no mural?', 'pt3-6'),
+    q3('pt', 'chat', 'Beleza, obrigado'),
+    q3('pt', 'chat', 'Olá, você está aí?'),
+
+    q3('it', 'answer', 'Come funzionano le fasce orarie dei biglietti?', 'it3-1'),
+    q3('it', 'answer', "L'audioguida funziona anche senza segnale?", 'it3-2'),
+    q3('it', 'answer', 'Cosa abbiamo fatto per i visitatori ciechi?', 'it3-3'),
+    q3('it', 'answer', 'Come sappiamo quante persone ci sono in ogni sala?', 'it3-4'),
+    q3('it', 'answer', 'Le opere in prestito restano nel catalogo dopo la mostra?', 'it3-5'),
+    q3('it', 'answer', 'Dove si controlla la tessera per il biglietto ridotto?', 'it3-6'),
+    q3('it', 'chat', 'Perfetto, grazie'),
+    q3('it', 'chat', 'Ciao, mi senti?'),
+  ],
+};
