@@ -58,8 +58,9 @@ test('chat words carry no weight, so a vague line gives an empty array', () => {
 });
 
 test('two distinct query terms must match unless the query has one usable term', () => {
-  assert.deepEqual(rankItems(items, 'waitlist kubernetes', NOW), []);
-  assert.equal(rankItems(items, 'waitlist', NOW)[0]?.item.id, 'waitlist');
+  const nine = [...items, card('badge', 'Badge printer for check in', 9), card('rooms', 'Room booking clash', 10), card('weekly', 'Weekly meetings series', 11)];
+  assert.deepEqual(rankItems(nine, 'waitlist kubernetes', NOW), []);
+  assert.equal(rankItems(nine, 'waitlist', NOW)[0]?.item.id, 'waitlist');
 });
 
 test('rare terms weigh more than terms spread over the project', () => {
@@ -233,4 +234,34 @@ test('a cached pool sees a changed item body', () => {
   assert.deepEqual(rankItems(pool, 'sundial calibration', NOW), []);
   pool[2].body = { goal: 'Sundial calibration for the courtyard' };
   assert.equal(rankItems(pool, 'sundial calibration', NOW)[0]?.item.id, 'm3');
+});
+
+const target = card('t', 'Waitlist promotion when someone cancels', 2, { decisions: [{ what: 'promote the first person on the waitlist', why: 'leaders wanted no manual work' }] });
+const smallOthers = ['Roster export as CSV', 'Reminder emails before events', 'Room booking clash check', 'Badge printer for check in', 'Dark theme for event pages', 'Recurring weekly meetings series'].map((goal, k) => card(`o${k}`, goal, k + 3));
+const WHOLE = 'ok so the waitlist promotion is acting weird again when someone cancels at the last minute, can you look at how we pick who gets promoted first';
+
+for (const size of [1, 2, 5, 7]) {
+  const pool = [target, ...smallOthers.slice(0, size - 1)];
+  test(`a pool of ${size} finds the card for a short question and a whole prompt`, () => {
+    assert.equal(pool.length, size);
+    assert.deepEqual(rankItems(pool, 'waitlist promotion', NOW).map((h) => h.item.id), ['t']);
+    assert.deepEqual(rankItems(pool, WHOLE, NOW).map((h) => h.item.id), ['t']);
+  });
+  test(`a pool of ${size} gives nothing for a chat prompt or a query about something else`, () => {
+    assert.deepEqual(rankItems(pool, 'ok looks good, continue', NOW), []);
+    assert.deepEqual(rankItems(pool, 'set up stripe checkout for the yearly dues', NOW), []);
+  });
+}
+
+test('a small pool needs two matched terms when the query has more than two usable terms', () => {
+  const pool = [target, ...smallOthers.slice(0, 4)];
+  assert.deepEqual(rankItems(pool, 'waitlist kubernetes autoscaler', NOW), []);
+  assert.deepEqual(rankItems(pool, 'waitlist kubernetes', NOW).map((h) => h.item.id), ['t']);
+  assert.deepEqual(rankItems(pool, 'watilist promotion', NOW).map((h) => h.item.id), ['t']);
+});
+
+test('a pool of 8 keeps the common term skip while a pool of 7 does not', () => {
+  const all = Array.from({ length: 8 }, (_, k) => card(`c${k}`, `Waitlist note number ${k}`, k + 1));
+  assert.deepEqual(rankItems(all, 'waitlist', NOW), []);
+  assert.equal(rankItems(all.slice(0, 7), 'waitlist', NOW).length, 7);
 });

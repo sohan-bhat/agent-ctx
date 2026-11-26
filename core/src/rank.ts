@@ -19,6 +19,7 @@ export const STAND = 1.25;
 export const REL = 0.8;
 export const SYN = 0.5;
 export const TYPO_MIN = 5;
+export const SMALL_POOL = 8;
 
 export interface Hit { item: Item; score: number; matched: number }
 
@@ -120,10 +121,10 @@ interface Alt { term: string; factor: number; df: number }
 interface Term { alts: Alt[]; weight: number }
 interface Acc { score: number; matched: number; evidence: number; rare: number }
 
-function queryTerms(query: string, p: Pool, n: number): Term[] {
+function queryTerms(query: string, p: Pool, n: number, small: boolean): Term[] {
   const dfOf = (t: string) => (p.postings.get(t)?.length ?? 0) / 2;
   const byLength = () => vocabOf(p);
-  const common = (df: number) => n >= 4 && df / n > COMMON;
+  const common = (df: number) => !small && n >= 4 && df / n > COMMON;
   const out: Term[] = [];
   const seen = new Set<string>();
   for (const raw of new Set(tokens(joinPhrases(query)))) {
@@ -162,7 +163,8 @@ export function rankItems(items: Item[], query: string, now: number): Hit[] {
   const p = poolOf(pool);
   const n = pool.length;
   const avg = p.avg || 1;
-  const terms = queryTerms(query, p, n);
+  const small = n < SMALL_POOL;
+  const terms = queryTerms(query, p, n, small);
   if (!terms.length || !terms.some((t) => t.alts.length)) return [];
   const long = terms.length > SHORT_TERMS;
   const total = terms.reduce((a, t) => a + t.weight, 0);
@@ -193,6 +195,16 @@ export function rankItems(items: Item[], query: string, now: number): Hit[] {
     }
   }
   if (!acc.size) return [];
+  if (small) {
+    const least = terms.length <= 2 ? 1 : 2;
+    return [...acc]
+      .filter(([, s]) => s.matched >= least)
+      .map(([doc, s]) => {
+        const item = pool[doc];
+        return { item, score: s.score * recency(item.created, now), matched: s.matched };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
   const mid = median([...acc.values()].map((s) => s.score));
   const lone = acc.size <= 2;
   const need = Math.min(MIN_MATCH, terms.length);
