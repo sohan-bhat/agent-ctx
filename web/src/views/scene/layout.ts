@@ -69,6 +69,7 @@ export interface Layout {
   placed: Placed[];
   links: Link[];
   box: Box3;
+  corners: Vector3[];
 }
 
 export interface LayoutInput {
@@ -147,30 +148,24 @@ function tile(items: Item[], agents: string[]): { leaves: Map<string, { x0: numb
   return { leaves, districts, side };
 }
 
+const GAP_SIDE = 1.2;
+const GAP_ROW = 3.8;
+
 function arrange(sides: number[], narrow: boolean): [number, number][] {
   const n = sides.length;
-  if (narrow) {
-    const out: [number, number][] = [];
-    let t = 0;
-    sides.forEach((s, i) => {
-      if (i > 0) t += ((sides[i - 1] + s) * Math.SQRT2) / 2 + 3;
-      out.push([t * Math.SQRT1_2, t * Math.SQRT1_2]);
-    });
-    return out;
-  }
-  const cols = n <= 3 ? n : Math.ceil(Math.sqrt(n * 1.5));
+  const cols = narrow ? 1 : Math.min(n, 4);
+  const half = (s: number) => s / Math.SQRT2;
   const out: [number, number][] = [];
-  let z = 0;
+  let down = 0;
   for (let r = 0; r * cols < n; r++) {
     const row = sides.slice(r * cols, r * cols + cols);
-    const depth = Math.max(...row);
-    if (r > 0) z += depth / 2;
-    let x = 0;
+    const deep = Math.max(...row);
+    if (r > 0) down += half(Math.max(...sides.slice((r - 1) * cols, r * cols))) + half(deep) + GAP_ROW;
+    let right = 0;
     row.forEach((s, c) => {
-      if (c > 0) x += (row[c - 1] + s) / 2 + 1.1;
-      out.push([x, z]);
+      if (c > 0) right += half(row[c - 1]) + half(s) + GAP_SIDE;
+      out.push([(right + down) * Math.SQRT1_2, (down - right) * Math.SQRT1_2]);
     });
-    z += depth / 2 + 1.1;
   }
   return out;
 }
@@ -190,6 +185,7 @@ export function layout({ projects, agents, items, narrow }: LayoutInput): Omit<L
   const base: Omit<Placed, 'h' | 'shown' | 'y0'>[] = [];
   const links: Link[] = [];
   const box = new Box3();
+  const corners: Vector3[] = [];
   keys.forEach((key, pi) => {
     const t = tiles[pi];
     const [cx, cz] = centres[pi];
@@ -198,6 +194,7 @@ export function layout({ projects, agents, items, narrow }: LayoutInput): Omit<L
     plates.push({ key, name, cx, cz, side: t.side, districts });
     box.expandByPoint(new Vector3(cx - t.side / 2, -PLATE, cz - t.side / 2));
     box.expandByPoint(new Vector3(cx + t.side / 2, H_MAX, cz + t.side / 2));
+    for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) for (const y of [-PLATE, H_MAX]) corners.push(new Vector3(cx + (dx * t.side) / 2, y, cz + (dz * t.side) / 2));
     const list = byProject.get(key)!;
     for (const it of list) {
       const slot = slotOf(agents, it.origin.agent);
@@ -229,7 +226,8 @@ export function layout({ projects, agents, items, narrow }: LayoutInput): Omit<L
     }
   });
   if (box.isEmpty()) box.set(new Vector3(-MIN_SIDE / 2, -PLATE, -MIN_SIDE / 2), new Vector3(MIN_SIDE / 2, H_MAX, MIN_SIDE / 2));
-  return { plates, base, links, box };
+  if (!corners.length) for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new Vector3(x, y, z));
+  return { plates, base, links, box, corners };
 }
 
 export function at(base: Omit<Placed, 'h' | 'shown' | 'y0'>[], time: number, span: number): Placed[] {
@@ -257,19 +255,35 @@ function viewQuat(theta: number, phi: number): Quaternion {
   return new Quaternion().setFromRotationMatrix(new Matrix4().lookAt(eye, new Vector3(), new Vector3(0, 1, 0)));
 }
 
-export function fit(camera: OrthographicCamera, box: Box3, theta: number, phi: number, pad: Pad): { target: Vector3; zoom: number } {
-  const center = box.getCenter(new Vector3());
+export type Shape = Box3 | Vector3[];
+
+function pointsOf(shape: Shape): Vector3[] {
+  if (Array.isArray(shape)) return shape;
+  const out: Vector3[] = [];
+  for (const x of [shape.min.x, shape.max.x]) for (const y of [shape.min.y, shape.max.y]) for (const z of [shape.min.z, shape.max.z]) out.push(new Vector3(x, y, z));
+  return out;
+}
+
+export function fit(camera: OrthographicCamera, shape: Shape, theta: number, phi: number, pad: Pad): { target: Vector3; zoom: number } {
   const q = viewQuat(theta, phi);
   const inv = q.clone().invert();
-  let mx = 1e-3;
-  let my = 1e-3;
-  for (const x of [box.min.x, box.max.x])
-    for (const y of [box.min.y, box.max.y])
-      for (const z of [box.min.z, box.max.z]) {
-        const v = new Vector3(x, y, z).sub(center).applyQuaternion(inv);
-        mx = Math.max(mx, Math.abs(v.x));
-        my = Math.max(my, Math.abs(v.y));
-      }
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  let z = 0;
+  const pts = pointsOf(shape);
+  for (const p of pts) {
+    const v = p.clone().applyQuaternion(inv);
+    x0 = Math.min(x0, v.x);
+    x1 = Math.max(x1, v.x);
+    y0 = Math.min(y0, v.y);
+    y1 = Math.max(y1, v.y);
+    z += v.z / pts.length;
+  }
+  const mx = Math.max(1e-3, (x1 - x0) / 2);
+  const my = Math.max(1e-3, (y1 - y0) / 2);
+  const center = new Vector3((x0 + x1) / 2, (y0 + y1) / 2, z).applyQuaternion(q);
   const w = camera.right - camera.left;
   const h = camera.top - camera.bottom;
   const zoom = Math.max(1, Math.min((w - pad.left - pad.right) / (2 * mx), (h - pad.top - pad.bottom) / (2 * my)));
@@ -278,8 +292,8 @@ export function fit(camera: OrthographicCamera, box: Box3, theta: number, phi: n
   return { target: center.add(right).add(up), zoom };
 }
 
-export function frameTo(controls: CameraControlsImpl, camera: OrthographicCamera, box: Box3, theta: number, phi: number, pad: Pad, smooth: boolean) {
-  const { target, zoom } = fit(camera, box, theta, phi, pad);
+export function frameTo(controls: CameraControlsImpl, camera: OrthographicCamera, shape: Shape, theta: number, phi: number, pad: Pad, smooth: boolean) {
+  const { target, zoom } = fit(camera, shape, theta, phi, pad);
   void controls.rotateTo(theta, phi, smooth);
   void controls.moveTo(target.x, target.y, target.z, smooth);
   void controls.zoomTo(zoom, smooth);

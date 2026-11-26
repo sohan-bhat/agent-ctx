@@ -102,9 +102,9 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
   const free = useRef(false);
   const view = useMemo(() => {
     const p = focusKey ? layout.plates.find((q) => q.key === focusKey) : undefined;
-    return p ? plateBox(p) : layout.box;
+    return p ? plateBox(p) : layout.corners;
   }, [layout, focusKey]);
-  const viewKey = `${view.min.toArray().map((n) => n.toFixed(2))}${view.max.toArray().map((n) => n.toFixed(2))}`;
+  const viewKey = (Array.isArray(view) ? view : [view.min, view.max]).map((v) => v.toArray().map((n) => n.toFixed(2)).join()).join('|');
   useLayoutEffect(() => {
     gl.shadowMap.autoUpdate = false;
     gl.shadowMap.needsUpdate = true;
@@ -117,7 +117,7 @@ export function World({ layout, time, palette, portal, pointing, reduced, api, f
     const c = controls.current;
     if (!c) return;
     const pad = homePad(size.width, size.height);
-    const all = fit(camera, layout.box, HOME.theta, HOME.phi, pad).zoom;
+    const all = fit(camera, layout.corners, HOME.theta, HOME.phi, pad).zoom;
     homeZoom.current = all;
     c.minZoom = all * 0.5;
     c.maxZoom = all * 14;

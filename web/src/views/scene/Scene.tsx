@@ -35,7 +35,7 @@ export default function Scene({ projects, agents, items, time, span, narrow, foc
   const card = useRef<HTMLDivElement>(null);
   const api = useRef<WorldApi>(null);
   const base = useMemo(() => plan({ projects, agents, items, narrow }), [projects, agents, items, narrow]);
-  const view: Layout = useMemo(() => ({ plates: base.plates, links: base.links, box: base.box, placed: at(base.base, time, span) }), [base, time, span]);
+  const view: Layout = useMemo(() => ({ plates: base.plates, links: base.links, box: base.box, corners: base.corners, placed: at(base.base, time, span) }), [base, time, span]);
   const byId = useMemo(() => new Map(view.placed.filter((p) => !p.id.endsWith('^')).map((p) => [p.id, p])), [view]);
   const [hover, setHover] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -184,7 +184,7 @@ export default function Scene({ projects, agents, items, time, span, narrow, foc
   return (
     <div
       ref={wrap}
-      className={`relative size-full select-none outline-offset-[-2px] transition-opacity duration-200 focus-visible:outline-2 focus-visible:outline-ring ${ready ? 'opacity-100' : 'opacity-0'}`}
+      className={`relative size-full touch-none select-none outline-offset-[-2px] transition-opacity duration-200 focus-visible:outline-2 focus-visible:outline-ring ${ready ? 'opacity-100' : 'opacity-0'}`}
       tabIndex={0}
       role="group"
       aria-roledescription="space"
