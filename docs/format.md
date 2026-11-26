@@ -51,7 +51,7 @@ Every line of `items.jsonl` and `rules.jsonl` is one item with these keys, in th
 | `id` | string | Unique id of the item, a random UUID |
 | `project` | string | Project key the item belongs to |
 | `kind` | string | One of `card`, `handoff`, `rule`, `dropped` |
-| `body` | object | The stored content, shaped by `kind` as set out in the tables below |
+| `body` | object | The stored content, shaped by `kind` as in the tables below |
 | `origin` | object | Where the item came from, see Origin |
 | `flags` | string array | Findings of the safety check on the stored text, see Flags and states |
 | `held` | boolean | True when the item is kept back from agents until the person accepts the item |
@@ -97,7 +97,7 @@ A handoff is the state left for the next agent on a project.
 
 ## Body of a rule
 
-A rule is one instruction from the person that is in force in every agent.
+A rule is one instruction from the person, valid in every agent.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -113,8 +113,8 @@ A dropped item is one thing that was removed from an agent's context by a compac
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `label` | string | yes | What the removed thing was, such as `prompt`, `file` or `agent message` |
-| `text` | string | yes | A short copy of the removed thing |
+| `label` | string | yes | What was removed, such as `prompt`, `file` or `agent message` |
+| `text` | string | yes | A short copy of the original |
 | `size` | number | yes | Length of the original in characters |
 
 ## Origin
@@ -156,11 +156,11 @@ A dropped item is one thing that was removed from an agent's context by a compac
 
 Flag values not listed here may appear in later versions.
 
-`held` is true when `flags` contains `role`, `override` or `shell`. A held item is never shown to an agent until the person presses Keep on the page. A rule not yet accepted by the person is kept from agents by the `status` of that rule and not by `held`.
+`held` is true when `flags` contains `role`, `override` or `shell`. A held item is never shown to an agent until the person presses Keep on the page. A pending rule is kept from agents by the rule's `status` and not by `held`.
 
 `pinned` is set by the person. A pinned item is never folded, merged or deleted to save space.
 
-`folded` is true when a card was shortened to save space. Only the time, the agent and the goal cut to 120 characters remain on the card, and the rest of the body is gone. When folding is not enough, folded cards of one project and one month are merged into one folded card whose `goal` is the list of old goals, one per line, each cut to 60 characters.
+`folded` is true when a card was shortened to save space. Only the time, the agent and the goal cut to 120 characters remain, and the rest of the body is gone. When folding is not enough, folded cards of one project and one month are merged into one folded card whose `goal` is the list of old goals, one per line, each cut to 60 characters.
 
 ## Size caps
 
@@ -169,7 +169,7 @@ Flag values not listed here may appear in later versions.
 | Item body | 2048 bytes | UTF-8 length of the JSON of `body` |
 | Store | 10485760 bytes | Sum of the item body sizes of one person |
 
-Longer content is cut to fit the item cap before storage. When a store would be over 80 percent of the store cap after a new item, the oldest unpinned cards are folded, then merged, then deleted, until the store is back under 70 percent. After the cards, handoffs older than 30 days and dropped items may be deleted. Pinned items, rules and handoffs newer than 30 days are always kept. A write is refused when the store would still be over the store cap after that write.
+Longer content is cut to fit the item cap before storage. When a store would be over 80 percent of the store cap after a new item, the oldest unpinned cards are folded, then merged, then deleted, until the store is back under 70 percent. After the cards, handoffs older than 30 days and dropped items may be deleted. Pinned items, rules and handoffs newer than 30 days are always kept. A write is refused when the store would still be over the cap afterwards.
 
 ## Example lines
 
