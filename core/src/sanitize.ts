@@ -166,20 +166,40 @@ export function stripPrivate(text: string): string {
   return text.replace(PRIVATE, '');
 }
 
+const RECALLED = [
+  /^[ \t]*>[ \t]+(?:[0-9a-f][0-9a-f-]{7,35}[ \t]+)?\d{4}-\d{2}-\d{2}[ \t]+\S/,
+  /^[ \t]*>[ \t]+(?:question|goal|done|next|blockers|files|check):[ \t]/,
+  /^[ \t]*>[ \t]+"[^\n]*"[ \t]+(?:added by the person|accepted by the person|proposed in)\b/,
+];
+const RECALLED_MORE = /^[ \t]*>   \S/;
+const RECALLED_TITLE = /^[ \t]*(?:RULES|EARLIER|PUT BACK|TOPICS|HANDOFF from [^\n]{1,80} on \d{4}-\d{2}-\d{2}[^\n]*|No confident match\. Stored topics of [^\n]*|Other close topics by id are [^\n]*|\d+ more topics? (?:is|are) stored\.)[ \t]*$/;
+
+function recalledLine(line: string): boolean {
+  return RECALLED.some((re) => re.test(line));
+}
+
 export function stripOwn(text: string): string {
   if (typeof text !== 'string') return '';
-  if (!/agent-ctx memory/i.test(text)) return text;
+  const lines = text.split('\n');
   const out: string[] = [];
   let inside = false;
-  for (const line of text.split('\n')) {
-    if (!inside && OWN_START.test(line)) inside = true;
+  let after = false;
+  const block = /agent-ctx memory/i.test(text);
+  for (const line of lines) {
+    if (block && !inside && OWN_START.test(line)) inside = true;
     if (inside) {
       if (line.includes(FOOTER)) inside = false;
       continue;
     }
+    if (recalledLine(line) || (after && RECALLED_MORE.test(line))) {
+      after = true;
+      continue;
+    }
+    after = false;
+    if (RECALLED_TITLE.test(line) || line.trim() === FOOTER) continue;
     out.push(line);
   }
-  return out.join('\n');
+  return out.length === lines.length ? text : out.join('\n');
 }
 
 function mapStrings(v: unknown, fn: (s: string) => string): unknown {

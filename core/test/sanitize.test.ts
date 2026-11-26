@@ -303,3 +303,26 @@ test('ordinary text in other alphabets and with emoji stays clean', () => {
     assert.deepEqual(sanitize(s), { text: s, flags: [] }, s);
   }
 });
+
+test('stripOwn removes lines in the shapes recall prints even without the header, and keeps other quotes', () => {
+  const copied = [
+    '> 2026-11-03 Codex. Fix the expiry reminders worker. Decided use a redis cache.',
+    '>   continued text of that card',
+    '> 1a2b3c4d 2026-11-03 Claude Code. Fix the expiry reminders worker',
+    '> goal: Ship the ramp',
+    '> next: Wire the timer',
+    '> "keep labels short" added by the person on 2026-11-03, all projects',
+    'RULES',
+    'TOPICS',
+    'HANDOFF from Codex on 2026-11-03',
+    'No confident match. Stored topics of this project follow. Call recall again with ids to read any of them.',
+    'Other close topics by id are 1a2b3c4d.',
+    '3 more topics are stored.',
+    FOOTER,
+  ];
+  for (const line of copied.filter((l) => !l.startsWith('>   '))) assert.equal(stripOwn(line), '', line);
+  assert.equal(stripOwn(copied.join('\n')), '');
+  const kept = ['> a quote from the design review', 'Use 2026-11-03 as the cutoff', 'goal: ship it', '>   indented quote alone'];
+  for (const line of kept) assert.equal(stripOwn(line), line, line);
+  assert.equal(stripOwn(`real note\n${copied[0]}\nanother real note`), 'real note\nanother real note');
+});

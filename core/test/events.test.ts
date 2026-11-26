@@ -162,3 +162,10 @@ test('droppedAt keeps the original size, cuts the text and stops at 40', () => {
   assert.equal(out[0].size, `prompt 59 `.length + 500);
   assert.ok(out.every((d) => d.text.length <= 300));
 });
+
+test('autoCard leaves out slash, bang and hash prompts, so a session of only those makes no card', () => {
+  assert.equal(autoCard([{ t: 'prompt', at: s(1), text: '/compact keep the last task' }, { t: 'prompt', at: s(2), text: '# note for later today' }, { t: 'stop', at: s(3), text: 'Done.' }]), null);
+  const c = autoCard([{ t: 'prompt', at: s(1), text: '/compact keep the last task' }, { t: 'prompt', at: s(2), text: 'Fix the shelf label printer margins' }])!;
+  assert.equal(c.goal, 'Fix the shelf label printer margins');
+  assert.deepEqual(c.prompts, ['Fix the shelf label printer margins']);
+});

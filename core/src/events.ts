@@ -5,6 +5,7 @@ export type EvType = 'start' | 'prompt' | 'edit' | 'command' | 'stop' | 'compact
 export interface Ev { t: EvType; at: number; text?: string; path?: string; ok?: boolean }
 
 const WINDOW = 5000;
+const COMMAND_PROMPT = /^[/!#]/;
 const BUILD_WORDS = /\b(?:test|tests|build|lint|deploy|migrate|install)\b/i;
 const FAILED = ' exit failed';
 
@@ -83,7 +84,7 @@ function commandList(events: Ev[]): string[] {
 
 export function autoCard(events: Ev[]): CardBody | null {
   const evs = ordered(events ?? []);
-  const asked = prompts(evs);
+  const asked = prompts(evs).filter((e) => !COMMAND_PROMPT.test(said(e)));
   const paths = editPaths(evs);
   if (!asked.length && !paths.length) return null;
   const changed = newestDistinct(paths, 20);
