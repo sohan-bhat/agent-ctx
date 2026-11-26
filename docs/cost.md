@@ -86,7 +86,7 @@ Before the change the same table had $175.51 at 10,000 people and $2,366.16 at 1
 
 ## Limits per account
 
-The limits below are enforced by the service and copied from service/src/limits.ts and core/src/caps.ts. A test fails when this list and the code differ.
+The limits below are enforced by the service and copied from service/src/limits.ts and core/src/model.ts. A test fails when this list and the code differ.
 
 - 60 calls a minute
 - 2,000 calls a day

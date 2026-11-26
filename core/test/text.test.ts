@@ -4,7 +4,6 @@ import { FULL_LISTS, GROUPS, STOP_LISTS, bucketOf, buildBm25, fileTokens, idf, i
 import { itemText } from '../src/model.ts';
 import * as one from './corpus.ts';
 import * as two from './corpus2.ts';
-import * as twoB from './corpus2b.ts';
 
 test('stem folds plural and verb endings', () => {
   assert.equal(stem('readings'), 'reading');
@@ -238,7 +237,7 @@ test('function words drop out of each language and content stays', () => {
 
 test('no list word removes a card or query term of sets 1, 2 and 2b', () => {
   const words = new Map<string, number>();
-  const texts = [...one.ITEMS, ...two.ITEMS].map(itemText).concat([...one.QUERIES, ...two.QUERIES, ...twoB.QUERIES].map((q) => q.q));
+  const texts = [...one.ITEMS, ...two.ITEMS].map(itemText).concat([...one.QUERIES, ...two.QUERIES, ...two.QUERIES_2B].map((q) => q.q));
   for (const t of texts) for (const w of raw(t)) words.set(w, (words.get(w) ?? 0) + 1);
   assert.ok(words.size > 1000);
   for (const l of LANGS) {
@@ -274,7 +273,7 @@ test('a full list word drops only when the text holds two safe words of that lan
 });
 
 test('no text of sets 1, 2 and 2b holds two safe words of one language', () => {
-  const texts = [...one.ITEMS, ...two.ITEMS].map(itemText).concat([...one.QUERIES, ...two.QUERIES, ...twoB.QUERIES].map((q) => q.q));
+  const texts = [...one.ITEMS, ...two.ITEMS].map(itemText).concat([...one.QUERIES, ...two.QUERIES, ...two.QUERIES_2B].map((q) => q.q));
   for (const t of texts) {
     const words = new Set(raw(t));
     for (const l of LANGS) assert.ok(STOP_LISTS[l].filter((w) => words.has(w)).length < 2, `${l} ${t}`);

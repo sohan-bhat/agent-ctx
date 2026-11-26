@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ITEMS } from '../core/test/corpus2.ts';
-import { QUERIES } from '../core/test/corpus2b.ts';
+import { QUERIES_2B as QUERIES } from '../core/test/corpus2.ts';
 import { GALE, PANTRY } from '../core/test/corpus.ts';
 import { paths, runClaude, spentSoFar } from './claude.mjs';
 import { open } from './mcp.mjs';
