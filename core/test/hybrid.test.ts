@@ -137,3 +137,18 @@ test('over sets 1, 2, 3 and 4 the hybrid with no vectors equals the words only r
   }
   assert.ok(checked >= 300, String(checked));
 });
+
+test('recall passes the vectors to the hybrid, here and for a named project', () => {
+  const other = { ...card('o1', 'Opening book reader for the engine'), project: 'github.com/acme/knightmare' };
+  const others = [other, ...['Quiescence search', 'UCI time control', 'Pawn structure terms'].map((g, k) => ({ ...card(`o${k + 2}`, g), project: 'github.com/acme/knightmare' }))];
+  const items = [...pool, ...others];
+  const projects = [{ key: 'p', names: [] }, { key: 'github.com/acme/knightmare', names: ['chess engine'] }];
+  const v = new Map(vectors);
+  v.set('o1', axis([7, 1]));
+  others.slice(1).forEach((o, k) => v.set(o.id, axis([k + 3, 1])));
+  const base = { project: 'p', items, projects, first: false, session: 's', seen: [], now: NOW, hybrid: SETTINGS };
+  assert.deepEqual(recall({ ...base, query: 'zz qq' }).delivered, []);
+  assert.deepEqual(recall({ ...base, query: 'zz qq', vectors: v, queryVector: query }).delivered, ['near', 'close']);
+  const named = recall({ ...base, query: 'how does the chess engine do zz', vectors: v, queryVector: axis([6, 1]), namedVectors: new Map([['github.com/acme/knightmare', axis([7, 1])]]) });
+  assert.deepEqual(named.delivered, ['o1']);
+});
