@@ -5,3 +5,4 @@ dist/
 *.tmp
 .wrangler/
 out/
+core/eval/models/
