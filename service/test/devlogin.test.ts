@@ -22,7 +22,7 @@ describe('sign out', () => {
       expect(r.headers.get('Location')).toBe('/');
       expect(r.headers.getSetCookie().some((c) => c.startsWith('__Host-session=') && /max-age=0/i.test(c))).toBe(true);
     }
-    for (const headers of [{}, { Origin: 'https://evil.example' }]) {
+    for (const headers of [{}, { Origin: 'https://evil.example' }] as Record<string, string>[]) {
       const r = await hit('/logout', { method: 'POST', headers }, '1');
       expect(r.status).toBe(403);
       expect(r.headers.getSetCookie()).toEqual([]);

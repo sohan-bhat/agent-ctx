@@ -93,7 +93,7 @@ describe('redaction', () => {
     const rows = await runInDurableObject(stub, (p: Person) => TABLES.map((t) => JSON.stringify(p.store.q(`SELECT * FROM ${t}`))).join('\n'));
     expect(rows).toContain('[secret dropped]');
     const zip = unzipSync(new Uint8Array(await (await send('/api/export', { headers: { Cookie: jar.header() } })).arrayBuffer()));
-    const exported = Object.values(zip).map(strFromU8).join('\n');
+    const exported = Object.values(zip).map((v) => strFromU8(v)).join('\n');
     const answers = [await (await send('/api/space', { headers: { Cookie: jar.header() } })).text(), await (await send('/api/me', { headers: { Cookie: jar.header() } })).text()].join('\n');
     await new Promise((r) => setTimeout(r, 50));
     ws.close();

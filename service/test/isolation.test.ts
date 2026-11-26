@@ -19,7 +19,7 @@ async function space(w: Who): Promise<{ items: Item[]; projects: { key: string }
 async function dump(w: Who): Promise<string> {
   const s = JSON.stringify(await space(w));
   const zip = unzipSync(new Uint8Array(await (await send('/api/export', { headers: { Cookie: w.jar.header() } })).arrayBuffer()));
-  return s + Object.values(zip).map(strFromU8).join('\n');
+  return s + Object.values(zip).map((v) => strFromU8(v)).join('\n');
 }
 
 const TREES = ['alder', 'birch', 'cedar', 'dogwood', 'elm'];
