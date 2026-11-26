@@ -1,8 +1,8 @@
 # agent-ctx
 
-Shared memory across agents from different vendors.
+agent-ctx is shared memory across agents from different vendors.
 
-The hosted service is in development. MIT.
+The hosted service is in development and the licence is MIT.
 
 ## Layout
 
@@ -10,12 +10,11 @@ The hosted service is in development. MIT.
     service    the Cloudflare Worker, one private store per person
     web        the page
     plugins    JSON only plugins for Claude Code and Codex
-    importer   reader for Claude Code transcripts
     docs       format.md and cost.md
 
 ## Run locally
 
-Node 22 or newer.
+You need Node 22 or newer.
 
     npm test
 
@@ -26,4 +25,4 @@ Node 22 or newer.
     npm --prefix web run build
     npm --prefix service run dev -- --var DEV_LOGIN:1
 
-Set COOKIE_KEY in service/.dev.vars to 64 hex characters before the last command. The page then opens at http://localhost:8790 and agents connect to http://localhost:8790/mcp.
+Set COOKIE_KEY in service/.dev.vars to 64 hex characters before the last command. The page is then served at http://localhost:8790 and agents connect to http://localhost:8790/mcp.
