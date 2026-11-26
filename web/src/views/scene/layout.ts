@@ -1,82 +1,247 @@
+import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
 import { Box3, Matrix4, Quaternion, Vector3, type OrthographicCamera } from 'three';
 import type { CameraControlsImpl } from '@react-three/drei';
-import { heightShare, toolGroup, TOOL_GROUPS, type Plan, type Piece } from '@/lib/model';
+import { itemBytes } from '@core/model.ts';
+import type { Item, RuleBody } from '@/lib/types';
 
-export const SIDE = 10;
-export const H_MIN = 0.05;
-export const H_MAX = 1.5;
+export const H_MIN = 0.08;
+export const H_MAX = 1.6;
+export const POST = 1.25;
+export const POST_W = 0.09;
+export const CAP = 0.07;
 export const FLAT = 0.012;
 export const PLATE = 0.18;
 export const EDGE = 0.045;
 export const HOME = { theta: Math.PI / 4, phi: 0.98 };
-const GAP = 0.035;
-const TOOL_STREET = 0.11;
-const KIND_STREET = 0.2;
-const RULER_IN = 0.32;
-const TONES = [0, 0.16, 0.28, 0.38];
+const AREA = 1 / 1000;
+const FILL = 0.72;
+const MIN_SIDE = 3.2;
+const GAP = 0.04;
+const STREET = 0.24;
+const RIM = 0.4;
+const TAU = 10 * 60_000;
+
+export type Look = 'solid' | 'cap' | 'post' | 'flat' | 'outline';
+
+export interface District {
+  plate: string;
+  agent: string;
+  slot: number;
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+}
+
+export interface Plate {
+  key: string;
+  name: string;
+  cx: number;
+  cz: number;
+  side: number;
+  districts: District[];
+}
 
 export interface Placed {
   id: string;
-  piece: Piece;
-  tone: number;
+  item: Item;
+  look: Look;
+  slot: number;
+  plate: string;
   cx: number;
   cz: number;
   w: number;
   d: number;
+  y0: number;
   h: number;
+  shown: boolean;
 }
 
-export function heightAt(age: number): number {
-  return H_MIN + heightShare(age) * (H_MAX - H_MIN);
+export interface Link {
+  id: string;
+  slot: number;
+  a: [number, number];
+  b: [number, number];
 }
 
-export const FIXED_KINDS = new Set(['system', 'memory']);
-
-export function standHeight(p: Piece): number {
-  if (p.block.members) return H_MIN;
-  return FIXED_KINDS.has(p.block.kind) ? Math.min(heightAt(p.age), heightAt(1)) : heightAt(p.age);
+export interface Layout {
+  plates: Plate[];
+  placed: Placed[];
+  links: Link[];
+  box: Box3;
 }
 
-export function heightOf(p: Piece): number {
-  return p.state === 'gone' ? FLAT : standHeight(p);
+export interface LayoutInput {
+  projects: { key: string; name: string }[];
+  agents: string[];
+  items: Item[];
+  narrow: boolean;
 }
 
-function span(a0: number, a1: number, inset0: number, inset1: number): [number, number] {
-  const full = a1 - a0;
-  const avail = full - inset0 - inset1;
-  if (avail < full * 0.35) return [(a0 + a1) / 2, full * 0.35];
-  return [(a0 + inset0 + a1 - inset1) / 2, avail];
+export function heightAt(age: number, span: number): number {
+  if (age <= 0) return H_MIN;
+  const share = Math.log1p(age / TAU) / Math.log1p(Math.max(span, 60 * 60_000) / TAU);
+  return H_MIN + Math.min(1, share) * (H_MAX - H_MIN);
 }
 
-export function place(plan: Plan): Placed[] {
-  const sizes = new Map<string, number>();
-  for (const l of plan.lots) if (l.piece.block.kind === 'tools' && !l.piece.block.members) sizes.set(l.piece.block.cat, (sizes.get(l.piece.block.cat) ?? 0) + l.piece.size);
-  const top = [...sizes].sort((a, b) => b[1] - a[1]).slice(0, TOOL_GROUPS).map(([c]) => c);
-  const e = 1e-6;
-  const inset = (v: number, outer: boolean, kind: number, group: number) => (outer ? GAP / 2 : Math.abs(v - kind) < e ? KIND_STREET / 2 : Math.abs(v - group) < e ? TOOL_STREET / 2 : GAP / 2);
-  return plan.lots.map((l) => {
-    const b = l.piece.block;
-    const g = b.kind === 'tools' ? (b.members ? 'tool:~' : toolGroup(b.cat, top)) : '';
-    const rank = g === '' ? 0 : g === 'tool:~' ? TONES.length - 1 : Math.min(TONES.length - 1, top.indexOf(g));
-    const [x, w] = span(l.x0, l.x1, inset(l.x0, l.x0 < e, l.district.x0, l.group.x0), inset(l.x1, l.x1 > plan.region - e, l.district.x1, l.group.x1));
-    const [z, d] = span(l.z0, l.z1, inset(l.z0, l.z0 < e, l.district.z0, l.group.z0), inset(l.z1, l.z1 > plan.region - e, l.district.z1, l.group.z1));
-    return { id: b.id, piece: l.piece, tone: TONES[rank], cx: -x, cz: -z, w, d, h: heightOf(l.piece) };
+export function slotOf(agents: string[], label: string): number {
+  const i = agents.indexOf(label);
+  return i < 0 ? -1 : i;
+}
+
+function inDistrict(i: Item): boolean {
+  return i.kind !== 'rule';
+}
+
+function ruleShown(i: Item): boolean {
+  const s = (i.body as RuleBody).status;
+  return i.kind === 'rule' && (s === 'active' || s === 'pending');
+}
+
+interface Leaf {
+  id: string;
+  area: number;
+  created: number;
+  children?: Leaf[];
+}
+
+function tile(items: Item[], agents: string[]): { leaves: Map<string, { x0: number; z0: number; x1: number; z1: number }>; districts: Omit<District, 'plate'>[]; side: number } {
+  const groups = new Map<string, Item[]>();
+  for (const it of items) {
+    const list = groups.get(it.origin.agent);
+    if (list) list.push(it);
+    else groups.set(it.origin.agent, [it]);
+  }
+  const order = [...groups.keys()].sort((a, b) => slotOf(agents, a) - slotOf(agents, b) || (a < b ? -1 : 1));
+  const total = items.reduce((s, it) => s + itemBytes(it) * AREA, 0);
+  const side = Math.max(MIN_SIDE, Math.sqrt(total / FILL) + RIM * 2);
+  const inner = side - RIM * 2;
+  const root = hierarchy<Leaf>(
+    {
+      id: '',
+      area: 0,
+      created: 0,
+      children: order.map((agent) => ({
+        id: `@${agent}`,
+        area: 0,
+        created: Math.min(...groups.get(agent)!.map((i) => i.created)),
+        children: groups.get(agent)!.map((i) => ({ id: i.id, area: itemBytes(i) * AREA, created: i.created })),
+      })),
+    },
+    (d) => d.children,
+  )
+    .sum((d) => (d.children ? 0 : d.area))
+    .sort((a, b) => (a.depth === 1 ? 0 : a.data.created - b.data.created));
+  const laid = treemap<Leaf>().tile(treemapSquarify.ratio(1.3)).size([inner, inner]).paddingInner((n) => (n.depth === 0 ? STREET : 0)).round(false)(root);
+  const leaves = new Map<string, { x0: number; z0: number; x1: number; z1: number }>();
+  const districts: Omit<District, 'plate'>[] = [];
+  const o = -side / 2 + RIM;
+  for (const n of laid.descendants()) {
+    if (n.depth === 1) {
+      const agent = n.data.id.slice(1);
+      districts.push({ agent, slot: slotOf(agents, agent), x0: o + n.x0, z0: o + n.y0, x1: o + n.x1, z1: o + n.y1 });
+    }
+    if (n.depth === 2) leaves.set(n.data.id, { x0: o + n.x0, z0: o + n.y0, x1: o + n.x1, z1: o + n.y1 });
+  }
+  return { leaves, districts, side };
+}
+
+function arrange(sides: number[], narrow: boolean): [number, number][] {
+  const n = sides.length;
+  if (narrow) {
+    const out: [number, number][] = [];
+    let t = 0;
+    sides.forEach((s, i) => {
+      if (i > 0) t += ((sides[i - 1] + s) * Math.SQRT2) / 2 + 1.3;
+      out.push([t * Math.SQRT1_2, t * Math.SQRT1_2]);
+    });
+    return out;
+  }
+  const cols = n <= 3 ? n : Math.ceil(Math.sqrt(n * 1.5));
+  const out: [number, number][] = [];
+  let z = 0;
+  for (let r = 0; r * cols < n; r++) {
+    const row = sides.slice(r * cols, r * cols + cols);
+    const depth = Math.max(...row);
+    if (r > 0) z += depth / 2;
+    let x = 0;
+    row.forEach((s, c) => {
+      if (c > 0) x += (row[c - 1] + s) / 2 + 1.1;
+      out.push([x, z]);
+    });
+    z += depth / 2 + 1.1;
+  }
+  return out;
+}
+
+export function layout({ projects, agents, items, narrow }: LayoutInput): Omit<Layout, 'placed'> & { base: Omit<Placed, 'h' | 'shown' | 'y0'>[] } {
+  const keys = projects.map((p) => p.key);
+  for (const it of items) if (!keys.includes(it.project)) keys.push(it.project);
+  if (!keys.length) keys.push('');
+  const byProject = new Map<string, Item[]>(keys.map((k) => [k, []]));
+  for (const it of items) byProject.get(it.project)!.push(it);
+  const tiles = keys.map((k) => tile(byProject.get(k)!.filter(inDistrict), agents));
+  const centres = arrange(
+    tiles.map((t) => t.side),
+    narrow,
+  );
+  const plates: Plate[] = [];
+  const base: Omit<Placed, 'h' | 'shown' | 'y0'>[] = [];
+  const links: Link[] = [];
+  const box = new Box3();
+  keys.forEach((key, pi) => {
+    const t = tiles[pi];
+    const [cx, cz] = centres[pi];
+    const name = projects.find((p) => p.key === key)?.name ?? key.split('/').pop() ?? key;
+    const districts = t.districts.map((d) => ({ ...d, plate: key, x0: d.x0 + cx, x1: d.x1 + cx, z0: d.z0 + cz, z1: d.z1 + cz }));
+    plates.push({ key, name, cx, cz, side: t.side, districts });
+    box.expandByPoint(new Vector3(cx - t.side / 2, -PLATE, cz - t.side / 2));
+    box.expandByPoint(new Vector3(cx + t.side / 2, H_MAX, cz + t.side / 2));
+    const list = byProject.get(key)!;
+    for (const it of list) {
+      const slot = slotOf(agents, it.origin.agent);
+      if (it.kind === 'rule') continue;
+      const r = t.leaves.get(it.id);
+      if (!r) continue;
+      const w = Math.max(0.06, r.x1 - r.x0 - GAP * 2);
+      const d = Math.max(0.06, r.z1 - r.z0 - GAP * 2);
+      const c = { cx: cx + (r.x0 + r.x1) / 2, cz: cz + (r.z0 + r.z1) / 2 };
+      const look: Look = it.held ? 'outline' : it.kind === 'dropped' ? 'flat' : 'solid';
+      base.push({ id: it.id, item: it, look, slot, plate: key, ...c, w, d });
+      if (it.kind === 'handoff' && !it.held) base.push({ id: `${it.id}^`, item: it, look: 'cap', slot, plate: key, ...c, w, d });
+    }
+    const rules = list.filter(ruleShown).sort((a, b) => a.created - b.created);
+    const step = Math.min(0.3, (t.side - RIM) / Math.max(1, rules.length));
+    rules.forEach((it, i) => {
+      const look: Look = (it.body as RuleBody).status === 'pending' || it.held ? 'outline' : 'post';
+      base.push({ id: it.id, item: it, look, slot: -1, plate: key, cx: cx - t.side / 2 + RIM / 2 + i * step, cz: cz - t.side / 2 + RIM / 2, w: POST_W, d: POST_W });
+    });
+    for (const h of list.filter((i) => i.kind === 'handoff' && !i.held)) {
+      const reader = list.filter((i) => i.created > h.created && i.origin.agent !== h.origin.agent && i.kind !== 'rule').sort((a, b) => a.created - b.created)[0];
+      if (!reader) continue;
+      const dist = districts.find((d) => d.agent === reader.origin.agent);
+      const from = base.find((b) => b.id === h.id);
+      if (!dist || !from) continue;
+      const tx = Math.min(Math.max(from.cx, dist.x0 + 0.2), dist.x1 - 0.2);
+      const tz = Math.min(Math.max(from.cz, dist.z0 + 0.2), dist.z1 - 0.2);
+      links.push({ id: `${h.id}>${reader.id}`, slot: slotOf(agents, reader.origin.agent), a: [from.cx, from.cz], b: [tx, tz] });
+    }
   });
+  if (box.isEmpty()) box.set(new Vector3(-MIN_SIDE / 2, -PLATE, -MIN_SIDE / 2), new Vector3(MIN_SIDE / 2, H_MAX, MIN_SIDE / 2));
+  return { plates, base, links, box };
 }
 
-export interface Framing {
-  side: number;
-  top: number;
-}
-
-export function framing(peak: number, plate: number, lastAge: number): Framing {
-  const side = Math.min(SIDE, Math.max(3, SIDE * Math.sqrt(Math.min(1, peak / Math.max(1, plate))) * 1.3));
-  return { side, top: Math.max(H_MIN * 4, heightAt(lastAge)) };
-}
-
-export function rulerAt(f: Framing): [number, number] {
-  const d = f.side < SIDE ? RULER_IN : 0.06;
-  return [-f.side + d, -d];
+export function at(base: Omit<Placed, 'h' | 'shown' | 'y0'>[], time: number, span: number): Placed[] {
+  return base.map((b) => {
+    const shown = b.item.created <= time;
+    const age = Math.max(0, time - b.item.created);
+    const body = heightAt(age, span);
+    if (b.look === 'post') return { ...b, y0: 0, h: POST, shown };
+    if (b.look === 'flat') return { ...b, y0: 0, h: FLAT, shown };
+    if (b.look === 'cap') return { ...b, y0: body, h: CAP, shown };
+    if (b.look === 'outline' && b.item.kind === 'rule') return { ...b, y0: 0, h: POST, shown };
+    return { ...b, y0: 0, h: body, shown };
+  });
 }
 
 export interface Pad {
@@ -119,20 +284,20 @@ export function frameTo(controls: CameraControlsImpl, camera: OrthographicCamera
   void controls.zoomTo(zoom, smooth);
 }
 
-export function homeBox(f: Framing): Box3 {
-  return new Box3(new Vector3(-f.side, -PLATE, -f.side), new Vector3(0, f.top, 0));
-}
-
-export function homePad(width: number, height: number, f: Framing): Pad {
-  const narrow = width < 520;
-  return { left: narrow ? 52 : 96, right: narrow ? 8 : 12, top: f.side < SIDE ? height * 0.2 : 16, bottom: 30 };
+export function plateBox(p: Plate): Box3 {
+  return new Box3(new Vector3(p.cx - p.side / 2, -PLATE, p.cz - p.side / 2), new Vector3(p.cx + p.side / 2, H_MAX * 0.7, p.cz + p.side / 2));
 }
 
 export function boxOf(list: Placed[]): Box3 {
   const box = new Box3();
   for (const p of list) {
     box.expandByPoint(new Vector3(p.cx - p.w / 2, 0, p.cz - p.d / 2));
-    box.expandByPoint(new Vector3(p.cx + p.w / 2, p.h, p.cz + p.d / 2));
+    box.expandByPoint(new Vector3(p.cx + p.w / 2, p.y0 + p.h, p.cz + p.d / 2));
   }
   return box;
+}
+
+export function homePad(width: number, height: number): Pad {
+  const narrow = width < 520;
+  return { left: narrow ? 14 : 40, right: narrow ? 14 : 40, top: narrow ? 20 : 28, bottom: narrow ? 34 : 40 };
 }
