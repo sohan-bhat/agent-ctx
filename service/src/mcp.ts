@@ -18,7 +18,7 @@ const DESCRIBE = {
   recall:
     "Call first, before reading or changing files. Another agent may have left a handoff, rules or dead ends here. repo is git remote get-url origin, folder the working folder.",
   checkpoint: 'Call before your final reply after any file change. Save goal in one line, changed, decisions with reasons, dead_ends and open for the agent after you.',
-  handoff: 'Save state for the next agent in goal, done, next, blockers, files, check and question.',
+  handoff: 'Save state for the next agent. goal, next and question help most, then done, blockers, files and check.',
   rule: "Save a standing rule. words is the person's exact words.",
   event: 'For plugin hooks. Agents never call this tool.',
 };
@@ -43,8 +43,8 @@ const SCALAR = (v: unknown) => v === undefined || v === null || typeof v === 'st
 
 const ZOD = {
   recall: z.strictObject({ ...where, query: str.optional(), dropped: z.boolean().optional() }),
-  checkpoint: z.strictObject({ ...where, goal: str, changed: list.optional(), decisions: list.optional(), commands: list.optional(), dead_ends: list.optional(), open: list.optional(), key: str.optional() }),
-  handoff: z.strictObject({ ...where, goal: str, done: str.optional(), next: str, blockers: list.optional(), files: list.optional(), check: str.optional(), question: str.optional(), key: str.optional() }),
+  checkpoint: z.strictObject({ ...where, goal: str.optional(), changed: list.optional(), decisions: list.optional(), commands: list.optional(), dead_ends: list.optional(), open: list.optional(), key: str.optional() }),
+  handoff: z.strictObject({ ...where, goal: str.optional(), done: str.optional(), next: str.optional(), blockers: list.optional(), files: list.optional(), check: str.optional(), question: str.optional(), key: str.optional() }),
   rule: z.strictObject({ ...where, text: str, words: str, scope: z.enum(['project', 'all']), key: str.optional() }),
   event: z.strictObject({
     host: field,
@@ -167,7 +167,7 @@ export function createServer(): McpServer {
     if (!c) return user(FAILED);
     try {
       const r = await stub(c.props.person).recall(c.who, { repo: args.repo, folder: args.folder });
-      return user(r.ok ? continueText(r.text) : r.text);
+      return user(r.ok && !r.noProject ? continueText(r.text) : r.text);
     } catch {
       return user(FAILED);
     }

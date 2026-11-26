@@ -44,11 +44,11 @@ import { Limits, SAY } from './limits.ts';
 import { buildExport } from './export.ts';
 
 export interface Caller { agent: string; grant: string; scopes: string[] }
-export interface Result { ok: boolean; text: string; item?: Item }
+export interface Result { ok: boolean; text: string; item?: Item; noProject?: boolean }
 export interface Where { repo?: string; folder?: string }
 export interface RecallArgs extends Where { query?: string; dropped?: boolean }
-export interface CheckpointArgs extends Where { goal: string; changed?: string[]; decisions?: string[]; commands?: string[]; dead_ends?: string[]; open?: string[]; key?: string }
-export interface HandoffArgs extends Where { goal: string; done?: string; next: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; key?: string }
+export interface CheckpointArgs extends Where { goal?: string; changed?: string[]; decisions?: string[]; commands?: string[]; dead_ends?: string[]; open?: string[]; key?: string }
+export interface HandoffArgs extends Where { goal?: string; done?: string; next?: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; key?: string }
 export interface RuleArgs extends Where { text: string; words: string; scope: 'project' | 'all'; key?: string }
 export interface EventArgs { host?: string; event?: string; session?: string; cwd?: string; prompt?: string; tool?: string; file?: string; command?: string; message?: string; summary?: string; reason?: string; source?: string; model?: string }
 export interface Space { projects: { key: string; name: string; items: number }[]; agents: AgentRow[]; items: Item[]; queue: string[]; reads: ReadRow[]; now: number }
@@ -70,6 +70,7 @@ const WALK_PAGE = 16;
 const OWN_TOOL = /agent[-_]?ctx/i;
 const PLACEHOLDER = /^\$\{[^}]*\}$/;
 const FAILED = 'Memory could not be loaded. Do not assume that nothing is stored.';
+export const NOT_STATED = 'Not stated';
 
 function val(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
@@ -139,7 +140,7 @@ export class Person extends DurableObject<Env> {
   private pools = new Map<string, Item[]>();
   private rulesCache: Item[] | null = null;
   private nameCache: { key: string; names: string[] }[] | null = null;
-  private resolved = new Map<string, string>();
+  private resolved = new Map<string, string | null>();
   private projectKeys = new Set<string>();
   private agentLast = new Map<string, number>();
   private sessionCache = new Map<string, Live>();
@@ -228,24 +229,28 @@ export class Person extends DurableObject<Env> {
     return null;
   }
 
-  private project(w: Where, now: number): string {
+  private project(w: Where, now: number): string | null {
     const folder = redact((typeof w.folder === 'string' ? w.folder : '').trim());
-    const repo = typeof w.repo === 'string' ? w.repo : '';
+    const repo = typeof w.repo === 'string' ? w.repo.trim() : '';
     const memo = `${repo}\u0001${folder}`;
     const hit = this.resolved.get(memo);
     if (hit !== undefined) return hit;
     const name = folder ? folderName(folder) : '';
+    const remote = repo ? cleanRemote(repo) : null;
     const known: Known = { paths: {}, aliases: {}, repos: [] };
     if (folder) {
       const p = this.store.q<{ key: string }>('SELECT key FROM paths WHERE path = ?', folder)[0];
       if (p) known.paths[folder] = p.key;
+    }
+    if (!remote && !name && !known.paths[folder]) {
+      keep(this.resolved, memo, null, 200);
+      return null;
     }
     if (name) {
       const a = this.store.q<{ key: string }>('SELECT key FROM aliases WHERE alias = ?', name)[0];
       if (a) known.aliases[name] = a.key;
       known.repos = this.store.q<{ key: string }>("SELECT key FROM projects WHERE name = ? AND key NOT LIKE 'folder:%'", name).map((r) => r.key);
     }
-    const remote = repo ? cleanRemote(repo) : null;
     const resolved = resolveProject({ repo: remote ?? undefined, folder }, known);
     const r = { ...resolved, key: redact(resolved.key) };
     let changed = false;
@@ -501,6 +506,7 @@ export class Person extends DurableObject<Env> {
       try {
         const project = this.project(a, now);
         const query = (a.query ?? '').trim();
+        if (!project) return this.placeless(!query, now);
         const queued = this.queued(project);
         let putBack = queued;
         if (a.dropped) {
@@ -516,6 +522,30 @@ export class Person extends DurableObject<Env> {
     });
   }
 
+  private placeless(first: boolean, now: number): Result {
+    const rules = first ? this.rulesList().filter((r) => (r.body as RuleBody).scope === 'all') : [];
+    const res = rules.length ? recall({ project: '', items: rules, projects: [], first: true, seen: [], now }) : { text: '' };
+    return { ok: true, text: res.text ? `${res.text}\n\n${SAY.placeRead}` : SAY.placeRead, noProject: true };
+  }
+
+  private lastGoal(project: string, agent: string): string | null {
+    const hit = this.pool(project).find((i) => (i.kind === 'card' || i.kind === 'handoff') && i.origin?.agent === agent && !i.folded && typeof (i.body as CardBody).goal === 'string' && (i.body as CardBody).goal.trim());
+    return hit ? (hit.body as CardBody).goal : null;
+  }
+
+  private promptGoal(grant: string, project: string, folder: string | undefined, now: number): string | null {
+    const name = typeof folder === 'string' ? folderName(redact(folder.trim())) : '';
+    const keys = new Set([project, ...(name ? [`folder:${name}`] : [])]);
+    for (const l of this.limits.live(now).filter((x) => x.grant === grant).sort((x, y) => y.last - x.last)) {
+      const where = this.sessionCache.get(l.sid)?.project ?? this.store.q<{ project: string }>('SELECT project FROM sessions WHERE id = ?', l.sid)[0]?.project;
+      if (!where || !keys.has(where)) continue;
+      const rows = this.eventCache.get(l.sid) ?? this.store.sessionEvents(l.sid);
+      const prompt = [...rows].reverse().find((r) => r.t === 'prompt' && r.text && r.text.trim());
+      if (prompt?.text) return cut(prompt.text.trim().split('\n')[0], 200);
+    }
+    return null;
+  }
+
   private write(c: Caller, now: number, kind: 'card' | 'handoff' | 'rule', project: string, body: CardBody | HandoffBody | RuleBody, source: Source, marks: string[], text: string): Result {
     const r = this.save(newItem(kind, project, body, this.origin(c, now, 'tool', source, `g-${c.grant}`)), now, true, (saved) => {
       for (const m of marks) this.limits.setMark(m, { id: saved.id, at: now, text });
@@ -529,6 +559,7 @@ export class Person extends DurableObject<Env> {
       const stop = this.gate(c, now, 'write', a);
       if (stop) return stop;
       const project = this.project(a, now);
+      if (!project) return { ok: false, text: SAY.place };
       const body: CardBody = compact({
         goal: 'x',
         changed: strings(a.changed)?.map((path) => ({ path })),
@@ -537,7 +568,7 @@ export class Person extends DurableObject<Env> {
         dead_ends: strings(a.dead_ends),
         open: strings(a.open),
       });
-      body.goal = typeof a.goal === 'string' ? a.goal : '';
+      body.goal = typeof a.goal === 'string' && a.goal.trim() ? a.goal : (this.promptGoal(c.grant, project, a.folder, now) ?? NOT_STATED);
       const memo = this.remembered(c, 'card', project, body, a.key, now);
       if (memo.hit) return memo.hit;
       return this.write(c, now, 'card', project, body, 'agent', memo.marks, 'Checkpoint saved. Its open tasks are shown to the next agent at the start of its session.');
@@ -550,6 +581,7 @@ export class Person extends DurableObject<Env> {
       const stop = this.gate(c, now, 'write', a);
       if (stop) return stop;
       const project = this.project(a, now);
+      if (!project) return { ok: false, text: SAY.place };
       const body: HandoffBody = compact({
         goal: 'x',
         done: a.done,
@@ -560,8 +592,8 @@ export class Person extends DurableObject<Env> {
         question: a.question,
         task: a.task,
       });
-      body.goal = typeof a.goal === 'string' ? a.goal : '';
-      body.next = typeof a.next === 'string' ? a.next : '';
+      body.goal = typeof a.goal === 'string' && a.goal.trim() ? a.goal : (this.lastGoal(project, c.agent) ?? NOT_STATED);
+      body.next = typeof a.next === 'string' && a.next.trim() ? a.next : NOT_STATED;
       const memo = this.remembered(c, 'handoff', project, body, a.key, now);
       if (memo.hit) return memo.hit;
       return this.write(c, now, 'handoff', project, body, 'agent', memo.marks, 'Handoff saved for the next agent.');
@@ -591,6 +623,7 @@ export class Person extends DurableObject<Env> {
       const named = (v: unknown) => typeof v === 'string' && v.trim() !== '';
       if (scope === 'project' && !named(a.repo) && !named(a.folder)) return { ok: false, text: SAY.where };
       const project = scope === 'all' ? '' : this.project(a, now);
+      if (project === null) return { ok: false, text: SAY.where };
       const memo = this.remembered(c, 'rule', project, [a.text, a.words, scope], a.key, now);
       if (memo.hit) return memo.hit;
       let words: string;
@@ -632,7 +665,7 @@ export class Person extends DurableObject<Env> {
     s.written = now;
   }
 
-  private session(c: Caller, sid: string, a: EventArgs, now: number): Live {
+  private session(c: Caller, sid: string, a: EventArgs, now: number): Live | null {
     const raw = val(a.model);
     const model = raw ? cut(redact(raw), 80) : undefined;
     let s = this.sessionCache.get(sid);
@@ -649,7 +682,9 @@ export class Person extends DurableObject<Env> {
       this.limits.seen(sid, s.grant_id, now);
       return s;
     }
-    const fresh: Live = { id: sid, agent: c.agent, model: model ?? null, project: this.project({ folder: val(a.cwd) }, now), start: now, last: now, primed: 0, grant_id: c.grant, n: 0, written: now, auto: {} };
+    const project = this.project({ folder: val(a.cwd) }, now);
+    if (!project) return null;
+    const fresh: Live = { id: sid, agent: c.agent, model: model ?? null, project, start: now, last: now, primed: 0, grant_id: c.grant, n: 0, written: now, auto: {} };
     this.store.q('INSERT INTO sessions(id, agent, model, project, start, last, primed, grant_id, n) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)', fresh.id, fresh.agent, fresh.model, fresh.project, fresh.start, fresh.last, fresh.primed, fresh.grant_id, fresh.n);
     keep(this.sessionCache, sid, fresh, SESSIONS_KEPT);
     this.limits.seen(sid, c.grant, now);
@@ -685,7 +720,9 @@ export class Person extends DurableObject<Env> {
     if (!sid) return '';
     const tool = val(a.tool);
     if (tool && OWN_TOOL.test(tool)) return '';
+    if (!val(a.cwd)) return '';
     const s = this.session(c, sid, a, now);
+    if (!s) return '';
     const reader = `s-${sid}`;
     if (name === 'UserPromptSubmit') {
       const prompt = val(a.prompt);

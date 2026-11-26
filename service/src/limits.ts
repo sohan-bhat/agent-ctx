@@ -15,6 +15,8 @@ export const SAY = {
   scope: 'This connection may only read. Connect again with write access to save.',
   noread: 'This connection has no read access.',
   where: 'A project rule needs the repo or the folder of that project.',
+  place: 'Pass repo or folder so this is saved to the right project.',
+  placeRead: 'Pass repo or folder to get the handoff and recent work of this project.',
 };
 
 export const FLUSH_EVERY = 60000;
