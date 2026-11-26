@@ -18,7 +18,7 @@ describe('both protocol eras', () => {
       expect(r.text).toContain(`Era ${era} card`);
       const json = JSON.stringify(list.tools);
       console.log(`${era} tool list JSON ${json.length} characters, instructions ${INSTRUCTIONS.length} characters`);
-      expect(json.length).toBeLessThanOrEqual(2600);
+      expect(json.length).toBeLessThanOrEqual(2700);
       const loaded = list.tools.filter((t) => (t._meta as Record<string, unknown> | undefined)?.['anthropic/alwaysLoad'] === true).map((t) => t.name).sort();
       expect(loaded).toEqual(['checkpoint', 'recall']);
     });

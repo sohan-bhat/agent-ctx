@@ -49,7 +49,7 @@ import { buildExport } from './export.ts';
 export interface Caller { agent: string; grant: string; scopes: string[] }
 export interface Result { ok: boolean; text: string; item?: Item; noProject?: boolean }
 export interface Where { repo?: string; folder?: string }
-export interface RecallArgs extends Where { query?: string; dropped?: boolean }
+export interface RecallArgs extends Where { query?: string; dropped?: boolean; ids?: string[] }
 export interface CheckpointArgs extends Where { goal?: string; changed?: string[]; decisions?: string[]; commands?: string[]; dead_ends?: string[]; open?: string[]; key?: string }
 export interface HandoffArgs extends Where { goal?: string; done?: string; next?: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; key?: string }
 export interface RuleArgs extends Where { text: string; words: string; scope: 'project' | 'all'; key?: string }
@@ -538,7 +538,7 @@ export class Person extends DurableObject<Env> {
     return out;
   }
 
-  private memory(o: { project: string; reader: string; grant: string; agent: string; query?: string; first: boolean; once: boolean; putBack: Item[]; rulesOnly?: boolean; now: number }): { text: string; delivered: string[] } {
+  private memory(o: { project: string; reader: string; grant: string; agent: string; query?: string; first: boolean; once: boolean; putBack: Item[]; rulesOnly?: boolean; ids?: string[]; tool?: boolean; now: number }): { text: string; delivered: string[] } {
     const query = (o.query ?? '').trim();
     const rules = this.rulesList();
     const live = this.limits.live(o.now);
@@ -546,8 +546,9 @@ export class Person extends DurableObject<Env> {
     const seen = this.deliveredFor(o.reader);
     let items: Item[] = [];
     let projects: { key: string; names: string[] }[] = [];
+    const ids = o.ids?.length ? o.ids : undefined;
     if (!o.rulesOnly) {
-      if (query) {
+      if (query || ids) {
         items = this.pool(o.project);
         projects = this.names();
         for (const key of namedProjects(query, projects, o.project)) items = items.concat(this.pool(key));
@@ -571,8 +572,10 @@ export class Person extends DurableObject<Env> {
       now: o.now,
       live: live.map((s) => `s-${s.sid}`).filter((s) => s !== o.reader),
       once: o.once,
+      ids,
+      tool: o.tool === true,
     });
-    const record = (o.once ? res.delivered : res.delivered.filter((id) => byId.get(id)?.kind === 'handoff')).filter((id) => !seen.has(id));
+    const record = (o.once || ids ? res.delivered : res.delivered.filter((id) => byId.get(id)?.kind === 'handoff')).filter((id) => !seen.has(id));
     if (record.length) {
       for (const id of record) seen.add(id);
       this.store.setDelivered(o.reader, [...seen]);
@@ -595,7 +598,7 @@ export class Person extends DurableObject<Env> {
     for (const id of ids) this.store.q('DELETE FROM queue WHERE item = ?', id);
   }
 
-  async recall(c: Caller, a: RecallArgs): Promise<Result> {
+  async recall(c: Caller, a: RecallArgs, tool = false): Promise<Result> {
     return this.measure(async () => {
       const now = Date.now();
       const stop = await this.gate(c, now, 'read', a);
@@ -611,7 +614,8 @@ export class Person extends DurableObject<Env> {
           const dropped = this.pool(project).filter((i) => i.kind === 'dropped' && !i.held && !queued.some((q) => q.id === i.id));
           putBack = [...queued, ...(query ? rankItems(dropped, query, now).slice(0, 5).map((h) => h.item) : dropped.slice(0, 5))];
         }
-        const res = this.memory({ project, reader: `g-${c.grant}`, grant: c.grant, agent: c.agent, query, first: !query, once: false, putBack, now });
+        const ids = Array.isArray(a.ids) ? a.ids.filter((x): x is string => typeof x === 'string' && x.length >= 8 && x.length <= 36).slice(0, 6) : [];
+        const res = this.memory({ project, reader: `g-${c.grant}`, grant: c.grant, agent: c.agent, query, first: !query && !ids.length, once: false, putBack: ids.length ? [] : putBack, ids, tool, now });
         this.unqueue(res.delivered.filter((id) => queued.some((q) => q.id === id)));
         return { ok: true, text: res.text };
       } catch {

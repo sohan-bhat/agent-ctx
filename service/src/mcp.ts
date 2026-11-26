@@ -17,7 +17,7 @@ export const FAILED = 'Memory could not be loaded. Do not assume that nothing is
 
 const DESCRIBE = {
   recall:
-    "Call first, before reading or changing files. Another agent may have left a handoff, rules or dead ends here. repo is git remote get-url origin, folder the working folder.",
+    "Call first, before reading or changing files. Another agent may have left a handoff, rules or dead ends here. repo is git remote get-url origin, folder the working folder. A result may list topics. Call again with ids to read them.",
   checkpoint: 'Call before your final reply after any file change. Save goal in one line, changed, decisions with reasons, dead_ends and open for the agent after you.',
   handoff: 'Save state for the next agent. goal, next and question help most, then done, blockers, files and check.',
   rule: "Save a standing rule. words is the person's exact words.",
@@ -43,7 +43,7 @@ const field = z.unknown().optional();
 const SCALAR = (v: unknown) => v === undefined || v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 
 const ZOD = {
-  recall: z.strictObject({ ...where, query: str.optional(), dropped: z.boolean().optional() }),
+  recall: z.strictObject({ ...where, query: str.optional(), dropped: z.boolean().optional(), ids: z.array(z.string().refine((v) => v.length >= 8 && v.length <= 36)).max(6).optional() }),
   checkpoint: z.strictObject({ ...where, goal: str.optional(), changed: list.optional(), decisions: list.optional(), commands: list.optional(), dead_ends: list.optional(), open: list.optional(), key: str.optional() }),
   handoff: z.strictObject({ ...where, goal: str.optional(), done: str.optional(), next: str.optional(), blockers: list.optional(), files: list.optional(), check: str.optional(), question: str.optional(), key: str.optional() }),
   rule: z.strictObject({ ...where, text: str, words: str, scope: z.enum(['project', 'all']), key: str.optional() }),
@@ -211,7 +211,7 @@ export function createServer(): McpServer {
     { instructions: INSTRUCTIONS, maxToolInputElements: 400, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, requestState: { verify: (state, ctx) => stateCodec().verify(state, ctx) } },
   );
   server.registerTool('recall', { description: DESCRIBE.recall, inputSchema: SCHEMA.recall, annotations: ANNOTATIONS.recall, _meta: META.recall }, (args, ctx) =>
-    run(ctx, (s, who) => s.recall(who, args), EMPTY_RECALL, args),
+    run(ctx, (s, who) => s.recall(who, args, true), EMPTY_RECALL, args),
   );
   server.registerTool('checkpoint', { description: DESCRIBE.checkpoint, inputSchema: SCHEMA.checkpoint, annotations: WRITER, _meta: META.checkpoint }, (args, ctx) => run(ctx, (s, who) => s.checkpoint(who, args), undefined, args));
   server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.handoff(who, args), undefined, args));
