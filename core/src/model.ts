@@ -7,7 +7,7 @@ export interface Origin { agent: string; model?: string; machine?: string; sessi
 export interface Change { path: string; what?: string }
 export interface Decision { what: string; why?: string }
 export interface CardBody { goal: string; changed?: Change[]; decisions?: Decision[]; commands?: string[]; dead_ends?: string[]; open?: string[]; prompts?: string[]; last?: string; auto?: boolean }
-export interface HandoffBody { goal: string; done?: string; next: string; blockers?: string[]; files?: string[]; check?: string; task?: string; auto?: boolean }
+export interface HandoffBody { goal: string; done?: string; next: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; auto?: boolean }
 export interface RuleBody { text: string; words: string; scope: 'project' | 'all'; status: 'active' | 'pending' | 'off'; proof?: 'hook' | 'elicit' | 'page' }
 export interface DroppedBody { label: string; text: string; size: number }
 export type Body = CardBody | HandoffBody | RuleBody | DroppedBody;
@@ -86,11 +86,13 @@ const STEPS: Record<Kind, Step[]> = {
     drop('blockers'),
     shorten('done', FLOOR, false),
     shorten('check', FLOOR, false),
+    shorten('question', FLOOR, false),
     shorten('next', FLOOR, true),
     shorten('goal', FLOOR, true),
     shorten('task', 0, false),
     shorten('done', 0, false),
     shorten('check', 0, false),
+    shorten('question', 0, false),
     shorten('next', 0, true),
     shorten('goal', 0, true),
   ],

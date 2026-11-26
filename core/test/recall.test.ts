@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HEADER, recall, type RecallInput } from '../src/recall.ts';
+import { EMPTY_RECALL, FOOTER, HEADER, recall, type RecallInput } from '../src/recall.ts';
 import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN } from '../src/caps.ts';
 import type { Body, Item, Kind } from '../src/model.ts';
 
@@ -40,10 +40,12 @@ const TITLES = new Set(['RULES', 'PUT BACK', 'EARLIER']);
 function shape(text: string): void {
   const lines = text.split('\n');
   assert.equal(lines[0], HEADER.replace('NAME', 'pantry-notes'));
+  assert.equal(lines[lines.length - 1], FOOTER);
+  assert.equal(lines[lines.length - 2], '');
   const titles: string[] = [];
-  for (const line of lines.slice(1)) {
+  for (const line of lines.slice(1, -1)) {
     if (line === '' || line.startsWith('> ')) continue;
-    assert.ok(TITLES.has(line) || /^HANDOFF from [A-Za-z0-9 ._/-]+ on \d{4}-\d{2}-\d{2}$/.test(line), `stray line ${JSON.stringify(line)}`);
+    assert.ok(TITLES.has(line) || /^HANDOFF from [A-Za-z0-9 ._/-]+ on \d{4}-\d{2}-\d{2}(?:, that session may still be running)?$/.test(line), `stray line ${JSON.stringify(line)}`);
     titles.push(line.split(' ')[0]);
   }
   assert.equal(new Set(titles).size, titles.length, 'a section appears twice');
@@ -73,6 +75,8 @@ test('the header names the project and the format matches the brief', () => {
       '',
       'EARLIER',
       '> 2026-11-16 codex. Cache the recipe images. Decided store thumbnails on the CDN because the origin is slow. Dead end inline base64 images. Open purge on edit.',
+      '',
+      FOOTER,
     ].join('\n'),
   );
   assert.deepEqual(out.delivered, [h.id, r.id, c.id]);
@@ -195,7 +199,7 @@ test('put back items print under PUT BACK and recent cards stop at three', () =>
 test('a folded card prints only its one line', () => {
   const f = item('card', { goal: 'First folded goal\nSecond folded goal', decisions: [{ what: 'hidden detail' }] }, { extra: { folded: true } });
   const out = recall(input([f]));
-  assert.match(out.text, /> 2026-11-19 codex\. First folded goal \/ Second folded goal$/);
+  assert.match(out.text, /\n> 2026-11-19 codex\. First folded goal \/ Second folded goal\n/);
   assert.ok(!out.text.includes('hidden detail'));
 });
 
@@ -217,7 +221,7 @@ test('output never exceeds the caps and each item stays under the item cap', () 
     const out = recall(input(items, { putBack, ...more }));
     assert.ok(out.text.length > 0 && out.text.length <= cap, `${JSON.stringify(more)} ${out.text.length}`);
     shape(out.text);
-    const blocks = out.text.split('\n\n').slice(1);
+    const blocks = out.text.split('\n\n').slice(1, -1);
     for (const b of blocks) {
       const body = b.split('\n').filter((l) => l.startsWith('> '));
       let cur: string[] = [];
@@ -260,4 +264,69 @@ test('a long prompt that names another project goes through the long rule for th
   assert.deepEqual(out.delivered, [tt.id]);
   const vague = recall(input([tt, ...others, mine], { query: 'ok so before i touch this i want to know how knightmare handled the thing we argued about for a while last week', first: false }));
   assert.deepEqual(vague, { text: '', delivered: [] });
+});
+
+test('the footer is the last line of every result with text and only then', () => {
+  const c = item('card', { goal: 'Pantry shelf labels' });
+  const h = item('handoff', { goal: 'Ship labels', next: 'Print them' }, { session: 'other' });
+  for (const more of [{}, { first: false }, { query: 'pantry shelf labels' }]) {
+    const out = recall(input([c, h], more));
+    assert.ok(out.text.endsWith(`\n\n${FOOTER}`), JSON.stringify(more));
+    assert.equal(out.text.split(FOOTER).length, 2);
+  }
+  assert.equal(recall(input([])).text, '');
+  assert.equal(EMPTY_RECALL, 'No stored memory fits.');
+});
+
+test('the footer counts inside the cap', () => {
+  const cards = Array.from({ length: 40 }, (_, k) => item('card', { goal: `pantry word ${k} ` + 'filler '.repeat(70) }, { days: k + 1 }));
+  for (const [more, cap] of [[{}, FIRST_CHARS], [{ first: false }, CALL_CHARS]] as [Partial<RecallInput>, number][]) {
+    const out = recall(input(cards, more));
+    assert.ok(out.text.endsWith(FOOTER));
+    assert.ok(out.text.length <= cap, `${out.text.length} over ${cap}`);
+  }
+  let closest = FIRST_CHARS;
+  for (let len = 20; len <= 290; len += 3) {
+    const rules = Array.from({ length: 10 }, (_, k) => item('rule', { text: 't', words: `rule ${k} ` + 'w'.repeat(len), scope: 'all' as const, status: 'active' as const, proof: 'hook' as const }));
+    const out = recall(input([...rules, ...cards]));
+    assert.ok(out.text.endsWith(FOOTER));
+    assert.ok(out.text.length <= FIRST_CHARS, `${len} gives ${out.text.length}`);
+    closest = Math.min(closest, FIRST_CHARS - out.text.length);
+  }
+  assert.ok(closest < FOOTER.length, String(closest));
+});
+
+test('a handoff prints its open question first', () => {
+  const h = item('handoff', { goal: 'Ship the search box', next: 'Wire the input', question: 'Should the box search tags too?' }, { session: 'other' });
+  const lines = recall(input([h])).text.split('\n');
+  const at = lines.findIndex((l) => l.startsWith('HANDOFF'));
+  assert.deepEqual(lines.slice(at + 1, at + 4), ['> question: Should the box search tags too?', '> goal: Ship the search box', '> next: Wire the input']);
+  const plain = item('handoff', { goal: 'Ship the search box', next: 'Wire the input' }, { session: 'other' });
+  assert.ok(!recall(input([plain])).text.includes('question:'));
+});
+
+test('a handoff from a live session says that session may still be running', () => {
+  const h = item('handoff', { goal: 'Ship the search box', next: 'Wire the input' }, { session: 'writer', agent: 'codex' });
+  const live = recall(input([h], { live: ['writer', 'x'] })).text.split('\n');
+  assert.ok(live.includes('HANDOFF from codex on 2026-11-19, that session may still be running'));
+  const idle = recall(input([h], { live: ['x'] })).text.split('\n');
+  assert.ok(idle.includes('HANDOFF from codex on 2026-11-19'));
+  assert.ok(!recall(input([h])).text.includes('still be running'));
+});
+
+test('with once true no seen item prints, whatever the kind', () => {
+  const h = item('handoff', { goal: 'Ship the pantry search', next: 'Wire the pantry input' }, { session: 'other' });
+  const r = item('rule', { text: 'r', words: 'always label the pantry shelves', scope: 'all', status: 'active', proof: 'hook' });
+  const c = item('card', { goal: 'Pantry search ranking' });
+  const d = item('dropped', { label: 'prompt', text: 'pantry search old prompt', size: 24 });
+  const all = [h, r, c];
+  const seen = [h.id, r.id, c.id, d.id];
+  for (const more of [{}, { query: 'pantry search' }, { first: false }]) {
+    assert.deepEqual(recall(input(all, { seen, once: true, putBack: [d], ...more })), { text: '', delivered: [] }, JSON.stringify(more));
+  }
+  const again = recall(input(all, { seen, putBack: [d] }));
+  assert.ok(again.delivered.includes(r.id) && again.delivered.includes(c.id) && again.delivered.includes(d.id));
+  assert.ok(!again.delivered.includes(h.id));
+  const part = recall(input(all, { seen: [r.id], once: true }));
+  assert.deepEqual(part.delivered, [h.id, c.id]);
 });

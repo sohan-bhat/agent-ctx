@@ -126,6 +126,20 @@ test('a handoff loses files, then blockers, then cuts done before next', () => {
   assert.equal(b.goal, 'Ship the glaze picker');
 });
 
+test('a handoff trims question only after check and keeps next', () => {
+  const body: HandoffBody = { goal: 'Ship the glaze picker', next: 'Wire the picker into the order form', check: 'check '.repeat(100), question: 'question '.repeat(100) };
+  const i = newItem('handoff', 'p', body, origin);
+  const full = itemBytes(i);
+  const a = fit(i, full - 300).body as HandoffBody;
+  assert.ok((a.check ?? '').length < 600);
+  assert.equal(a.question, body.question);
+  const b = fit(i, full - 700).body as HandoffBody;
+  assert.ok((b.check ?? '').length <= 120);
+  assert.ok((b.question ?? '').length < 900 && (b.question ?? '').length >= 100);
+  assert.equal(b.next, body.next);
+  assert.equal(b.goal, body.goal);
+});
+
 test('a 20 KB handoff fits and keeps next', () => {
   const i = newItem('handoff', 'p', { goal: 'goal '.repeat(800), next: 'next '.repeat(800), done: 'done '.repeat(800), check: 'check '.repeat(800) }, origin);
   const f = fit(i);
@@ -144,7 +158,7 @@ test('fit never throws and never returns an item over the cap', () => {
     const list = (n: number) => Array.from({ length: rand(n) }, word);
     const kinds: Item[] = [
       card({ goal: word(), prompts: list(30), commands: list(30), changed: list(30).map((path) => ({ path })), dead_ends: list(20), open: list(20), decisions: list(20).map((what) => ({ what, why: word() })), last: word() }),
-      newItem('handoff', 'p', { goal: word(), next: word(), done: word(), check: word(), task: word(), blockers: list(20), files: list(40) }, origin),
+      newItem('handoff', 'p', { goal: word(), next: word(), done: word(), check: word(), question: word(), task: word(), blockers: list(20), files: list(40) }, origin),
       newItem('rule', 'p', { text: word().repeat(5), words: word().repeat(5), scope: 'all', status: 'active', proof: 'page' }, origin),
       newItem('dropped', 'p', { label: word(), text: word().repeat(20), size: 5 }, origin),
     ];
