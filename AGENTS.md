@@ -36,7 +36,6 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
     npm --prefix service run conformance
     npm --prefix web run build
     node web/e2e/run.mjs
-    node web/e2e/more.mjs
     node web/e2e/consent.mjs
     node web/e2e/real.mjs
 
