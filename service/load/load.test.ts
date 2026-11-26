@@ -6,7 +6,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import worker from '../src/index.ts';
 import type { Person } from '../src/person.ts';
 import { newItem } from '../../core/src/index.ts';
-import { RESOURCE, connect, devSignIn, refresh, send, textOf, type Jar, type Tokens } from '../test/flow.ts';
+import { RESOURCE, connect, devSignIn, fromSomewhere, refresh, send, textOf, type Jar, type Tokens } from '../test/flow.ts';
 
 const vars = env as unknown as { LOAD_PEOPLE?: string; LOAD_PLANT?: string };
 const PEOPLE = Number(vars.LOAD_PEOPLE ?? '1000');
@@ -65,6 +65,7 @@ function counted(c: Kv) {
     const raw = input instanceof URL ? input.href : input;
     const req = typeof raw === 'string' ? new Request(raw.startsWith('http') ? raw : `${new URL(RESOURCE).origin}${raw}`, init) : raw;
     req.headers.set('Host', new URL(RESOURCE).host);
+    fromSomewhere(req);
     const ctx = createExecutionContext();
     const res = await worker.fetch(req as Request<unknown, IncomingRequestCfProperties>, { ...env, OAUTH_KV: countingKv(c) } as Env, ctx);
     await waitOnExecutionContext(ctx);

@@ -2,12 +2,12 @@ import { env } from 'cloudflare:workers';
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.ts';
-import { ORIGIN } from './flow.ts';
+import { ORIGIN, fromSomewhere } from './flow.ts';
 
 async function hit(path: string, init: RequestInit, devLogin: string | undefined): Promise<Response> {
   const ctx = createExecutionContext();
   const vars = { ...env, DEV_LOGIN: devLogin } as Env;
-  const r = await worker.fetch(new Request(`${ORIGIN}${path}`, { redirect: 'manual', ...init }) as Request<unknown, IncomingRequestCfProperties>, vars, ctx);
+  const r = await worker.fetch(fromSomewhere(new Request(`${ORIGIN}${path}`, { redirect: 'manual', ...init })) as Request<unknown, IncomingRequestCfProperties>, vars, ctx);
   await waitOnExecutionContext(ctx);
   return r;
 }

@@ -6,7 +6,18 @@ export const ORIGIN = 'http://localhost:8790';
 export const RESOURCE = `${ORIGIN}/mcp`;
 
 export type Fetch = (input: string | Request, init?: RequestInit) => Promise<Response>;
-export const send: Fetch = (input, init) => exports.default.fetch(typeof input === 'string' ? new Request(input.startsWith('http') ? input : `${ORIGIN}${input}`, init) : input);
+
+export function address(): string {
+  const b = crypto.getRandomValues(new Uint8Array(3));
+  return `10.${b[0]}.${b[1]}.${b[2]}`;
+}
+
+export function fromSomewhere(req: Request): Request {
+  if (!req.headers.has('CF-Connecting-IP')) req.headers.set('CF-Connecting-IP', address());
+  return req;
+}
+
+export const send: Fetch = (input, init) => exports.default.fetch(fromSomewhere(typeof input === 'string' ? new Request(input.startsWith('http') ? input : `${ORIGIN}${input}`, init) : input));
 
 export class Jar {
   map = new Map<string, string>();
