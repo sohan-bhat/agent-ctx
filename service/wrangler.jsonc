@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "agent-ctx",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-23",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "vars": { "MCP_RESOURCE": "http://localhost:8790/mcp" },
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }],
+  "durable_objects": { "bindings": [{ "name": "PERSON", "class_name": "Person" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Person"] }],
+  "dev": { "port": 8790 },
+  "observability": { "enabled": true, "traces": { "enabled": true } }
+}
