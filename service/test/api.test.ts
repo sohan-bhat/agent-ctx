@@ -51,6 +51,22 @@ describe('page API', () => {
     expect((JSON.parse(strFromU8(zip['agent-ctx/rules.jsonl']).trim()) as Item).id).toBe(space.items[0].id);
   });
 
+  it('a put back item reaches the first recall once under PUT BACK and then leaves the queue', async () => {
+    const { api, client } = await setup('api-putback');
+    await call(client, 'checkpoint', { folder: '/w/kiln', goal: 'Kiln vent schedule' });
+    await call(client, 'checkpoint', { folder: '/w/kiln', goal: 'Glaze recipe table' });
+    const items = ((await (await api('/api/space')).json()) as { items: Item[] }).items;
+    const vent = items.find((i) => (i.body as { goal: string }).goal === 'Kiln vent schedule')!;
+    expect((await api(`/api/items/${vent.id}/putback`, 'POST')).status).toBe(200);
+    const first = (await call(client, 'recall', { folder: '/w/kiln', query: 'glaze recipe table' })).text;
+    expect(first).toMatch(/\nPUT BACK\n> .*Kiln vent schedule/);
+    expect(((await (await api('/api/space')).json()) as { queue: string[] }).queue).toEqual([]);
+    const second = (await call(client, 'recall', { folder: '/w/kiln', query: 'glaze recipe table' })).text;
+    expect(second).not.toContain('PUT BACK');
+    const hook = (await call(client, 'event', { host: 'codex', event: 'UserPromptSubmit', session: 'pb-1', cwd: '/w/kiln', prompt: 'carry on with the kiln work please' })).text;
+    expect(hook).not.toContain('PUT BACK');
+  });
+
   it('space lists each handoff delivery with the reading agent label', async () => {
     const { api, client, jar } = await setup('api-reads');
     await call(client, 'handoff', { folder: '/w/kiln', goal: 'Kiln goal', next: 'Kiln next' });

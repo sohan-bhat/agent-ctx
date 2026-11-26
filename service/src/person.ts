@@ -501,12 +501,14 @@ export class Person extends DurableObject<Env> {
       try {
         const project = this.project(a, now);
         const query = (a.query ?? '').trim();
-        let putBack: Item[] = [];
+        const queued = this.queued(project);
+        let putBack = queued;
         if (a.dropped) {
-          const dropped = this.pool(project).filter((i) => i.kind === 'dropped' && !i.held);
-          putBack = query ? rankItems(dropped, query, now).slice(0, 5).map((h) => h.item) : dropped.slice(0, 5);
+          const dropped = this.pool(project).filter((i) => i.kind === 'dropped' && !i.held && !queued.some((q) => q.id === i.id));
+          putBack = [...queued, ...(query ? rankItems(dropped, query, now).slice(0, 5).map((h) => h.item) : dropped.slice(0, 5))];
         }
         const res = this.memory({ project, reader: `g-${c.grant}`, grant: c.grant, agent: c.agent, query, first: !query, once: false, putBack, now });
+        this.unqueue(res.delivered.filter((id) => queued.some((q) => q.id === id)));
         return { ok: true, text: res.text };
       } catch {
         return { ok: false, text: FAILED };
