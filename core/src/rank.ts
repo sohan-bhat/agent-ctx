@@ -33,6 +33,10 @@ const CHAT = new Set(
     .map(stem),
 );
 
+export function isChat(term: string): boolean {
+  return CHAT.has(term);
+}
+
 export function recency(at: number, now: number): number {
   const age = Math.max(0, (now - at) / DAY);
   return 0.4 + 0.6 * Math.exp(-age / 21);
