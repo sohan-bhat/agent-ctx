@@ -1,5 +1,4 @@
-import { cut } from './caps.ts';
-import type { CardBody, DroppedBody, HandoffBody } from './model.ts';
+import { cut, type CardBody, type DroppedBody, type HandoffBody } from './model.ts';
 
 export type EvType = 'start' | 'prompt' | 'edit' | 'command' | 'stop' | 'compact' | 'end';
 export interface Ev { t: EvType; at: number; text?: string; path?: string; ok?: boolean }

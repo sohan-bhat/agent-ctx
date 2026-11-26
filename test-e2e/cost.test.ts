@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { MAX } from '../service/src/limits.ts';
-import { ITEM_BYTES, STORE_BYTES } from '../core/src/caps.ts';
+import { ITEM_BYTES, STORE_BYTES } from '../core/src/index.ts';
 
 const doc = readFileSync(new URL('../docs/cost.md', import.meta.url), 'utf8');
 const num = (x: number) => x.toLocaleString('en-US');

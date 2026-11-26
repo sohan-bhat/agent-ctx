@@ -1,5 +1,4 @@
-import { FOLD_AT, STORE_BYTES, cut } from './caps.ts';
-import { fit, itemBytes, type CardBody, type Item } from './model.ts';
+import { FOLD_AT, STORE_BYTES, cut, fit, itemBytes, type CardBody, type Item } from './model.ts';
 
 const TARGET = 0.7;
 const DAY = 86400000;

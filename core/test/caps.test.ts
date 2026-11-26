@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CALL_CHARS, FIRST_CHARS, FOLD_AT, ITEM_BYTES, RESULT_CHARS, RULE_MAX, RULE_MIN, RULE_PROMPT_MAX, RULES_AUTO_PER_DAY, RULES_SHOWN, STORE_BYTES, bytes, clean, cut } from '../src/caps.ts';
+import { CALL_CHARS, FIRST_CHARS, FOLD_AT, ITEM_BYTES, RESULT_CHARS, RULE_MAX, RULE_MIN, RULE_PROMPT_MAX, RULES_AUTO_PER_DAY, RULES_SHOWN, STORE_BYTES, bytes, clean, cut } from '../src/model.ts';
 import { DROPPED, redact } from '../src/redact.ts';
 
 test('the caps hold the values of the design', () => {

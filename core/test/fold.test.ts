@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyPlan, foldCard, foldPlan, isProtected, mergeFolded, totalBytes, underCeiling } from '../src/fold.ts';
-import { ITEM_BYTES } from '../src/caps.ts';
-import { itemBytes, type Body, type CardBody, type Item, type Kind } from '../src/model.ts';
+import { ITEM_BYTES, itemBytes, type Body, type CardBody, type Item, type Kind } from '../src/model.ts';
 
 const DAY = 86400000;
 const START = Date.parse('2026-08-01T00:00:00Z');

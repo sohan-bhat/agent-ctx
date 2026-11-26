@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ITEM_BYTES, bytes } from '../src/caps.ts';
-import { fit, itemBytes, itemText, newItem, type CardBody, type HandoffBody, type Item, type Origin } from '../src/model.ts';
+import { ITEM_BYTES, bytes, fit, itemBytes, itemText, newItem, type CardBody, type HandoffBody, type Item, type Origin } from '../src/model.ts';
 
 const at = Date.parse('2026-11-10T09:00:00Z');
 const origin: Origin = { agent: 'codex', model: 'm-1', machine: 'desk', session: 's-1', via: 'tool', source: 'agent', at };

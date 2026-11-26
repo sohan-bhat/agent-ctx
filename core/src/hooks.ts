@@ -1,4 +1,4 @@
-import { FIRST_CHARS, cut } from './caps.ts';
+import { FIRST_CHARS, cut } from './model.ts';
 
 export const QUIET_MIN = 15;
 export const HOOK_HOSTS = ['claude-code', 'codex'];

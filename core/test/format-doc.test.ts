@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ITEM_BYTES, STORE_BYTES } from '../src/caps.ts';
+import { ITEM_BYTES, STORE_BYTES } from '../src/model.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const doc = fs.readFileSync(path.join(here, '..', '..', 'docs', 'format.md'), 'utf8');

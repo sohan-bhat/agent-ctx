@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanRemote, folderName, projectName, resolveProject, type Known } from '../src/project.ts';
+import { cleanRemote, folderName, projectName, resolveProject, type Known } from '../src/model.ts';
 
 const none: Known = { paths: {}, aliases: {}, repos: [] };
 

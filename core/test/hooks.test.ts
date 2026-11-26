@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hookOutput, quietPrompt } from '../src/hooks.ts';
-import { FIRST_CHARS } from '../src/caps.ts';
+import { FIRST_CHARS } from '../src/model.ts';
 
 test('a short prompt or one that starts with a slash, a bang or a hash is quiet', () => {
   for (const p of ['', 'ok', 'continue pls', '  fourteen chars ', '/compact the session now', '!git status --short here', '# remember to use pnpm here']) assert.equal(quietPrompt(p), true, p);

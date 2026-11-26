@@ -1,6 +1,5 @@
 import { B, K1, idf } from './bm25.ts';
-import { itemText, type CardBody, type Item } from './model.ts';
-import { projectName } from './project.ts';
+import { itemText, projectName, type CardBody, type Item } from './model.ts';
 import { joinPhrases, synonymsOf } from './synonyms.ts';
 import { stem, tokens } from './text.ts';
 

@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EMPTY_RECALL, FOOTER, HEADER, recall, type RecallInput } from '../src/recall.ts';
-import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN } from '../src/caps.ts';
-import type { Body, Item, Kind, Via } from '../src/model.ts';
+import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, type Body, type Item, type Kind, type Via } from '../src/model.ts';
 
 const DAY = 86400000;
 const NOW = Date.parse('2026-11-20T12:00:00Z');

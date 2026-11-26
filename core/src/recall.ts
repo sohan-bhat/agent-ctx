@@ -1,6 +1,4 @@
-import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, cut } from './caps.ts';
-import type { CardBody, DroppedBody, HandoffBody, Item, RuleBody } from './model.ts';
-import { projectName } from './project.ts';
+import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, cut, projectName, type CardBody, type DroppedBody, type HandoffBody, type Item, type RuleBody } from './model.ts';
 import { namedProjects, namesOf, rankItems, recent } from './rank.ts';
 import { ruleLine } from './rules.ts';
 import { looseMatches, resolveIds, shortIds, topicList, type LooseSettings } from './topics.ts';
