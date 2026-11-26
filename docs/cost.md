@@ -1,6 +1,6 @@
 # Cost of running agent-ctx
 
-Prices are the published Cloudflare Workers, Durable Objects and KV prices read on 2026-11-25. The load model is the one from the hosting study. Two of its guesses are replaced by measurements from the load test of 1,000 people and 100,000 calls in the local Workers runtime.
+Prices are the published Cloudflare Workers, Durable Objects and KV prices read on 2026-11-25. The load model is the one from the hosting study. Its guesses for rows and token refreshes are replaced by measurements in the local Workers runtime.
 
 ## What a person does in a day
 
@@ -15,17 +15,18 @@ Prices are the published Cloudflare Workers, Durable Objects and KV prices read 
 
 Access tokens last 24 hours, so each agent refreshes about once a day. The study guessed 10 refreshes a day for 1 hour tokens.
 
-## Measured per call
+## Measured rows
 
-| | rows read | rows written | KV reads | KV writes |
-|---|---|---|---|---|
-| read call, recall or prompt hook | 416 | 4.5 | 1 | 0 |
-| write call, save or other hook | 35 | 8.5 | 1 | 0 |
-| token refresh | 0 | 0 | 2 | 2 |
+The day test runs one base person through the 100 calls of the load mix. The store is a year old, with 600 items in each of 3 projects. The day has 10 sittings of 10 calls, and each sitting starts with an object that was evicted from memory, so every cache starts empty.
 
-Rows written are the means over the 60 reads and 40 writes of the load mix. The study guessed 5 rows written per stored item and 0 per read. Every call writes 1 row for the account counters, and a prompt hook also stores the prompt.
+| | rows read a day | rows written a day |
+|---|---|---|
+| before, every call reads the recall pool from storage | 23,873 | 616 |
+| after, hot state and recall pools kept in memory | 4,629 | 205 |
 
-Rows read per read call are 416 once a project holds the full recall pool of 400 items, the case of a store a year old. A young store reads about 31 rows per read call. Rows read per write call are 35 in a full store, most of them from the rebuild after a stop.
+After the change a call reads 46.29 rows and writes 2.05 rows on average. Most reads are the one load of a 400 item recall pool at the start of a sitting.
+
+The load test of 200 people and 20,000 calls with young stores measured 3.7 rows read and 1.3 written per read call, and 3.4 read and 3.1 written per write call. Every call reads 1 KV entry and writes none. A token refresh reads 2 KV entries and writes 2.
 
 ## Per person per day
 
@@ -33,15 +34,15 @@ Base person.
 
 - Workers requests 106 = 100 calls + 3 refreshes + 3 page requests
 - Durable Object requests 103.2 = 100 + 3 + 4 socket messages ÷ 20
-- rows read 26,360 = 60 × 416 + 40 × 35
-- rows written 610 = 60 × 4.5 + 40 × 8.5
+- rows read 4,629 = 100 × 46.29
+- rows written 205 = 100 × 2.05
 - KV reads 106 = 100 + 3 × 2
 - KV writes 6 = 3 × 2
 - duration 0.645 GB-s = 103.2 × 0.05 s × 0.125 GB, an estimate that was not measured
 
-Light person. Workers requests 34, Durable Object requests 33.2, rows read 7,908 = 18 × 416 + 12 × 35, rows written 183 = 18 × 4.5 + 12 × 8.5, KV reads 32, KV writes 2.
+Light person. Workers requests 34, Durable Object requests 33.2, rows read 1,389 = 30 × 46.29, rows written 61.5 = 30 × 2.05, KV reads 32, KV writes 2.
 
-Heavy person. Workers requests 408, Durable Object requests 403.2, rows read 105,440 = 240 × 416 + 160 × 35, rows written 2,440 = 240 × 4.5 + 160 × 8.5, KV reads 410, KV writes 10.
+Heavy person. Workers requests 408, Durable Object requests 403.2, rows read 18,516 = 400 × 46.29, rows written 820 = 400 × 2.05, KV reads 410, KV writes 10. A heavy person works in longer sittings, so this overstates the reads.
 
 ## Free plan capacity
 
@@ -49,20 +50,20 @@ Each cell is the daily free cap divided by one person's daily use.
 
 | Free cap a day | light | base | heavy |
 |---|---|---|---|
-| rows written 100,000 | 546 | 163 | 40 |
-| rows read 5,000,000 | 632 | 189 | 47 |
 | KV writes 1,000 | 500 | 166 | 100 |
+| rows written 100,000 | 1,626 | 487 | 121 |
+| rows read 5,000,000 | 3,600 | 1,080 | 270 |
 | KV reads 100,000 | 3,125 | 943 | 243 |
 | Workers requests 100,000 | 2,941 | 943 | 245 |
 | Durable Object requests 100,000 | 3,012 | 968 | 248 |
 | storage 5 GB, after a year | 3,333 | 1,000 | 500 |
 | duration 13,000 GB-s | 62,650 | 20,155 | 5,158 |
 
-The free plan carries 500 light people, 163 base people or 40 heavy people. KV writes break first for light people. Rows written break first for base and heavy people.
+The free plan carries 500 light people, 166 base people or 100 heavy people. KV writes from token refreshes break first for all three.
 
 ## Paid cost a month
 
-Base person a month. Workers requests 3,180 = 106 × 30, CPU 15,900 ms = 3,180 × 5 ms, Durable Object requests 3,096, duration 19.35 GB-s, rows read 790,800, rows written 18,300, storage 0.005 GB, KV reads 3,180, KV writes 180.
+Base person a month. Workers requests 3,180 = 106 × 30, CPU 15,900 ms = 3,180 × 5 ms, Durable Object requests 3,096, duration 19.35 GB-s, rows read 138,870, rows written 6,150, storage 0.005 GB, KV reads 3,180, KV writes 180.
 
 | Line and rule | 1,000 people | 10,000 people | 100,000 people |
 |---|---|---|---|
@@ -71,15 +72,15 @@ Base person a month. Workers requests 3,180 = 106 × 30, CPU 15,900 ms = 3,180 �
 | Workers CPU over 30M ms at $0.02 a million | $0 | 129M × 0.02 = $2.58 | 1,560M × 0.02 = $31.20 |
 | Durable Object requests over 1M at $0.15 a million | 2.096M × 0.15 = $0.31 | 29.96M × 0.15 = $4.49 | 308.6M × 0.15 = $46.29 |
 | duration over 400,000 GB-s at $12.50 a million | $0 | $0 | 1.535M × 12.50 = $19.19 |
-| rows read over 25B at $0.001 a million | $0 | $0 | 54,080M × 0.001 = $54.08 |
-| rows written over 50M at $1.00 a million | $0 | 133M × 1.00 = $133.00 | 1,780M × 1.00 = $1,780.00 |
+| rows read over 25B at $0.001 a million | $0 | $0 | $0 |
+| rows written over 50M at $1.00 a million | $0 | 11.5M × 1.00 = $11.50 | 565M × 1.00 = $565.00 |
 | storage over 5 GB at $0.20 a GB | $0 | 45 × 0.20 = $9.00 | 495 × 0.20 = $99.00 |
 | KV reads over 10M at $0.50 a million | $0 | 21.8M × 0.50 = $10.90 | 308M × 0.50 = $154.00 |
 | KV writes over 1M at $5.00 a million | $0 | 0.8M × 5 = $4.00 | 17M × 5 = $85.00 |
-| total a month | $5.31 | $175.51 | $2,366.16 |
-| per 1,000 people | $5.31 | $17.55 | $23.66 |
+| total a month | $5.31 | $54.01 | $1,097.08 |
+| per 1,000 people | $5.31 | $5.40 | $10.97 |
 
-Rows written are 75 percent of the bill at 100,000 people. One row of every call is the account counter. Keeping the counters in memory and writing them once a minute would remove about 100 of the 610 rows a base person writes each day.
+Before the change the same table gave $175.51 at 10,000 people and $2,366.16 at 100,000. Rows written are now 52 percent of the bill at 100,000 people, and rows read fit inside the included 25 billion.
 
 ## Limits per account
 
