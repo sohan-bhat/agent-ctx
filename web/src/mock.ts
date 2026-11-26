@@ -24,24 +24,24 @@ interface Card {
 
 const CARDS: Record<string, Card[]> = {
   harbor: [
-    { goal: 'Add slip search by date range', changed: ['src/search/range.ts', 'src/api/slips.ts'], decisions: [['store dates as UTC days', 'local midnight shifted bookings by one day']], commands: ['npm test', 'npm run lint'], open: ['search ignores the dock filter'] },
-    { goal: 'Stop double bookings from two quick taps', changed: ['src/booking/reserve.ts'], decisions: [['lock the slip row inside the transaction', 'two requests raced past the free check']], dead: ['a debounce on the button did not stop retries from the app'], commands: ['npm test -- reserve'] },
-    { goal: 'Move the price table into the database', changed: ['db/migrations/0014_prices.sql', 'src/pricing/table.ts'], decisions: [['keep one price row per dock and season', 'the old JSON file had copies that drifted']], open: ['seed script still reads the JSON file'] },
-    { goal: 'Write the refund flow for cancelled slips', changed: ['src/booking/refund.ts', 'src/api/refunds.ts', 'test/refund.test.ts'], decisions: [['refund to the original card only', 'store credit needs a policy page first']], commands: ['npm test -- refund'], open: ['partial refunds for late cancels'] },
-    { goal: 'Speed up the dock map page', changed: ['src/map/DockMap.tsx'], decisions: [['draw slips on one canvas', 'four hundred SVG nodes took 900 ms to paint']], dead: ['memoizing each slip row did not help'], said: 'The map now paints in about 120 ms on the old laptop.' },
+    { goal: 'Add slip search by date range', changed: ['src/search/range.ts', 'src/api/slips.ts'], decisions: [['store dates as UTC days', 'bookings were off by one day at local midnight']], commands: ['npm test', 'npm run lint'], open: ['the dock filter is ignored in search'] },
+    { goal: 'Stop double bookings from two quick taps', changed: ['src/booking/reserve.ts'], decisions: [['lock the slip row inside the transaction', 'the free check was passed by two requests at once']], dead: ['retries from the app were not stopped by a debounce on the button'], commands: ['npm test -- reserve'] },
+    { goal: 'Move the price table into the database', changed: ['db/migrations/0014_prices.sql', 'src/pricing/table.ts'], decisions: [['keep one price row per dock and season', 'the old JSON file had copies that drifted']], open: ['the JSON file is still read by the seed script'] },
+    { goal: 'Write the refund flow for cancelled slips', changed: ['src/booking/refund.ts', 'src/api/refunds.ts', 'test/refund.test.ts'], decisions: [['refund to the original card only', 'store credit has no policy page yet']], commands: ['npm test -- refund'], open: ['partial refunds for late cancels'] },
+    { goal: 'Speed up the dock map page', changed: ['src/map/DockMap.tsx'], decisions: [['draw slips on one canvas', 'four hundred SVG nodes were painted in 900 ms']], dead: ['memoizing each slip row was no faster'], said: 'The map is now painted in about 120 ms on the old laptop.' },
     { goal: 'Send receipts after a booking', changed: ['src/mail/receipt.ts', 'templates/receipt.mjml'], commands: ['npm run mail:preview'], open: ['receipt has no harbor phone number'] },
-    { goal: 'Add a waitlist for full docks', changed: ['src/waitlist/queue.ts', 'src/api/waitlist.ts'], decisions: [['offer a freed slip to one person at a time', 'offering to all caused a rush']], open: ['expiry time for an offer'] },
+    { goal: 'Add a waitlist for full docks', changed: ['src/waitlist/queue.ts', 'src/api/waitlist.ts'], decisions: [['offer a freed slip to one person at a time', 'there was a rush when everyone got the offer']], open: ['expiry time for an offer'] },
     { goal: 'Clean up booking form errors', changed: ['src/booking/Form.tsx'], decisions: [['show errors under each field', 'the banner at the top was missed on phones']] },
-    { goal: 'Page the admin booking list', changed: ['src/admin/Bookings.tsx', 'src/api/admin.ts'], commands: ['npm test -- admin'], decisions: [['cursor pages on created time', 'offset pages skipped rows during edits']] },
-    { goal: 'Upgrade the date library', changed: ['package.json', 'src/search/range.ts'], dead: ['the codemod broke the range parser'], commands: ['npm install', 'npm test'] },
+    { goal: 'Page the admin booking list', changed: ['src/admin/Bookings.tsx', 'src/api/admin.ts'], commands: ['npm test -- admin'], decisions: [['cursor pages on created time', 'rows were skipped with offset pages during edits']] },
+    { goal: 'Upgrade the date library', changed: ['package.json', 'src/search/range.ts'], dead: ['the range parser was broken by the codemod'], commands: ['npm install', 'npm test'] },
   ],
   lantern: [
-    { goal: 'Render tiles in parallel', changed: ['src/render/mod.rs', 'src/export.rs'], decisions: [['one rayon pool sized to the cores', 'a pool per region thrashed the cache']], commands: ['cargo test', 'cargo bench -- tiles'] },
-    { goal: 'Cache decoded glyphs between tiles', changed: ['src/text/glyphs.rs'], decisions: [['an LRU of 4096 glyphs', 'the label pass decoded the same glyphs per tile']], commands: ['cargo test'], said: 'Export of the test region dropped from 41 s to 26 s.' },
-    { goal: 'Fix seams between tiles at zoom 14', changed: ['src/render/clip.rs'], dead: ['a one pixel overlap blurred the roads'], decisions: [['clip with a two pixel buffer then crop', 'roads now meet without a gap']], commands: ['cargo test -- seams'] },
+    { goal: 'Render tiles in parallel', changed: ['src/render/mod.rs', 'src/export.rs'], decisions: [['one rayon pool sized to the cores', 'the cache was thrashed with a pool per region']], commands: ['cargo test', 'cargo bench -- tiles'] },
+    { goal: 'Cache decoded glyphs between tiles', changed: ['src/text/glyphs.rs'], decisions: [['an LRU of 4096 glyphs', 'the same glyphs were decoded for every tile in the label pass']], commands: ['cargo test'], said: 'Export time for the test region fell from 41 s to 26 s.' },
+    { goal: 'Fix seams between tiles at zoom 14', changed: ['src/render/clip.rs'], dead: ['the roads were blurred by a one pixel overlap'], decisions: [['clip with a two pixel buffer then crop', 'there is now no gap between roads']], commands: ['cargo test -- seams'] },
     { goal: 'Add a dry run flag to export', changed: ['src/cli.rs', 'src/export.rs'], commands: ['cargo run -- export --dry-run coast'] },
-    { goal: 'Read styles from a TOML file', changed: ['src/style/load.rs', 'styles/coast.toml'], decisions: [['keep the old JSON styles readable for one release', 'two users still ship JSON']], open: ['error messages point at the wrong line'] },
-    { goal: 'Cut memory use on whole region exports', changed: ['src/export.rs', 'src/store/tiles.rs'], decisions: [['stream finished tiles to disk', 'holding them all used 6 GB']], dead: ['a smaller tile cache only moved the peak'], commands: ['cargo run --release -- export coast'] },
+    { goal: 'Read styles from a TOML file', changed: ['src/style/load.rs', 'styles/coast.toml'], decisions: [['keep the old JSON styles readable for one release', 'two users still ship JSON']], open: ['the line in error messages is wrong'] },
+    { goal: 'Cut memory use on whole region exports', changed: ['src/export.rs', 'src/store/tiles.rs'], decisions: [['stream finished tiles to disk', 'memory was at 6 GB with every tile held']], dead: ['the peak only moved with a smaller tile cache'], commands: ['cargo run --release -- export coast'] },
     { goal: 'Port the label placer to the new font crate', changed: ['src/text/place.rs', 'Cargo.toml'], open: ['kerning pairs are off for italic labels'] },
     { goal: 'Add a progress bar to long exports', changed: ['src/cli.rs'], commands: ['cargo test'] },
   ],
@@ -53,23 +53,23 @@ const CARDS: Record<string, Card[]> = {
 };
 
 const PROMPTS = [
-  'the search page still shows full docks, can you look',
+  'full docks are still on the search page, can you look',
   'run the tests and tell me what fails',
-  'keep going from where the last session stopped',
+  'keep going from the end of the last session',
   'make the export faster on the big region',
   'why does the map flicker on scroll',
-  'clean this up before I open the pull request',
+  'clean up the branch before I open the pull request',
 ];
 
 const HANDOFFS: Record<string, HandoffBody[]> = {
   harbor: [
-    { goal: 'Finish the refund flow', done: 'Full refunds work and have tests', next: 'Partial refunds for cancels within 48 hours', blockers: ['policy for late cancels is not written'], files: ['src/booking/refund.ts', 'test/refund.test.ts'], check: 'npm test -- refund' },
+    { goal: 'Finish the refund flow', done: 'Full refunds are done and tested', next: 'Partial refunds for cancels within 48 hours', blockers: ['policy for late cancels is not written'], files: ['src/booking/refund.ts', 'test/refund.test.ts'], check: 'npm test -- refund' },
     { goal: 'Waitlist offers', done: 'Queue and API are in', next: 'Expire an offer after two hours and move to the next person', files: ['src/waitlist/queue.ts'], check: 'npm test -- waitlist' },
     { goal: 'Dock filter in search', next: 'Pass the dock id from the form to the range query', files: ['src/search/range.ts', 'src/search/Form.tsx'], check: 'npm test -- search' },
   ],
   lantern: [
-    { goal: 'Memory on whole region exports', done: 'Tiles stream to disk', next: 'Measure peak memory on the coast region and write it in the README', check: 'cargo run --release -- export coast' },
-    { goal: 'Label placer port', done: 'Regular labels place correctly', next: 'Fix kerning for italic labels', blockers: ['font crate has no italic kerning table yet'], files: ['src/text/place.rs'], check: 'cargo test -- labels' },
+    { goal: 'Memory on whole region exports', done: 'Tiles are streamed to disk', next: 'Measure peak memory on the coast region and write the number in the README', check: 'cargo run --release -- export coast' },
+    { goal: 'Label placer port', done: 'Regular labels are placed correctly', next: 'Fix kerning for italic labels', blockers: ['font crate has no italic kerning table yet'], files: ['src/text/place.rs'], check: 'cargo test -- labels' },
   ],
   'field-notes': [{ goal: 'Ferry notes', next: 'Add the winter timetable and the two missing piers', files: ['notes/ferry-schedules.md'] }],
 };

@@ -361,7 +361,7 @@ async function rulesAndAgents(b, url, w, h) {
     await page.evaluate(([i]) => window.__mockEdit(i, 'push to main after each fix'), [id]);
     const kept0 = await page.locator('[data-rule]').count();
     await first.getByRole('button', { name: 'Accept' }).click();
-    const told = await waitFor(async () => ((await page.locator('[data-changed]').textContent()) ?? '').includes('This rule changed'), 3000);
+    const told = await waitFor(async () => ((await page.locator('[data-changed]').textContent()) ?? '').trim() === 'This rule changed. Read the rule again before you accept.', 3000);
     const fresh = await waitFor(async () => ((await page.locator(`[data-pending="${id}"] [data-line]`).textContent()) ?? '').includes('push to main after each fix'), 3000);
     check(`${tag} Accept on a changed rule reloads and says so`, told && fresh && (await page.locator('[data-rule]').count()) === kept0);
     await page.locator(`[data-pending="${id}"]`).getByRole('button', { name: 'Accept' }).click();

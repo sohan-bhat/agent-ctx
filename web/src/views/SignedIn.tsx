@@ -164,11 +164,11 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
   const storage = `${megabytes(me.limits.bytes)} of ${megabytes(me.limits.max)}\u00a0MB`;
   const cost = `about ${count(Math.round(me.toolChars / 4))} tokens added to each agent`;
   const notice = failed ? (
-    <p>No connection to the service. Reload to try again.</p>
+    <p>The service cannot be reached. Reload to try again.</p>
   ) : !online ? (
-    <p>No live updates right now. Reload to try again.</p>
+    <p>Live updates are off right now. Reload to try again.</p>
   ) : data && !items.length ? (
-    <p>{agents.length ? `${agents.map((a) => a.label).join(', ')} connected. Nothing saved yet.` : 'Add agent to begin.'}</p>
+    <p>{agents.length ? `${agents.map((a) => a.label).join(', ')} connected, and nothing is saved yet.` : 'Press Add agent to begin.'}</p>
   ) : null;
 
   return (

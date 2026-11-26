@@ -19,7 +19,7 @@ export const PRODUCTS: Product[] = [
   {
     id: 'claude-code',
     label: 'Claude Code',
-    path: [claudeOpen, claudeSteps, { type: 'copy', label: 'Then type this in Claude Code', text: () => `/plugin install agent-ctx --marketplace ${REPO}` }],
+    path: [claudeOpen, claudeSteps, { type: 'copy', label: 'Then type this command in Claude Code', text: () => `/plugin install agent-ctx --marketplace ${REPO}` }],
   },
   {
     id: 'cursor',
@@ -35,7 +35,7 @@ export const PRODUCTS: Product[] = [
     id: 'codex',
     label: 'Codex',
     path: [
-      { type: 'copy', label: 'Type this in a terminal', text: (a) => `codex mcp add agent-ctx --url ${a}` },
+      { type: 'copy', label: 'Type this command in a terminal', text: (a) => `codex mcp add agent-ctx --url ${a}` },
       { type: 'copy', label: 'Then sign in', text: () => 'codex mcp login agent-ctx' },
     ],
   },
@@ -47,12 +47,12 @@ export const PRODUCTS: Product[] = [
       { type: 'steps', items: ['Press New Connector', 'Choose Custom', 'Paste the address'] },
     ],
   },
-  { id: 'amp', label: 'Amp', path: [{ type: 'copy', label: 'Type this in a terminal', text: (a) => `amp mcp remote --personal add agent-ctx ${a}` }] },
-  { id: 'gemini', label: 'Gemini CLI', path: [{ type: 'copy', label: 'Type this in a terminal', text: (a) => `gemini mcp add --transport http agent-ctx ${a}` }] },
+  { id: 'amp', label: 'Amp', path: [{ type: 'copy', label: 'Type this command in a terminal', text: (a) => `amp mcp remote --personal add agent-ctx ${a}` }] },
+  { id: 'gemini', label: 'Gemini CLI', path: [{ type: 'copy', label: 'Type this command in a terminal', text: (a) => `gemini mcp add --transport http agent-ctx ${a}` }] },
   {
     id: 'antigravity',
     label: 'Antigravity',
-    path: [{ type: 'copy', label: 'Add this to ~/.gemini/config/mcp_config.json', text: (a) => JSON.stringify({ mcpServers: { 'agent-ctx': { serverUrl: a } } }, null, 2) }],
+    path: [{ type: 'copy', label: 'Add this block to ~/.gemini/config/mcp_config.json', text: (a) => JSON.stringify({ mcpServers: { 'agent-ctx': { serverUrl: a } } }, null, 2) }],
   },
 ];
 

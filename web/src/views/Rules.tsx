@@ -77,7 +77,7 @@ export function Rules({ open, onOpenChange, items, projects, actions, back }: { 
           <SheetTitle className="text-[0.9375rem] font-bold">Rules</SheetTitle>
         </SheetHeader>
         <p role="status" className="px-4 pb-3 text-sm font-semibold empty:hidden" data-changed>
-          {changed ? 'This rule changed. Read it again before you accept.' : ''}
+          {changed ? 'This rule changed. Read the rule again before you accept.' : ''}
         </p>
         {pending.length > 0 && (
           <ul className="grid gap-4 px-4 pb-5" aria-label="Pending">
@@ -123,7 +123,7 @@ export function Rules({ open, onOpenChange, items, projects, actions, back }: { 
         </ul>
         <form onSubmit={submit} className="mt-auto grid gap-2.5 border-t p-4">
           <Input ref={input} name="rule" autoComplete="off" value={text} onChange={(e) => setText(e.target.value)} aria-label="New rule" placeholder="Run the tests before each commit…" maxLength={300} className="h-11 text-sm sm:h-9" />
-          <ToggleGroup type="single" variant="outline" spacing={0} value={scope} onValueChange={(v) => v && setScope(v)} className="max-w-full flex-wrap" aria-label="Where the rule holds">
+          <ToggleGroup type="single" variant="outline" spacing={0} value={scope} onValueChange={(v) => v && setScope(v)} className="max-w-full flex-wrap" aria-label="Projects for the new rule">
             {projects.map((p) => (
               <ToggleGroupItem key={p.key} value={p.key} className="h-11 px-3 text-[0.8125rem] sm:h-8">
                 {p.name}
