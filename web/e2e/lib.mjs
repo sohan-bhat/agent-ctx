@@ -5,9 +5,13 @@ import { fileURLToPath } from 'node:url';
 export const web = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PW = process.env.PW ?? '/usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.mjs';
 
+export const engine = process.env.ENGINE ?? 'chromium';
+
 export async function browser() {
-  const { chromium } = await import(PW);
-  return chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+  if (engine !== 'chromium' && !process.env.PLAYWRIGHT_BROWSERS_PATH) process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(web, '..', '..', '..', 'pw-browsers');
+  const pw = await import(PW);
+  if (engine === 'chromium') return pw.chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+  return pw[engine].launch({ headless: true });
 }
 
 export async function server(port = Number(process.env.PORT ?? 5199)) {
@@ -33,7 +37,7 @@ export async function server(port = Number(process.env.PORT ?? 5199)) {
 
 export async function context(b, { w, h, scheme = 'light', signedIn = false, dpr = 1, flags = {}, reduced = false }) {
   const touch = w < 600;
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, colorScheme: scheme, hasTouch: touch, isMobile: touch, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, colorScheme: scheme, hasTouch: touch, ...(engine === 'firefox' ? {} : { isMobile: touch }), reducedMotion: reduced ? 'reduce' : 'no-preference' });
   await ctx.addInitScript(
     ([on, f]) => {
       try {
@@ -84,7 +88,7 @@ export async function pinch(page, cdp, cx, cy, from, to, steps = 12) {
 }
 
 export async function drag(page, touch, cdp, x0, y0, x1, y1) {
-  if (touch) return touchDrag(page, cdp, x0, y0, x1, y1);
+  if (touch && cdp) return touchDrag(page, cdp, x0, y0, x1, y1);
   await page.mouse.move(x0, y0);
   await page.mouse.down();
   for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * i) / 12);

@@ -1,4 +1,4 @@
-import { browser, context, drag, labels, overflow, pinch, press, ready, server, space, waitFor } from './lib.mjs';
+import { browser, context, drag, engine, labels, overflow, pinch, press, ready, server, space, waitFor } from './lib.mjs';
 
 const sizes = (process.env.SIZES ?? '1440x900,390x664,360x640').split(',').map((s) => s.split('x').map(Number));
 const results = [];
@@ -21,7 +21,7 @@ const check = (name, ok, detail = '') => {
 async function signedOut(b, url, w, h) {
   const tag = `${w}x${h}`;
   const { ctx, page, errors, touch } = await context(b, { w, h });
-  const cdp = touch ? await ctx.newCDPSession(page) : null;
+  const cdp = touch && engine === 'chromium' ? await ctx.newCDPSession(page) : null;
   try {
     await page.goto(url);
     await ready(page);
@@ -63,8 +63,8 @@ async function openPanel(page, touch) {
 async function signedIn(b, url, w, h) {
   const tag = `${w}x${h}`;
   const { ctx, page, errors, touch } = await context(b, { w, h, signedIn: true, flags: { every: '2500', connect: '900' } });
-  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(url).origin });
-  const cdp = touch ? await ctx.newCDPSession(page) : null;
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(url).origin }).catch(() => {});
+  const cdp = touch && engine === 'chromium' ? await ctx.newCDPSession(page) : null;
   try {
     await page.goto(url);
     await ready(page);
@@ -97,7 +97,7 @@ async function signedIn(b, url, w, h) {
       await page.waitForTimeout(300);
     }
 
-    if (touch) {
+    if (touch && cdp) {
       const before = await labels(page);
       await pinch(page, cdp, box.x + box.width / 2, box.y + box.height / 2, 60, 200);
       await page.waitForTimeout(600);
