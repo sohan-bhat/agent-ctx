@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { CLIENT_TTL } from '../src/index.ts';
+import * as entry from '../src/index.ts';
+import { CLIENT_TTL } from '../src/open.ts';
 import { awayFromMinuteEdge } from './helpers.ts';
 import { send } from './flow.ts';
 
@@ -43,5 +44,8 @@ describe('open endpoints', () => {
     const left = (key.expiration ?? 0) - Date.now() / 1000;
     expect(left).toBeGreaterThan(CLIENT_TTL - 600);
     expect(left).toBeLessThanOrEqual(CLIENT_TTL + 5);
+  });
+  it('the entry file exports only the handler and the object class, since the runtime reads every other export as a handler', () => {
+    expect(Object.keys(entry).sort()).toEqual(['Person', 'default']);
   });
 });

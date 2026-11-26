@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { api } from './api.ts';
 import { auth, escape, who, type AppEnv } from './auth.ts';
 import { mcpHandler } from './mcp.ts';
+import { CLIENT_TTL, OPEN_ROUTES } from './open.ts';
 
 export { Person } from './person.ts';
 
@@ -22,8 +23,6 @@ app.get('/', async (c) => {
 
 app.notFound((c) => c.text('Not found.', 404));
 
-export const OPEN_ROUTES = new Set(['/oauth/register', '/oauth/token', '/authorize', '/login', '/login/callback', '/login/dev']);
-export const CLIENT_TTL = 30 * 86400;
 const SLOW_DOWN = 'Too many requests from this address. Wait a minute and try again.';
 
 const provider = new OAuthProvider<Env>({
