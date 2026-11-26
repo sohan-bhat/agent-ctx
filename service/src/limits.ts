@@ -15,11 +15,13 @@ export const SAY = {
   scope: 'This connection may only read. Connect again with write access to save.',
   noread: 'This connection has no read access.',
   where: 'A project rule needs the repo or the folder of that project.',
+  projects: 'This account already has 200 projects with saved items. Remove the items of an old project on the agent-ctx page to add a new one.',
   place: 'Pass repo or folder so this is saved to the right project.',
   placeRead: 'Pass repo or folder to get the handoff and recent work of this project.',
 };
 
 export const FLUSH_EVERY = 60000;
+export const RESERVE = 5;
 const LIVE = 3 * 60000;
 const KEY_TTL = 86400000;
 const BODY_TTL = 10 * 60000;
@@ -36,6 +38,7 @@ export interface Hot {
   storedDay: string;
   storedN: number;
   bytes: number;
+  extra: number;
   folded: number;
   maintained: number;
   paused: { reason: string; at: number } | null;
@@ -49,7 +52,7 @@ function dayOf(now: number): string {
 }
 
 function blank(): Hot {
-  return { minute: 0, minuteN: 0, day: '', dayN: 0, storedDay: '', storedN: 0, bytes: 0, folded: -1, maintained: 0, paused: null, live: [], marks: [], savedAt: 0 };
+  return { minute: 0, minuteN: 0, day: '', dayN: 0, storedDay: '', storedN: 0, bytes: 0, extra: 0, folded: -1, maintained: 0, paused: null, live: [], marks: [], savedAt: 0 };
 }
 
 export class Limits {
@@ -57,6 +60,7 @@ export class Limits {
   private store: Store;
   private hot: Hot | null = null;
   private dirty = false;
+  private paid: { day: string; dayN: number; minute: number; minuteN: number } | null = null;
 
   constructor(store: Store) {
     this.store = store;
@@ -70,6 +74,7 @@ export class Limits {
   reset(): void {
     this.hot = blank();
     this.dirty = false;
+    this.paid = null;
   }
 
   private roll(now: number): Hot {
@@ -102,18 +107,23 @@ export class Limits {
     h.live = h.live.filter(([, , last]) => now - last < LIVE);
     h.marks = h.marks.filter(([m, , at]) => now - at < (m.startsWith('key:') ? KEY_TTL : BODY_TTL));
     h.savedAt = now;
-    this.store.setMeta('hot', h);
+    const paid = { day: h.day, dayN: h.dayN + RESERVE, minute: h.minute, minuteN: h.minuteN + RESERVE };
+    this.store.setMeta('hot', { ...h, ...paid });
+    this.paid = paid;
     this.dirty = false;
   }
 
-  call(now: number): string | null {
+  call(now: number): { stop: string | null; persist: boolean } {
     const h = this.roll(now);
-    if (h.minuteN >= this.max.perMinute) return SAY.minute;
-    if (h.dayN >= this.max.perDay) return SAY.day;
+    if (h.minuteN >= this.max.perMinute) return { stop: SAY.minute, persist: false };
+    if (h.dayN >= this.max.perDay) return { stop: SAY.day, persist: false };
     h.minuteN++;
     h.dayN++;
     this.dirty = true;
-    return null;
+    const p = this.paid;
+    const persist = !p || p.day !== h.day || p.minute !== h.minute || h.dayN > p.dayN || h.minuteN > p.minuteN;
+    if (persist) this.flush(now, true);
+    return { stop: null, persist };
   }
 
   canStore(now: number): string | null {
@@ -157,6 +167,15 @@ export class Limits {
 
   setBytes(n: number): void {
     this.state().bytes = Math.max(0, n);
+    this.dirty = true;
+  }
+
+  extra(): number {
+    return this.state().extra ?? 0;
+  }
+
+  setExtra(n: number): void {
+    this.state().extra = Math.max(0, n);
     this.dirty = true;
   }
 

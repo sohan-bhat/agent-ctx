@@ -4,6 +4,7 @@ import { createMcpHandler, getMcpAuthContext } from 'agents/mcp/server';
 import { z } from 'zod';
 import { EMPTY_RECALL, FIRST_CHARS } from '../../core/src/index.ts';
 import type { Caller, Result } from './person.ts';
+import { MAX, SAY } from './limits.ts';
 import type { Props } from './auth.ts';
 
 export const INSTRUCTIONS =
@@ -109,9 +110,35 @@ function asText(v: unknown): string | undefined {
   return String(v);
 }
 
-async function run(ctx: Ctx, fn: (s: ReturnType<typeof stub>, who: Caller) => Promise<Result>, empty?: string) {
+export const BODY_MAX = 64 * 1024;
+const LONG = ['summary', 'message', 'prompt', 'command', 'reason'];
+
+function oversize(args: unknown): boolean {
+  return JSON.stringify(args ?? null).length > MAX.inputBytes;
+}
+
+function headCut(s: string, n: number): string {
+  if (s.length <= n) return s;
+  let at = Math.max(0, n);
+  while (at > 0 && !/\s/.test(s[at])) at--;
+  return s.slice(0, at).trimEnd();
+}
+
+export function fitEvent(a: Record<string, string | undefined>, max = MAX.inputBytes): Record<string, string | undefined> | null {
+  const out = { ...a };
+  for (const k of LONG) {
+    const over = JSON.stringify(out).length - max;
+    if (over <= 0) break;
+    const v = out[k];
+    if (v) out[k] = headCut(v, v.length - over);
+  }
+  return JSON.stringify(out).length <= max ? out : null;
+}
+
+async function run(ctx: Ctx, fn: (s: ReturnType<typeof stub>, who: Caller) => Promise<Result>, empty?: string, args?: unknown) {
   const c = caller(ctx);
   if (!c) return reply(FAILED, true);
+  if (args !== undefined && oversize(args)) return reply(SAY.size, true);
   try {
     const r = await fn(stub(c.props.person), c.who);
     if (!r.ok) return reply(r.text, true);
@@ -167,11 +194,12 @@ export const TOOL_CHARS = JSON.stringify(toolList()).length;
 export function createServer(): McpServer {
   const server = new McpServer({ name: 'agent-ctx', version: '0.1.0' }, { instructions: INSTRUCTIONS, maxToolInputElements: 400 });
   server.registerTool('recall', { description: DESCRIBE.recall, inputSchema: SCHEMA.recall, annotations: ANNOTATIONS.recall, _meta: META.recall }, (args, ctx) =>
-    run(ctx, (s, who) => s.recall(who, args), EMPTY_RECALL),
+    run(ctx, (s, who) => s.recall(who, args), EMPTY_RECALL, args),
   );
-  server.registerTool('checkpoint', { description: DESCRIBE.checkpoint, inputSchema: SCHEMA.checkpoint, annotations: WRITER, _meta: META.checkpoint }, (args, ctx) => run(ctx, (s, who) => s.checkpoint(who, args)));
-  server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.handoff(who, args)));
+  server.registerTool('checkpoint', { description: DESCRIBE.checkpoint, inputSchema: SCHEMA.checkpoint, annotations: WRITER, _meta: META.checkpoint }, (args, ctx) => run(ctx, (s, who) => s.checkpoint(who, args), undefined, args));
+  server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.handoff(who, args), undefined, args));
   server.registerTool('rule', { description: DESCRIBE.rule, inputSchema: SCHEMA.rule, annotations: WRITER }, async (args, ctx) => {
+    if (oversize(args)) return reply(SAY.size, true);
     const answer = confirmed(ctx as Ctx);
     if (answer.asked || !canAsk(server)) return run(ctx, (s, who) => s.rule(who, args, answer.seen));
     const c = caller(ctx);
@@ -192,7 +220,8 @@ export function createServer(): McpServer {
         if (!SCALAR(v)) return { ok: false, text: `The field ${k} must be text, a number, true or false.` };
         a[k] = asText(v);
       }
-      return s.event(who, a);
+      const fit = fitEvent(a);
+      return fit ? s.event(who, fit) : { ok: true, text: '' };
     }),
   );
   server.registerPrompt('continue', { description: 'Pick up the work where another agent of this person stopped.', argsSchema: PROMPT_ARGS }, async (args, ctx) => {
@@ -217,4 +246,36 @@ function hostOf(): string[] {
   }
 }
 
-export const mcpHandler = createMcpHandler(createServer, { route: '/mcp', allowedHostnames: hostOf(), maxRequestBodySize: 512 * 1024 });
+const handler = createMcpHandler(createServer, { route: '/mcp', allowedHostnames: hostOf(), maxRequestBodySize: BODY_MAX });
+
+async function bounded(request: Request): Promise<Request | null> {
+  if (!request.body) return request;
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > BODY_MAX) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > BODY_MAX) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(n);
+  let at = 0;
+  for (const c of chunks) {
+    body.set(c, at);
+    at += c.byteLength;
+  }
+  return new Request(request, { body });
+}
+
+export async function mcpHandler(request: Request, e: Env, ctx: ExecutionContext): Promise<Response> {
+  const fit = await bounded(request);
+  if (!fit) return new Response('The request is too large.', { status: 413, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  return handler(fit, e, ctx);
+}

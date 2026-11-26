@@ -5,6 +5,7 @@ import {
   HEADER,
   autoCard,
   autoHandoff,
+  bytes,
   cut,
   decideRule,
   droppedAt,
@@ -70,6 +71,15 @@ const SESSIONS_KEPT = 100;
 const EVENT_SESSIONS_KEPT = 8;
 const WALK_PAGE = 16;
 const OWN_TOOL = /agent[-_]?ctx/i;
+const PATH_MAX = 1024;
+const ID_MAX = 200;
+const MAX_PROJECTS = 200;
+const ROW = 32;
+const STOP_CHARS = 2000;
+const SUMMARY_CHARS = 4000;
+const PROMPT_KEPT = 300;
+const PROMPT_LONG = 800;
+const COMMAND_CHARS = 300;
 const PLACEHOLDER = /^\$\{[^}]*\}$/;
 const FAILED = 'Memory could not be loaded. Do not assume that nothing is stored.';
 export const NOT_STATED = 'Not stated';
@@ -123,6 +133,12 @@ export function view(i: Item): ItemView {
   return i.kind === 'rule' ? { ...i, line: ruleLine(i.body as RuleBody) } : i;
 }
 
+function rowBytes(...parts: (string | null | undefined)[]): number {
+  let n = ROW;
+  for (const p of parts) if (p) n += bytes(p);
+  return n;
+}
+
 function hash(s: string): string {
   return eventKey('', { t: 'start', at: 0, text: s });
 }
@@ -153,6 +169,7 @@ export class Person extends DurableObject<Env> {
   private deliveredCache = new Map<string, Set<string>>();
   private eventCache = new Map<string, EventRow[]>();
   private readsCache: ReadRow[] | null = null;
+  private refusal: string | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -164,10 +181,10 @@ export class Person extends DurableObject<Env> {
     });
   }
 
-  private measure<T>(fn: () => T): T {
+  private async measure<T>(fn: () => T | Promise<T>): Promise<T> {
     const before = this.store.counts();
     try {
-      return fn();
+      return await fn();
     } finally {
       this.limits.flush(Date.now());
       const after = this.store.counts();
@@ -199,13 +216,49 @@ export class Person extends DurableObject<Env> {
     }
   }
 
-  private gate(c: Caller, now: number, need: 'read' | 'write', input: unknown): Result | null {
+  private async gate(c: Caller, now: number, need: 'read' | 'write', input: unknown): Promise<Result | null> {
     if (!c.scopes.includes(need)) return { ok: false, text: need === 'write' ? SAY.scope : SAY.noread };
-    const limited = this.limits.call(now);
-    if (limited) return { ok: false, text: limited };
+    const call = this.limits.call(now);
+    if (call.stop) return { ok: false, text: call.stop };
+    if (call.persist) await this.ctx.storage.sync();
+    if (JSON.stringify(input ?? null).length > this.limits.max.inputBytes) return { ok: false, text: SAY.size };
     this.maintain(now);
-    if (input !== null && JSON.stringify(input ?? null).length > this.limits.max.inputBytes) return { ok: false, text: SAY.size };
     return this.touchAgent(c.agent, now);
+  }
+
+  private room(n: number): boolean {
+    return this.limits.bytes() + this.limits.extra() + n <= this.limits.max.storeBytes;
+  }
+
+  private addExtra(n: number): void {
+    this.limits.setExtra(this.limits.extra() + n);
+  }
+
+  private recountExtra(): void {
+    const b = (col: string) => `COALESCE(LENGTH(CAST(${col} AS BLOB)), 0)`;
+    const sum = (table: string, cols: string[]) => `(SELECT COALESCE(SUM(${cols.map(b).join(' + ')} + ${ROW}), 0) FROM ${table})`;
+    const total = this.store.q<{ n: number }>(
+      `SELECT ${[sum('events', ['session', 'key', 't', 'text', 'path', 'flags']), sum('sessions', ['id', 'agent', 'model', 'project', 'grant_id']), sum('projects', ['key', 'name']), sum('paths', ['path', 'key']), sum('aliases', ['alias', 'key'])].join(' + ')} AS n`,
+    )[0]?.n;
+    this.limits.setExtra(total ?? 0);
+  }
+
+  private freeEvents(keep: string): boolean {
+    const old = this.store.q<{ id: string }>('SELECT id FROM sessions WHERE id != ? ORDER BY last LIMIT 1', keep)[0];
+    if (!old) return false;
+    this.dropSession(old.id);
+    this.recountExtra();
+    return true;
+  }
+
+  private dropSession(id: string): void {
+    this.store.q('DELETE FROM events WHERE session = ?', id);
+    this.store.q('DELETE FROM sessions WHERE id = ?', id);
+    this.store.dropDelivered(`s-${id}`);
+    for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
+    this.sessionCache.delete(id);
+    this.eventCache.delete(id);
+    this.deliveredCache.delete(`s-${id}`);
   }
 
   private touchAgent(label: string, now: number): Result | null {
@@ -236,8 +289,11 @@ export class Person extends DurableObject<Env> {
   }
 
   private project(w: Where, now: number): string | null {
-    const folder = redact((typeof w.folder === 'string' ? w.folder : '').trim());
+    this.refusal = null;
+    const rawFolder = typeof w.folder === 'string' ? w.folder.trim() : '';
     const repo = typeof w.repo === 'string' ? w.repo.trim() : '';
+    if (rawFolder.length > PATH_MAX || repo.length > PATH_MAX) return null;
+    const folder = redact(rawFolder);
     const memo = `${repo}\u0001${folder}`;
     const hit = this.resolved.get(memo);
     if (hit !== undefined) return hit;
@@ -259,19 +315,29 @@ export class Person extends DurableObject<Env> {
     }
     const resolved = resolveProject({ repo: remote ?? undefined, folder }, known);
     const r = { ...resolved, key: redact(resolved.key) };
+    if (!this.projectKeys.has(r.key) && !this.store.q('SELECT key FROM projects WHERE key = ?', r.key).length) {
+      const name = projectName(r.key);
+      const n = rowBytes(r.key, name);
+      if (!this.makeRoomForProject() || !this.room(n)) {
+        this.refusal = this.refusal ?? SAY.full;
+        return null;
+      }
+      this.store.q('INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING', r.key, name, now);
+      this.addExtra(n);
+      this.resolved.clear();
+      this.nameCache = null;
+    }
+    this.projectKeys.add(r.key);
     let changed = false;
-    if (r.learn?.path && known.paths[r.learn.path] !== r.key) {
+    if (r.learn?.path && known.paths[r.learn.path] !== r.key && this.room(rowBytes(r.learn.path, r.key))) {
       this.store.q('INSERT INTO paths(path, key) VALUES(?, ?) ON CONFLICT(path) DO UPDATE SET key = excluded.key', r.learn.path, r.key);
+      this.addExtra(rowBytes(r.learn.path, r.key));
       changed = true;
     }
-    if (r.learn?.alias && known.aliases[r.learn.alias] !== r.key) {
+    if (r.learn?.alias && known.aliases[r.learn.alias] !== r.key && this.room(rowBytes(r.learn.alias, r.key))) {
       this.store.q('INSERT INTO aliases(alias, key) VALUES(?, ?) ON CONFLICT(alias) DO UPDATE SET key = excluded.key', r.learn.alias, r.key);
+      this.addExtra(rowBytes(r.learn.alias, r.key));
       changed = true;
-    }
-    if (!this.projectKeys.has(r.key)) {
-      const added = this.store.q('INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING RETURNING key', r.key, projectName(r.key), now);
-      if (added.length) changed = true;
-      this.projectKeys.add(r.key);
     }
     if (changed) {
       this.resolved.clear();
@@ -279,6 +345,24 @@ export class Person extends DurableObject<Env> {
     }
     keep(this.resolved, memo, r.key, 200);
     return r.key;
+  }
+
+  private makeRoomForProject(): boolean {
+    const count = () => this.store.q<{ n: number }>('SELECT COUNT(*) AS n FROM projects')[0]?.n ?? 0;
+    if (count() < MAX_PROJECTS) return true;
+    const unused = 'SELECT key FROM projects WHERE key NOT IN (SELECT project FROM items) AND key NOT IN (SELECT project FROM sessions)';
+    this.ctx.storage.transactionSync(() => {
+      this.store.q(`DELETE FROM paths WHERE key IN (${unused})`);
+      this.store.q(`DELETE FROM aliases WHERE key IN (${unused})`);
+      this.store.q(`DELETE FROM projects WHERE key IN (${unused})`);
+    });
+    this.projectKeys.clear();
+    this.resolved.clear();
+    this.nameCache = null;
+    this.recountExtra();
+    if (count() < MAX_PROJECTS) return true;
+    this.refusal = SAY.projects;
+    return false;
   }
 
   private origin(c: Caller, now: number, via: Via, source: Source, session?: string, model?: string): Origin {
@@ -312,6 +396,10 @@ export class Person extends DurableObject<Env> {
     return n;
   }
 
+  private itemRoom(): number {
+    return this.limits.max.storeBytes - this.limits.extra();
+  }
+
   private save(item: Item, now: number, counted: boolean, after?: (saved: Item) => void): Result {
     if (counted) {
       const r = this.limits.canStore(now);
@@ -326,7 +414,7 @@ export class Person extends DurableObject<Env> {
     } catch {
       return { ok: false, text: SAY.clean };
     }
-    const limit = this.limits.max.storeBytes;
+    const limit = this.itemRoom();
     const size = itemBytes(clean);
     let total = this.limits.bytes();
     let prev = this.store.bytesOf(clean.id);
@@ -349,7 +437,7 @@ export class Person extends DurableObject<Env> {
   }
 
   private fold(now: number): number {
-    const limit = this.limits.max.storeBytes;
+    const limit = this.itemRoom();
     let total = 0;
     this.ctx.storage.transactionSync(() => {
       const before = this.store.all();
@@ -505,13 +593,14 @@ export class Person extends DurableObject<Env> {
   }
 
   async recall(c: Caller, a: RecallArgs): Promise<Result> {
-    return this.measure(() => {
+    return this.measure(async () => {
       const now = Date.now();
-      const stop = this.gate(c, now, 'read', a);
+      const stop = await this.gate(c, now, 'read', a);
       if (stop) return stop;
       try {
         const project = this.project(a, now);
         const query = (a.query ?? '').trim();
+        if (!project && this.refusal) return { ok: false, text: this.refusal };
         if (!project) return this.placeless(!query, now);
         const queued = this.queued(project);
         let putBack = queued;
@@ -560,12 +649,12 @@ export class Person extends DurableObject<Env> {
   }
 
   async checkpoint(c: Caller, a: CheckpointArgs): Promise<Result> {
-    return this.measure(() => {
+    return this.measure(async () => {
       const now = Date.now();
-      const stop = this.gate(c, now, 'write', a);
+      const stop = await this.gate(c, now, 'write', a);
       if (stop) return stop;
       const project = this.project(a, now);
-      if (!project) return { ok: false, text: SAY.place };
+      if (!project) return { ok: false, text: this.refusal ?? SAY.place };
       const body: CardBody = compact({
         goal: 'x',
         changed: strings(a.changed)?.map((path) => ({ path })),
@@ -582,12 +671,12 @@ export class Person extends DurableObject<Env> {
   }
 
   async handoff(c: Caller, a: HandoffArgs): Promise<Result> {
-    return this.measure(() => {
+    return this.measure(async () => {
       const now = Date.now();
-      const stop = this.gate(c, now, 'write', a);
+      const stop = await this.gate(c, now, 'write', a);
       if (stop) return stop;
       const project = this.project(a, now);
-      if (!project) return { ok: false, text: SAY.place };
+      if (!project) return { ok: false, text: this.refusal ?? SAY.place };
       const body: HandoffBody = compact({
         goal: 'x',
         done: a.done,
@@ -619,7 +708,7 @@ export class Person extends DurableObject<Env> {
     const named = (v: unknown) => typeof v === 'string' && v.trim() !== '';
     if (scope === 'project' && !named(a.repo) && !named(a.folder)) return { ok: false, text: SAY.where };
     const project = scope === 'all' ? '' : this.project(a, now);
-    if (project === null) return { ok: false, text: SAY.where };
+    if (project === null) return { ok: false, text: this.refusal ?? SAY.where };
     const body: RuleBody = { text: typeof a.text === 'string' ? a.text : '', words: typeof a.words === 'string' ? a.words : '', scope, status: 'pending' };
     try {
       return { project, body, clean: fit(sanitizeItem(newItem('rule', project, body, this.origin(c, now, 'tool', 'agent', `g-${c.grant}`)))) };
@@ -629,9 +718,9 @@ export class Person extends DurableObject<Env> {
   }
 
   async ruleDraft(c: Caller, a: RuleArgs): Promise<Result & { line?: string; held?: boolean }> {
-    return this.measure(() => {
+    return this.measure(async () => {
       const now = Date.now();
-      const stop = this.gate(c, now, 'write', a);
+      const stop = await this.gate(c, now, 'write', a);
       if (stop) return stop;
       const d = this.draftRule(c, a, now);
       if ('ok' in d) return d;
@@ -640,9 +729,9 @@ export class Person extends DurableObject<Env> {
   }
 
   async rule(c: Caller, a: RuleArgs, seen?: string): Promise<Result> {
-    return this.measure(() => {
+    return this.measure(async () => {
       const now = Date.now();
-      const stop = this.gate(c, now, 'write', a);
+      const stop = await this.gate(c, now, 'write', a);
       if (stop) return stop;
       const d = this.draftRule(c, a, now);
       if ('ok' in d) return d;
@@ -657,13 +746,13 @@ export class Person extends DurableObject<Env> {
   }
 
   async event(c: Caller, a: EventArgs): Promise<Result> {
-    return this.measure(() => {
+    return this.measure(async () => {
       const now = Date.now();
+      const stop = await this.gate(c, now, 'write', a);
+      if (stop) return { ok: true, text: '' };
       const name = val(a.event) ?? '';
       const host = val(a.host) ?? '';
       const asks = name === 'UserPromptSubmit' || name === 'SessionStart';
-      const stop = this.gate(c, now, 'write', null);
-      if (stop) return { ok: true, text: '' };
       try {
         return { ok: true, text: this.onEvent(c, a, name, host, now) };
       } catch {
@@ -685,6 +774,7 @@ export class Person extends DurableObject<Env> {
       const row = this.store.q<SessionRow>('SELECT * FROM sessions WHERE id = ?', sid)[0];
       if (row) s = { ...row, n: row.n ?? 0, written: row.last, auto: {} };
     }
+    if (s && s.grant_id !== c.grant) return null;
     if (s) {
       keep(this.sessionCache, sid, s, SESSIONS_KEPT);
       const changed = !!model && s.model !== model;
@@ -697,18 +787,29 @@ export class Person extends DurableObject<Env> {
     const project = this.project({ folder: val(a.cwd) }, now);
     if (!project) return null;
     const fresh: Live = { id: sid, agent: c.agent, model: model ?? null, project, start: now, last: now, primed: 0, grant_id: c.grant, n: 0, written: now, auto: {} };
+    const n = rowBytes(fresh.id, fresh.agent, fresh.model, fresh.project, fresh.grant_id);
+    while (!this.room(n) && this.freeEvents(sid));
+    if (!this.room(n)) return null;
+    this.addExtra(n);
     this.store.q('INSERT INTO sessions(id, agent, model, project, start, last, primed, grant_id, n) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)', fresh.id, fresh.agent, fresh.model, fresh.project, fresh.start, fresh.last, fresh.primed, fresh.grant_id, fresh.n);
     keep(this.sessionCache, sid, fresh, SESSIONS_KEPT);
     this.limits.seen(sid, c.grant, now);
     return fresh;
   }
 
-  private addEvent(s: Live, t: EvType, now: number, raw: { text?: string; path?: string; ok?: boolean }): boolean {
+  private addEvent(s: Live, t: EvType, now: number, raw: { text?: string; path?: string; ok?: boolean; limit?: number }): EventRow | null {
     const text = raw.text !== undefined ? cleanText(raw.text) : undefined;
     const path = raw.path !== undefined ? cleanText(raw.path) : undefined;
+    if (text && raw.limit !== undefined) text.text = cut(text.text, raw.limit);
     const flags = [...new Set([...(text?.flags ?? []), ...(path?.flags ?? [])])];
     const ev: Ev = compact({ t, at: now, text: text?.text, path: path?.text });
     const row: EventRow = { session: s.id, key: eventKey(s.id, ev), t, at: now, text: ev.text ?? null, path: ev.path ?? null, ok: raw.ok === undefined ? null : raw.ok ? 1 : 0, flags: flags.length ? JSON.stringify(flags) : null };
+    const size = rowBytes(row.session, row.key, row.t, row.text, row.path, row.flags);
+    while (!this.room(size) && this.freeEvents(s.id));
+    if (!this.room(size)) {
+      this.limits.refuse(SAY.full, now);
+      return null;
+    }
     const rows = this.store.q<{ key: string }>(
       'INSERT INTO events(session, key, t, at, text, path, ok, flags) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session, key) DO NOTHING RETURNING key',
       row.session,
@@ -720,36 +821,42 @@ export class Person extends DurableObject<Env> {
       row.ok,
       row.flags,
     );
-    if (!rows.length) return false;
+    if (!rows.length) return null;
+    this.addExtra(size);
     s.n++;
     this.eventCache.get(s.id)?.push(row);
     if (s.n > EVENTS_PER_SESSION) this.events(s, now);
-    return true;
+    return row;
   }
 
   private onEvent(c: Caller, a: EventArgs, name: string, host: string, now: number): string {
     const sid = val(a.session);
-    if (!sid) return '';
+    if (!sid || sid.length > ID_MAX) return '';
     const tool = val(a.tool);
     if (tool && OWN_TOOL.test(tool)) return '';
-    if (!val(a.cwd)) return '';
+    const cwd = val(a.cwd);
+    if (!cwd || cwd.length > PATH_MAX) return '';
     const s = this.session(c, sid, a, now);
     if (!s) return '';
     const reader = `s-${sid}`;
+    const reads = c.scopes.includes('read');
     if (name === 'UserPromptSubmit') {
       const prompt = val(a.prompt);
       if (!prompt) return '';
       const stripped = stripOwn(stripPrivate(prompt));
       const first = !s.primed;
-      const kept = stripped.length <= 800 ? stripped : cut(stripped, 300);
+      let kept: string | undefined;
       if (stripped.trim().length < 15) {
         if (!first || !stripped.trim() || /^[/!#]/.test(stripped.trim())) return '';
       } else {
-        if (!this.addEvent(s, 'prompt', now, { text: kept })) return '';
+        const row = this.addEvent(s, 'prompt', now, { text: stripped, limit: stripped.length <= PROMPT_LONG ? undefined : PROMPT_KEPT });
+        if (!row) return '';
+        kept = row.text ?? undefined;
         if (quietPrompt(stripped)) return '';
       }
+      if (!reads) return '';
       const putBack = this.queued(s.project);
-      const query = first ? undefined : cleanText(kept).text;
+      const query = first ? undefined : (kept ?? cleanText(stripped).text);
       const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, query, first, once: true, putBack, now });
       this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));
       if (first) {
@@ -763,25 +870,26 @@ export class Person extends DurableObject<Env> {
     if (name === 'PostToolUse' || name === 'PostToolUseFailure') {
       const file = val(a.file);
       const command = val(a.command);
-      if (file) this.addEvent(s, 'edit', now, { path: file });
-      if (command) this.addEvent(s, 'command', now, { text: cut(command, 300), ok: name === 'PostToolUse' });
+      if (file && file.length <= PATH_MAX) this.addEvent(s, 'edit', now, { path: file });
+      if (command) this.addEvent(s, 'command', now, { text: command, ok: name === 'PostToolUse', limit: COMMAND_CHARS });
       return '';
     }
     if (name === 'Stop' || name === 'StopFailure') {
       const message = val(a.message);
-      this.addEvent(s, 'stop', now, { text: message ? stripOwn(message) : '', ok: name === 'Stop' });
+      this.addEvent(s, 'stop', now, { text: message ? stripOwn(message) : '', ok: name === 'Stop', limit: STOP_CHARS });
       this.rebuild(s, now, true);
       return '';
     }
     if (name === 'PostCompact') {
       const summary = val(a.summary);
-      if (summary) this.addEvent(s, 'compact', now, { text: summary });
+      if (summary) this.addEvent(s, 'compact', now, { text: summary, limit: SUMMARY_CHARS });
       this.dropped(s, now);
       return '';
     }
     if (name === 'SessionStart') {
       const source = val(a.source);
       if (source !== 'clear' && source !== 'compact') return '';
+      if (!reads) return '';
       if (this.deliveredFor(reader).size) this.store.dropDelivered(reader);
       this.deliveredCache.set(reader, new Set());
       const putBack = this.queued(s.project);
@@ -879,21 +987,14 @@ export class Person extends DurableObject<Env> {
     h.maintained = now;
     this.limits.touch();
     const old = now - KEEP_EVENTS;
-    for (const { id } of this.store.q<{ id: string }>('SELECT id FROM sessions WHERE last < ?', old)) {
-      this.store.q('DELETE FROM events WHERE session = ?', id);
-      this.store.q('DELETE FROM sessions WHERE id = ?', id);
-      this.store.dropDelivered(`s-${id}`);
-      for (const k of [`auto-card:${id}`, `auto-handoff:${id}`, `dropped:${id}`]) this.store.dropMeta(k);
-      this.sessionCache.delete(id);
-      this.eventCache.delete(id);
-      this.deliveredCache.delete(`s-${id}`);
-    }
+    for (const { id } of this.store.q<{ id: string }>('SELECT id FROM sessions WHERE last < ?', old)) this.dropSession(id);
+    this.recountExtra();
   }
 
   async me(): Promise<Me> {
     const now = Date.now();
     const t = this.limits.today(now);
-    return { bytes: this.limits.bytes(), max: this.limits.max.storeBytes, callsToday: t.calls, storedToday: t.stored };
+    return { bytes: this.limits.bytes() + this.limits.extra(), max: this.limits.max.storeBytes, callsToday: t.calls, storedToday: t.stored };
   }
 
   async space(): Promise<Space> {
@@ -985,6 +1086,7 @@ export class Person extends DurableObject<Env> {
       this.store.q('UPDATE sessions SET project = ? WHERE project = ?', into, from);
       this.store.q('DELETE FROM projects WHERE key = ?', from);
     });
+    this.recountExtra();
     this.pools.clear();
     this.rulesCache = null;
     this.nameCache = null;

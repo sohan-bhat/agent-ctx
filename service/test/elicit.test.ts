@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import type { RuleBody } from '../../core/src/index.ts';
 import { RESOURCE, call, connect, devSignIn, mcp, send, type Jar } from './flow.ts';
 
-type Answer = { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> };
+type Answer = { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, boolean> };
 
 async function asking(token: string, answer: Answer, seen: string[]): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL(RESOURCE), {

@@ -1,8 +1,9 @@
+import { env } from 'cloudflare:workers';
 import { evictDurableObject, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { newItem, type Item } from '../../core/src/index.ts';
 import type { Person } from '../src/person.ts';
-import { MAX, SAY } from '../src/limits.ts';
+import { MAX, RESERVE, SAY } from '../src/limits.ts';
 import { awayFromMinuteEdge, caller, KILN, open, person } from './helpers.ts';
 
 const A = caller('Codex', 'grant-a');
@@ -36,19 +37,19 @@ function seedItems(n: number, start: number): Item[] {
 }
 
 describe('rows kept low without changing behaviour', () => {
-  it('a lost counter write is more lenient by at most one minute of calls and never stricter', async () => {
+  it('a restart never loses a call and counts at most the reserve more', async () => {
     const p = person();
     await awayFromMinuteEdge();
     for (let i = 0; i < 10; i++) expect((await p.recall(A, KILN)).ok).toBe(true);
     expect((await p.me()).callsToday).toBe(10);
     await evictDurableObject(p);
     const after = (await p.me()).callsToday;
-    expect(after).toBe(1);
+    expect(after).toBeGreaterThanOrEqual(10);
+    expect(after).toBeLessThanOrEqual(10 + RESERVE);
     let accepted = 0;
     for (let i = 0; i < MAX.perMinute + 20; i++) if ((await p.recall(A, KILN)).ok) accepted++;
-    expect(accepted).toBe(MAX.perMinute - 1);
-    expect(accepted + 10).toBeGreaterThan(MAX.perMinute);
-    expect(accepted + 10).toBeLessThanOrEqual(MAX.perMinute + 9);
+    expect(accepted + 10).toBeLessThanOrEqual(MAX.perMinute);
+    expect(accepted + 10).toBeGreaterThanOrEqual(MAX.perMinute - RESERVE);
     expect(await p.recall(A, KILN)).toEqual({ ok: false, text: SAY.minute });
   });
 
@@ -59,8 +60,41 @@ describe('rows kept low without changing behaviour', () => {
     await p.checkpoint(A, { ...KILN, goal: 'Counted card' });
     await evictDurableObject(p);
     const me = await p.me();
-    expect([me.callsToday, me.storedToday]).toEqual([6, 1]);
+    expect(me.callsToday).toBeGreaterThanOrEqual(6);
+    expect(me.callsToday).toBeLessThanOrEqual(6 + RESERVE);
+    expect(me.storedToday).toBe(1);
     expect(me.bytes).toBeGreaterThan(0);
+  });
+
+  it('a call that crashes the object mid way is still counted, so crashing calls reach the minute limit', async () => {
+    const id = person().id;
+    await awayFromMinuteEdge();
+    let crashes = 0;
+    let refused: unknown = null;
+    for (let n = 1; n <= MAX.perMinute && !refused; n++) {
+      const stub = env.PERSON.get(id);
+      await runInDurableObject(stub, (x: Person) => {
+        const inside = x as unknown as { project: () => never; ctx: DurableObjectState };
+        inside.project = () => {
+          inside.ctx.abort('crash in the middle of a call');
+          throw new Error('unreachable');
+        };
+      });
+      const r = await stub.recall(A, KILN).then(
+        (v) => v,
+        () => null,
+      );
+      if (r) {
+        refused = r;
+        break;
+      }
+      crashes++;
+      const hot = await runInDurableObject(env.PERSON.get(id), (x: Person) => x.store.meta<{ dayN?: number }>('hot', {}));
+      expect(hot.dayN ?? 0).toBeGreaterThanOrEqual(crashes);
+    }
+    expect(refused).toEqual({ ok: false, text: SAY.minute });
+    expect(crashes).toBeGreaterThanOrEqual(5);
+    expect(crashes).toBeLessThanOrEqual(MAX.perMinute);
   });
 
   it('the pool cache matches the store after every kind of write', async () => {
