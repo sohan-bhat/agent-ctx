@@ -538,6 +538,7 @@ export class Person extends DurableObject<Env> {
     if (name === 'SessionStart') {
       const source = val(a.source);
       if (source !== 'clear' && source !== 'compact') return '';
+      this.store.q('DELETE FROM seen WHERE reader = ?', reader);
       const putBack = this.queued(s.project);
       const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, first: true, once: true, putBack, rulesOnly: true, now });
       this.unqueue(res.delivered.filter((id) => putBack.some((p) => p.id === id)));

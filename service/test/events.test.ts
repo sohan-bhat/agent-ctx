@@ -165,6 +165,24 @@ describe('hook events', () => {
     expect(await p.event(CC, ev('s1', 'SessionStart', { source: 'startup' }))).toEqual({ ok: true, text: '' });
   });
 
+  it('a compaction or a clear forgets what the session saw and returns the rules and the queue again', async () => {
+    const p = person();
+    await p.addRule({ text: 'Dates in ISO format please', scope: 'all' });
+    await p.checkpoint(CX, { folder: CWD, goal: 'Pantry expiry dates' });
+    const first = added((await p.event(CC, ev('s1', 'UserPromptSubmit', { prompt: 'start work on the pantry expiry dates' }))).text);
+    expect(first).toContain('RULES\n> "Dates in ISO format please" added on the page');
+    const card = (await p.space()).items.find((i: Item) => i.kind === 'card')!;
+    await p.putBack(card.id);
+    for (const source of ['compact', 'clear']) {
+      const r = await p.event(CC, ev('s1', 'SessionStart', { source }));
+      expect(JSON.parse(r.text).hookSpecificOutput.hookEventName).toBe('SessionStart');
+      const again = added(r.text);
+      expect(again).toContain('RULES\n> "Dates in ISO format please" added on the page');
+      expect(again.endsWith(FOOTER)).toBe(true);
+    }
+    expect((await p.space()).queue).toEqual([]);
+  });
+
   it('the first prompt says capture is paused while writes are refused', async () => {
     const p = person();
     await open(p, { storedPerDay: 1 });
