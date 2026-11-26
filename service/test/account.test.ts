@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import type { Item } from '../../core/src/index.ts';
 import type { Person } from '../src/person.ts';
-import { ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
+import { call, connect, devSignIn, mcp, ORIGIN, send } from './helpers.ts';
 
 describe('export and delete', () => {
   it('the export zip holds every item in the open layout', async () => {

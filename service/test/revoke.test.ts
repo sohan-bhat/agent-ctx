@@ -3,10 +3,9 @@ import { createExecutionContext, runInDurableObject, waitOnExecutionContext } fr
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.ts';
 import type { Person } from '../src/person.ts';
-import { REGISTRATIONS_PER_DAY, addressKey } from '../src/limits.ts';
+import { addressKey, REGISTRATIONS_PER_DAY } from '../src/limits.ts';
 import { CIMD_URL } from './outbound.ts';
-import { ORIGIN, RESOURCE, call, connect, devSignIn, fromSomewhere, mcp, pkce, send } from './flow.ts';
-import { caller, open, person } from './helpers.ts';
+import { call, caller, connect, devSignIn, fromSomewhere, mcp, open, ORIGIN, person, pkce, RESOURCE, send } from './helpers.ts';
 
 const listTools = (token: string) =>
   send('/mcp', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Host: new URL(RESOURCE).host }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });

@@ -1,12 +1,11 @@
 import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { FOOTER, newItem, type CardBody, type HandoffBody } from '../../core/src/index.ts';
+import { type CardBody, FOOTER, type HandoffBody, newItem } from '../../core/src/index.ts';
 import { SAY } from '../src/limits.ts';
 import { NOT_STATED, type Person } from '../src/person.ts';
 import { CARRY_ON } from '../src/mcp.ts';
-import { KILN, caller, person, sql } from './helpers.ts';
-import { agent, call } from './flow.ts';
+import { agent, call, caller, KILN, person, sql } from './helpers.ts';
 
 const A = caller('Codex', 'grant-a');
 const B = caller('Claude Code', 'grant-b');

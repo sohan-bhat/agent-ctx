@@ -1,9 +1,8 @@
 import { evictDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_RECALL, FOOTER, NO_MATCH, type Item } from '../../core/src/index.ts';
+import { EMPTY_RECALL, FOOTER, type Item, NO_MATCH } from '../../core/src/index.ts';
 import type { Person } from '../src/person.ts';
-import { agent, call, mcp, connect, type Era } from './flow.ts';
-import { caller, person, sql } from './helpers.ts';
+import { agent, call, caller, connect, type Era, mcp, person, sql } from './helpers.ts';
 
 const A = caller('Codex', 'grant-a');
 const B = caller('Claude Code', 'grant-b');

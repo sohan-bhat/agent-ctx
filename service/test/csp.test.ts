@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formTarget, policy } from '../src/auth.ts';
-import { ORIGIN, RESOURCE, devSignIn, pkce, register, send, type Jar } from './flow.ts';
+import { devSignIn, type Jar, ORIGIN, pkce, register, RESOURCE, send } from './helpers.ts';
 
 const SELF = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'";
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import type { Client } from '@modelcontextprotocol/client';
 import type { Item } from '../../core/src/index.ts';
-import { Jar, ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
+import { call, connect, devSignIn, Jar, mcp, ORIGIN, send } from './helpers.ts';
 
 interface Who { n: number; jar: Jar; client: Client; mark: string; repo: string; folder: string; session: string }
 

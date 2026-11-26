@@ -3,7 +3,7 @@ import type { Item, RuleBody } from '../../core/src/index.ts';
 import { strFromU8, unzipSync } from 'fflate';
 import { TOOL_CHARS } from '../src/mcp.ts';
 import { SAY } from '../src/limits.ts';
-import { ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
+import { call, connect, devSignIn, mcp, ORIGIN, send } from './helpers.ts';
 
 async function setup(name: string) {
   const jar = await devSignIn(name);

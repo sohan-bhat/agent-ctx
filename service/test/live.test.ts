@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '../../core/src/index.ts';
-import { call, connect, devSignIn, mcp, send } from './flow.ts';
+import { call, connect, devSignIn, mcp, send } from './helpers.ts';
 
 describe('live updates', () => {
   it('a page socket receives the item message for a checkpoint within one second', async () => {

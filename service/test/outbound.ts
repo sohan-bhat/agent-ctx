@@ -1,3 +1,5 @@
+import vendors from './vendors.json';
+
 export const CIMD_URL = 'https://agent.example/oauth/client.json';
 export const CLAUDE_CODE_URL = 'https://claude.ai/oauth/claude-code-client-metadata';
 
@@ -35,5 +37,50 @@ export function outbound(o: { clientId: string; clientSecret: string }) {
       return json({ id: Number(m[1]), login: m[2] });
     }
     return new Response('not found', { status: 404 });
+  };
+}
+
+export const SIGNER = 'https://assertion.invalid/sign';
+
+export interface VendorDoc { key: string; text: string; doc: Record<string, unknown> }
+
+export function vendorDocs(): Map<string, VendorDoc> {
+  const out = new Map<string, VendorDoc>();
+  for (const [key, text] of Object.entries(vendors as Record<string, string>)) {
+    const doc = JSON.parse(text) as Record<string, unknown>;
+    if (typeof doc.client_id === 'string') out.set(doc.client_id, { key, text, doc });
+  }
+  return out;
+}
+
+function b64url(bytes: Uint8Array | string): string {
+  const raw = typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes;
+  let s = '';
+  for (const b of raw) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export function vendorOutbound() {
+  const docs = vendorDocs();
+  const kid = crypto.randomUUID();
+  const keys = crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']) as Promise<CryptoKeyPair>;
+  const jwksUris = new Set([...docs.values()].map((d) => d.doc.jwks_uri).filter((u): u is string => typeof u === 'string'));
+  return async (request: Request): Promise<Response | null> => {
+    const url = new URL(request.url);
+    const hit = docs.get(url.href);
+    if (hit) return new Response(hit.text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=60' } });
+    if (jwksUris.has(url.href)) {
+      const jwk = (await crypto.subtle.exportKey('jwk', (await keys).publicKey)) as JsonWebKey;
+      return Response.json({ keys: [{ ...jwk, kid, alg: 'RS256', use: 'sig' }] });
+    }
+    if (url.href === SIGNER && request.method === 'POST') {
+      const claims = (await request.json()) as { client_id: string; aud: string };
+      const now = Math.floor(Date.now() / 1000);
+      const head = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid }));
+      const body = b64url(JSON.stringify({ iss: claims.client_id, sub: claims.client_id, aud: claims.aud, jti: crypto.randomUUID(), iat: now, exp: now + 120 }));
+      const signature = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', (await keys).privateKey, new TextEncoder().encode(`${head}.${body}`)));
+      return Response.json({ assertion: `${head}.${body}.${b64url(signature)}` });
+    }
+    return null;
   };
 }

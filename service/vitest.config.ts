@@ -2,8 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { freemem, loadavg } from 'node:os';
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
-import { outbound } from './test/outbound.ts';
-import { vendorOutbound } from './vendor-docs.ts';
+import { outbound, vendorOutbound } from './test/outbound.ts';
 
 const github = { clientId: 'test-client-id', clientSecret: randomBytes(16).toString('hex') };
 const load = process.env.LOAD === '1';

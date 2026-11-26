@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FOOTER, HEADER, type Item, type RuleBody } from '../../core/src/index.ts';
-import { ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
+import { call, connect, devSignIn, mcp, ORIGIN, send } from './helpers.ts';
 
 const tagged = (s: string) => [...s].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('');
 const PLANTS = {

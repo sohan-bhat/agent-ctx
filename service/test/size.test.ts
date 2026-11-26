@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EventArgs } from '../src/person.ts';
 import { MAX, SAY } from '../src/limits.ts';
 import { BODY_MAX, fitEvent } from '../src/mcp.ts';
-import { RESOURCE, call, connect, devSignIn, mcp, send } from './flow.ts';
-import { caller, open, person, sql } from './helpers.ts';
+import { call, caller, connect, devSignIn, mcp, open, person, RESOURCE, send, sql } from './helpers.ts';
 
 const CC = caller('Claude Code', 'grant-cc');
 const OTHER = caller('Codex', 'grant-other');

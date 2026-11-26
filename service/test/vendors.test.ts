@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ORIGIN, RESOURCE, approve, devSignIn, mcp, pkce, send, type Jar } from './flow.ts';
+import { approve, devSignIn, type Jar, mcp, ORIGIN, pkce, RESOURCE, send } from './helpers.ts';
 
 const CLAUDE_CODE = 'https://claude.ai/oauth/claude-code-client-metadata';
 const CODEX = 'https://chatgpt.com/oauth/codex/client.json';

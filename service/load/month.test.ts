@@ -2,8 +2,7 @@ import { env } from 'cloudflare:workers';
 import { it, expect, vi } from 'vitest';
 import { PROJECTS, month, type Label } from '../../core/test/month.ts';
 import type { CardBody, Item } from '../../core/src/index.ts';
-import { devSignIn, send } from '../test/flow.ts';
-import { caller, open } from '../test/helpers.ts';
+import { caller, devSignIn, open, send } from '../test/helpers.ts';
 
 const SEED = Number((env as unknown as { MONTH_SEED?: string }).MONTH_SEED ?? '1');
 

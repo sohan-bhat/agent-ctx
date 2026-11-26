@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { FIRST_CHARS, FOOTER, HEADER, recall, type Item } from '../../core/src/index.ts';
-import { CARRY_ON, INSTRUCTIONS, TOOL_CHARS, continueText } from '../src/mcp.ts';
-import { agent, call, connect, devSignIn, mcp, send, RESOURCE, type Era } from './flow.ts';
+import { FIRST_CHARS, FOOTER, HEADER, type Item, recall } from '../../core/src/index.ts';
+import { CARRY_ON, continueText, INSTRUCTIONS, TOOL_CHARS } from '../src/mcp.ts';
+import { agent, call, connect, devSignIn, type Era, mcp, RESOURCE, send } from './helpers.ts';
 
 const NAMES = ['checkpoint', 'event', 'handoff', 'recall', 'rule'];
 

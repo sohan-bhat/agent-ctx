@@ -3,7 +3,7 @@ import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.ts';
 import { returnPath } from '../src/auth.ts';
-import { ORIGIN, fromSomewhere } from './flow.ts';
+import { fromSomewhere, ORIGIN } from './helpers.ts';
 
 async function hit(path: string, init: RequestInit, devLogin: string | undefined): Promise<Response> {
   const ctx = createExecutionContext();

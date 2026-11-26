@@ -10,7 +10,6 @@ import { cleanOrigin, currentOrigin, NAMES, PLUGINS, stamp } from '../../plugins
 import { MAX } from '../src/limits.ts';
 import { ITEM_BYTES, STORE_BYTES } from '../../core/src/index.ts';
 import { PAGE, PLUGINS_OUT, SAY, SERVICE } from '../deploy.mjs';
-import { vendorDocs } from '../vendor-docs.ts';
 import { BASELINE, REVISIONS, withToken } from './conformance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -373,14 +372,15 @@ function redirectForm(uri: string): string {
 }
 
 test('every vendor fixture has one row that names its document, its file and every redirect it lists', () => {
-  const docs = vendorDocs(join(ROOT, 'service', 'test', 'fixtures', 'vendors'));
+  const saved = JSON.parse(readFileSync(join(ROOT, 'service', 'test', 'vendors.json'), 'utf8')) as Record<string, string>;
+  const docs = new Map(Object.entries(saved).map(([key, text]) => [String(JSON.parse(text).client_id), { key, doc: JSON.parse(text) as Record<string, unknown> }]));
   assert.equal(docs.size, 4);
   for (const [clientId, v] of docs) {
     const row = rows().filter((r) => r[1].includes(clientId));
     assert.equal(row.length, 1, clientId);
-    assert.ok(row[0][1].includes(v.file), `${clientId} names ${v.file}`);
+    assert.ok(row[0][1].includes(`under the key ${v.key}`), `${clientId} names ${v.key}`);
     for (const uri of v.doc.redirect_uris as string[]) assert.ok(row[0][2].includes(redirectForm(uri)), `${clientId} lists ${uri}`);
-    assert.match(v.file, /^[a-z]+(?:-[a-z]+)*\.\d{4}-\d{2}-\d{2}\.json$/);
+    assert.match(v.key, /^[a-z]+(?:-[a-z]+)*\.\d{4}-\d{2}-\d{2}$/);
   }
   const named = rows().filter((r) => r[1].startsWith('Metadata document'));
   assert.equal(named.length, docs.size);

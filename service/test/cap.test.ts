@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { expect, it } from 'vitest';
-import { REGISTRATIONS_FULL, REGISTRATIONS_PER_DAY, registrationCap } from '../src/limits.ts';
-import { address, agent, call, send } from './flow.ts';
+import { registrationCap, REGISTRATIONS_FULL, REGISTRATIONS_PER_DAY } from '../src/limits.ts';
+import { address, agent, call, send } from './helpers.ts';
 
 const register = () =>
   send('/oauth/register', {

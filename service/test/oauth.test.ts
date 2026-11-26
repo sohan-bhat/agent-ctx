@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import worker from '../src/index.ts';
 import { SAY } from '../src/limits.ts';
 import { CIMD_URL } from './outbound.ts';
-import { Jar, ORIGIN, RESOURCE, agent, approve, call, connect, consent, devSignIn, fromSomewhere, mcp, pkce, refresh, register, send, type Fetch } from './flow.ts';
+import { agent, approve, call, connect, consent, devSignIn, type Fetch, fromSomewhere, Jar, mcp, ORIGIN, pkce, refresh, register, RESOURCE, send } from './helpers.ts';
 
 function withEnv(more: Record<string, unknown>): Fetch {
   return async (input, init) => {

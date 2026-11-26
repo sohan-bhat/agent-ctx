@@ -2,7 +2,7 @@ import { exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { RuleBody } from '../../core/src/index.ts';
-import { RESOURCE, call, connect, devSignIn, mcp, send, type Jar } from './flow.ts';
+import { call, connect, devSignIn, type Jar, mcp, RESOURCE, send } from './helpers.ts';
 
 type Answer = { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, boolean> };
 

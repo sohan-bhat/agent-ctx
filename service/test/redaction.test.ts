@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import type { Person } from '../src/person.ts';
 import { TABLES } from '../src/store.ts';
-import { ORIGIN, call, connect, devSignIn, mcp, send } from './flow.ts';
+import { call, connect, devSignIn, mcp, ORIGIN, send } from './helpers.ts';
 
 let seed = 77;
 function chars(n: number, set = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'): string {
