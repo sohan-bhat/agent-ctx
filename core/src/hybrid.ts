@@ -3,9 +3,9 @@ import { rankItems, type Hit } from './rank.ts';
 
 export const DIM = 384;
 
-export interface HybridSettings { bar: number; margin: number; gap: number; max: number }
+export interface HybridSettings { bar: number; margin: number; gap: number; max: number; fill: boolean }
 
-export const HYBRID: HybridSettings = { bar: 0.48, margin: 0.2, gap: 0.01, max: 3 };
+export const HYBRID: HybridSettings = { bar: 0.66, margin: 0.21, gap: 0.015, max: 3, fill: false };
 
 export function quantize(values: ArrayLike<number>): Int8Array {
   const out = new Int8Array(values.length);
@@ -40,7 +40,7 @@ export function rankHybrid(items: Item[], vectors: Map<string, Int8Array>, query
   const words = rankItems(items, query, now);
   if (!queryVector || !queryVector.length || !vectors || !vectors.size) return words;
   const s = { ...HYBRID, ...settings };
-  if (words.length >= s.max) return words;
+  if (words.length >= s.max || (!s.fill && words.length)) return words;
   const scored: { item: Item; c: number }[] = [];
   for (const item of items ?? []) {
     if (item.held || item.kind === 'rule') continue;

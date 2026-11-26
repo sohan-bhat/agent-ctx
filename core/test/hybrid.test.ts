@@ -22,7 +22,7 @@ function axis(...parts: [number, number][]): Int8Array {
 }
 
 const sig = (hits: Hit[]) => hits.map((h) => `${h.item.id}:${h.score}:${h.matched}`).join('|');
-const SETTINGS = { bar: 0.5, margin: 0.2, gap: 0.1, max: 3 };
+const SETTINGS = { bar: 0.5, margin: 0.2, gap: 0.1, max: 3, fill: true };
 
 test('quantize keeps the direction as the unit vector times 127, rounded', () => {
   assert.deepEqual([...quantize([3, 4])], [76, 102]);
@@ -151,4 +151,14 @@ test('recall passes the vectors to the hybrid, here and for a named project', ()
   assert.deepEqual(recall({ ...base, query: 'zz qq', vectors: v, queryVector: query }).delivered, ['near', 'close']);
   const named = recall({ ...base, query: 'how does the chess engine do zz', vectors: v, queryVector: axis([6, 1]), namedVectors: new Map([['github.com/acme/knightmare', axis([7, 1])]]) });
   assert.deepEqual(named.delivered, ['o1']);
+});
+
+test('with fill off, embedding candidates come only when words found nothing', () => {
+  const quiet = { ...SETTINGS, fill: false };
+  assert.deepEqual(rankHybrid(pool, vectors, 'club roster export', query, NOW, quiet).map((h) => h.item.id), ['far1']);
+  assert.deepEqual(rankHybrid(pool, vectors, 'something with no shared words', query, NOW, quiet).map((h) => h.item.id), ['near', 'close']);
+});
+
+test('the default settings add nothing to a query that words already answer', () => {
+  assert.deepEqual(rankHybrid(pool, vectors, 'club roster export', query, NOW).map((h) => h.item.id), ['far1']);
 });
