@@ -3,9 +3,7 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Instance, Instances, Segment, Segments } from '@react-three/drei';
 import { Color, type Group, type Object3D } from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { blockMaterials } from './rounded';
-import { EDGE, FLAT, type Link, type Placed } from './layout';
-import { agentColor, type Palette } from './palette';
+import { agentColor, blockMaterials, EDGE, FLAT, type Link, type Palette, type Placed } from './layout';
 
 export interface Pointing {
   hover: string | null;

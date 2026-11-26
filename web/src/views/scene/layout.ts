@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { hierarchy, treemap, treemapDice, treemapSquarify, type HierarchyRectangularNode } from 'd3-hierarchy';
-import { Box3, Matrix4, Quaternion, Vector3, type OrthographicCamera } from 'three';
+import { Box3, Matrix4, MeshDepthMaterial, MeshStandardMaterial, Quaternion, Vector3, type OrthographicCamera, type WebGLProgramParametersWithUniforms } from 'three';
 import type { CameraControlsImpl } from '@react-three/drei';
 import { itemBytes } from '@core/model.ts';
 import type { Item, Read, RuleBody } from '@/lib/api';
@@ -111,13 +112,13 @@ interface Leaf {
 
 function tile(items: Item[], agents: string[]): { leaves: Map<string, { x0: number; z0: number; x1: number; z1: number }>; districts: Omit<District, 'plate'>[]; side: number } {
   const groups = new Map<string, Item[]>();
-  for (const it of items) {
-    const list = groups.get(it.origin.agent);
-    if (list) list.push(it);
-    else groups.set(it.origin.agent, [it]);
+  for (const item of items) {
+    const list = groups.get(item.origin.agent);
+    if (list) list.push(item);
+    else groups.set(item.origin.agent, [item]);
   }
   const order = [...groups.keys()].sort((a, b) => slotOf(agents, a) - slotOf(agents, b) || (a < b ? -1 : 1));
-  const total = items.reduce((s, it) => s + itemBytes(it) * AREA, 0);
+  const total = items.reduce((s, item) => s + itemBytes(item) * AREA, 0);
   const side = Math.max(MIN_SIDE, Math.sqrt(total / FILL) + RIM * 2);
   const inner = side - RIM * 2;
   const root = hierarchy<Leaf>(
@@ -212,10 +213,10 @@ function balance(corners: Vector3[], aspect: number): number {
 
 export function layout({ projects, agents, items, reads, aspect }: LayoutInput): Omit<Layout, 'placed'> & { base: Omit<Placed, 'h' | 'shown' | 'y0'>[] } {
   const keys = projects.map((p) => p.key);
-  for (const it of items) if (!keys.includes(it.project) && (it.project || it.kind !== 'rule')) keys.push(it.project);
+  for (const item of items) if (!keys.includes(item.project) && (item.project || item.kind !== 'rule')) keys.push(item.project);
   if (!keys.length) keys.push('');
   const byProject = new Map<string, Item[]>(keys.map((k) => [k, []]));
-  for (const it of items) byProject.get(it.kind === 'rule' && !it.project ? keys[0] : it.project)!.push(it);
+  for (const item of items) byProject.get(item.kind === 'rule' && !item.project ? keys[0] : item.project)!.push(item);
   const tiles = keys.map((k) => tile(byProject.get(k)!.filter(inDistrict), agents));
   const rulesOf = keys.map((k) => byProject.get(k)!.filter(ruleShown).sort((a, b) => a.created - b.created));
   const posts = tiles.map((t, i) => {
@@ -246,21 +247,21 @@ export function layout({ projects, agents, items, reads, aspect }: LayoutInput):
     box.expandByPoint(new Vector3(cx - t.side / 2, -PLATE, cz - t.side / 2));
     box.expandByPoint(new Vector3(cx + t.side / 2, top, cz + t.side / 2));
     const list = byProject.get(key)!;
-    for (const it of list) {
-      const slot = slotOf(agents, it.origin.agent);
-      if (it.kind === 'rule') continue;
-      const r = t.leaves.get(it.id);
+    for (const item of list) {
+      const slot = slotOf(agents, item.origin.agent);
+      if (item.kind === 'rule') continue;
+      const r = t.leaves.get(item.id);
       if (!r) continue;
       const w = Math.max(0.06, r.x1 - r.x0 - GAP * 2);
       const d = Math.max(0.06, r.z1 - r.z0 - GAP * 2);
       const c = { cx: cx + (r.x0 + r.x1) / 2, cz: cz + (r.z0 + r.z1) / 2 };
-      const look: Look = it.held ? 'outline' : it.kind === 'dropped' ? 'flat' : 'solid';
-      base.push({ id: it.id, item: it, look, slot, plate: key, ...c, w, d });
-      if (it.kind === 'handoff' && !it.held) base.push({ id: `${it.id}^`, item: it, look: 'cap', slot, plate: key, ...c, w, d });
+      const look: Look = item.held ? 'outline' : item.kind === 'dropped' ? 'flat' : 'solid';
+      base.push({ id: item.id, item, look, slot, plate: key, ...c, w, d });
+      if (item.kind === 'handoff' && !item.held) base.push({ id: `${item.id}^`, item, look: 'cap', slot, plate: key, ...c, w, d });
     }
-    rulesOf[pi].forEach((it, i) => {
-      const look: Look = (it.body as RuleBody).status === 'pending' || it.held ? 'outline' : 'post';
-      base.push({ id: it.id, item: it, look, slot: -1, plate: key, cx: cx + posts[pi][i][0], cz: cz + posts[pi][i][1], w: POST_W, d: POST_W });
+    rulesOf[pi].forEach((item, i) => {
+      const look: Look = (item.body as RuleBody).status === 'pending' || item.held ? 'outline' : 'post';
+      base.push({ id: item.id, item, look, slot: -1, plate: key, cx: cx + posts[pi][i][0], cz: cz + posts[pi][i][1], w: POST_W, d: POST_W });
     });
   });
   for (const r of reads) {
@@ -357,4 +358,90 @@ export function boxOf(list: Placed[]): Box3 {
 export function homePad(width: number): Pad {
   const narrow = width < 520;
   return { left: narrow ? 12 : 20, right: narrow ? 12 : 20, top: narrow ? 14 : 16, bottom: narrow ? 34 : 38 };
+}
+
+export interface Palette {
+  dark: boolean;
+  background: string;
+  foreground: string;
+  muted: string;
+  ring: string;
+  table: string;
+  agents: string[];
+}
+
+const DARK = '(prefers-color-scheme: dark)';
+
+function readPalette(): Palette {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string) => css.getPropertyValue(name).trim();
+  return {
+    dark: window.matchMedia?.(DARK).matches ?? false,
+    background: v('--background'),
+    foreground: v('--foreground'),
+    muted: v('--muted-foreground'),
+    ring: v('--ring'),
+    table: v('--table'),
+    agents: Array.from({ length: 8 }, (_, i) => v(`--agent-${i + 1}`)),
+  };
+}
+
+export function agentColor(p: Palette, slot: number): string {
+  return slot < 0 || slot >= p.agents.length ? p.muted : p.agents[slot];
+}
+
+export function usePalette(): Palette {
+  const [p, setP] = useState(readPalette);
+  useEffect(() => {
+    const m = window.matchMedia(DARK);
+    const on = () => setP(readPalette());
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return p;
+}
+
+const helpers = `
+varying float vRim;
+#ifdef USE_INSTANCING
+uniform float uEdge;
+vec3 ctxScale() {
+  return max(vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz)), vec3(1e-5));
+}
+vec3 ctxRound(vec3 p, vec3 n) {
+  vec3 s = ctxScale();
+  float r = min(uEdge, 0.5 * min(min(s.x, s.y), s.z));
+  return (sign(p) * (0.5 * s - r) + n * r) / s;
+}
+#endif
+`;
+
+function patch(shader: WebGLProgramParametersWithUniforms, u: { edge: { value: number }; rim: { value: number } }, surface: boolean) {
+  shader.uniforms.uEdge = u.edge;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `#include <common>\n${helpers}`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>\nvRim = 0.0;\n#ifdef USE_INSTANCING\ntransformed = ctxRound(position, normal);\nvRim = clamp(4.0 * normal.y * (1.0 - normal.y), 0.0, 1.0) * step(0.0, position.y);\n#endif`);
+  if (!surface) return;
+  shader.uniforms.uRim = u.rim;
+  shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>\n#ifdef USE_INSTANCING\nobjectNormal *= ctxScale();\n#endif`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>\nvarying float vRim;\nuniform float uRim;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), vRim * uRim);`);
+}
+
+export interface BlockMaterials {
+  surface: MeshStandardMaterial;
+  depth: MeshDepthMaterial;
+  rim: { value: number };
+}
+
+export function blockMaterials(edge: number, rim = 0.3): BlockMaterials {
+  const u = { edge: { value: edge }, rim: { value: rim } };
+  const surface = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
+  surface.onBeforeCompile = (s) => patch(s, u, true);
+  surface.customProgramCacheKey = () => 'ctx-rounded';
+  const depth = new MeshDepthMaterial();
+  depth.onBeforeCompile = (s) => patch(s, u, false);
+  depth.customProgramCacheKey = () => 'ctx-rounded-depth';
+  return { surface, depth, rim: u.rim };
 }
