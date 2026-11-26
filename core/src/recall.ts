@@ -312,7 +312,7 @@ export function recall(input: RecallInput): RecallOutput {
   if (!input.tool || !query) return render(header, sections, cap);
   const ids = shortIds(input.items ?? []);
   if (earlier.length) {
-    const others = looseMatches(pool(project), query, input.loose).filter((i) => !shown.has(i.id)).slice(0, OTHER_IDS);
+    const others = looseMatches(pool(project), query, input.loose).slice(0, OTHER_IDS);
     const { line, named } = othersLine(others, ids);
     if (!line) return render(header, sections, cap);
     const out = render(header, sections, cap - line.length - 2);

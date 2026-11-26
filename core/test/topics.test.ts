@@ -47,6 +47,7 @@ test('resolveIds maps short ids, full ids and unique prefixes back and skips the
   const items = [item('card', { goal: 'a' }, { id: 'abcdefgh1111' }), item('card', { goal: 'b' }, { id: 'abcdefgh2222' }), item('card', { goal: 'c' }, { id: 'zzzzzzzz9999' })];
   const got = resolveIds(items, ['zzzzzzzz', 'abcdefgh2', 'abcdefgh1111', 'abcdefgh', 'nope', '', 'zzzzzzzz']).map((i) => i.id);
   assert.deepEqual(got, ['zzzzzzzz9999', 'abcdefgh2222', 'abcdefgh1111']);
+  assert.deepEqual(resolveIds(items, ['abcdefgh']), []);
 });
 
 test('ids read exactly those items under EARLIER and mark them delivered', () => {
