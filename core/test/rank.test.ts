@@ -219,3 +219,11 @@ test('rankItems on 400 items and a 60 word prompt runs under 5 ms as a median of
   t.diagnostic(`median ${median.toFixed(2)} ms`);
   assert.ok(median < 5, `median ${median} ms`);
 });
+
+test('a cached pool sees a changed item body', () => {
+  const pool = [card('m1', 'Badge printer driver', 2), card('m2', 'Roster export', 3), card('m3', 'Room booking', 4), card('m4', 'Weekly meetings', 5)];
+  assert.equal(rankItems(pool, 'badge printer', NOW)[0]?.item.id, 'm1');
+  assert.deepEqual(rankItems(pool, 'sundial calibration', NOW), []);
+  pool[2].body = { goal: 'Sundial calibration for the courtyard' };
+  assert.equal(rankItems(pool, 'sundial calibration', NOW)[0]?.item.id, 'm3');
+});
