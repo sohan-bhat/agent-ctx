@@ -1,9 +1,12 @@
-import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Origin, Project, Read, RuleBody } from '@/lib/api';
+import { itemBytes } from '@core/model.ts';
+import { ruleLine } from '@core/rules.ts';
+import { ApiError } from '@/lib/api';
+import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Live, Me, NewRule, Origin, Project, Read, RuleBody, Space, Transport } from '@/lib/api';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-export const PROJECTS: Project[] = [
+const PROJECTS: Project[] = [
   { key: 'github.com/kelpworks/harbor', name: 'harbor', items: 0 },
   { key: 'github.com/kelpworks/lantern', name: 'lantern', items: 0 },
   { key: 'folder:field-notes', name: 'field-notes', items: 0 },
@@ -80,13 +83,13 @@ const RULES: { project: string; agent: string; body: RuleBody; days: number }[] 
   { project: 'github.com/kelpworks/harbor', agent: 'Claude Code', days: 15, body: { text: 'Write commit messages in the past tense', words: 'write commit messages in the past tense', scope: 'all', status: 'off', proof: 'page' } },
 ];
 
-export const AGENT_SEED: { label: string; days: number; via: Origin['via']; projects: string[] }[] = [
+const AGENT_SEED: { label: string; days: number; via: Origin['via']; projects: string[] }[] = [
   { label: 'Claude Code', days: 21, via: 'hook', projects: ['harbor', 'lantern', 'field-notes'] },
   { label: 'Codex', days: 14, via: 'hook', projects: ['harbor', 'lantern'] },
   { label: 'Cursor', days: 9, via: 'tool', projects: ['lantern', 'harbor'] },
 ];
 
-export function rng(seed: number): () => number {
+function rng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -138,14 +141,14 @@ function workHour(day: number, r: () => number, now: number): number {
   return Math.min(now - 60_000, start.getTime());
 }
 
-export interface World {
+interface World {
   agents: Agent[];
   items: Item[];
   queue: string[];
   reads: Read[];
 }
 
-export function seed(now: number): World {
+function seed(now: number): World {
   serial = 0;
   const r = rng(20261125);
   const agents: Agent[] = AGENT_SEED.map((a) => ({ id: a.label, label: a.label, first: now - a.days * DAY, last: now }));
@@ -169,10 +172,10 @@ export function seed(now: number): World {
     list.forEach((h, i) => {
       const writer = AGENT_SEED[i % 2];
       const at = workHour(2 + i * 4 + (name === 'lantern' ? 1 : 0), r, now);
-      const it = make('handoff', keyOf(name), h, writer.label, at, writer.via);
-      items.push(it);
+      const handoff = make('handoff', keyOf(name), h, writer.label, at, writer.via);
+      items.push(handoff);
       const reader = AGENT_SEED.find((a) => a.label !== writer.label && a.projects.includes(name));
-      if (reader) reads.push({ item: it.id, agent: reader.label, at: Math.min(now - 60_000, at + (20 + Math.floor(r() * 90)) * 60_000) });
+      if (reader) reads.push({ item: handoff.id, agent: reader.label, at: Math.min(now - 60_000, at + (20 + Math.floor(r() * 90)) * 60_000) });
     });
   }
   for (const rule of RULES) {
@@ -200,7 +203,7 @@ export function seed(now: number): World {
 
 let liveTurn = 0;
 
-export function liveCard(now: number, agents: Agent[]): Item {
+function liveCard(now: number, agents: Agent[]): Item {
   const r = rng(now % 100000);
   const a = AGENT_SEED[liveTurn++ % AGENT_SEED.length];
   const name = a.projects[Math.floor(r() * a.projects.length)];
@@ -210,6 +213,194 @@ export function liveCard(now: number, agents: Agent[]): Item {
   return make('card', PROJECTS.find((p) => p.name === name)!.key, cardBody(c, a.via === 'hook', r), label, now, a.via);
 }
 
-export function ruleItem(text: string, scope: RuleBody['scope'], project: string, now: number): Item {
+function ruleItem(text: string, scope: RuleBody['scope'], project: string, now: number): Item {
   return make('rule', project, { text, words: text, scope, status: 'active', proof: 'page' }, 'page', now, 'page', { origin: { agent: 'page', via: 'page', source: 'person', at: now } });
 }
+
+const KEY = 'agent-ctx-mock';
+const EVERY = 7000;
+
+function flag(name: string): string | null {
+  try {
+    return localStorage.getItem(`${KEY}-${name}`);
+  } catch {
+    return null;
+  }
+}
+
+function signedIn(): boolean {
+  try {
+    return localStorage.getItem(KEY) === 'in';
+  } catch {
+    return false;
+  }
+}
+
+export function signIn(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(KEY, 'in');
+    else localStorage.removeItem(KEY);
+  } catch {}
+}
+
+let world: World | null = null;
+const listeners = new Set<(m: Live) => void>();
+
+function state(): World {
+  if (!world) world = flag('empty') === '1' ? { agents: [], items: [], queue: [], reads: [] } : seed(Date.now());
+  return world;
+}
+
+const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+const send = (m: Live) => listeners.forEach((f) => f(m));
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const view = (i: Item): Item => (i.kind === 'rule' ? { ...clone(i), line: ruleLine(i.body as RuleBody) } : clone(i));
+
+function find(id: string): Item {
+  const item = state().items.find((i) => i.id === id);
+  if (!item) throw new Error('not found');
+  return item;
+}
+
+function touch(item: Item): void {
+  send({ type: 'item', item: view(item) });
+}
+
+let pulse: ReturnType<typeof setInterval> | null = null;
+
+function startPulse(): void {
+  if (pulse || flag('quiet') === '1') return;
+  pulse = setInterval(() => {
+    const w = state();
+    if (!w.agents.length) return;
+    const card = liveCard(Date.now(), w.agents);
+    w.items.push(card);
+    send({ type: 'item', item: clone(card) });
+    const a = w.agents.find((x) => x.label === card.origin.agent);
+    if (a) {
+      a.last = card.created;
+      send({ type: 'agent', agent: { ...a } });
+    }
+  }, Number(flag('every') ?? EVERY));
+}
+
+if (typeof window !== 'undefined')
+  (window as unknown as { __mockEdit?: (id: string, words: string) => void }).__mockEdit = (id, words) => {
+    const rule = find(id);
+    rule.body = { ...(rule.body as RuleBody), words };
+  };
+
+export const transport: Transport = {
+  async me(): Promise<Me | null> {
+    await wait();
+    if (!signedIn()) return null;
+    const bytes = state().items.reduce((a, i) => a + itemBytes(i), 0);
+    return { person: { id: 'gh:4127703', login: 'kelp-dev' }, limits: { bytes, max: 10 * 1024 * 1024, callsToday: 212, storedToday: 37 }, toolChars: 2148 };
+  },
+  async space(): Promise<Space> {
+    await wait(120);
+    if (flag('fail') === 'space') throw new Error('offline');
+    const w = state();
+    const projects = PROJECTS.map((p) => ({ ...p, items: w.items.filter((i) => i.project === p.key).length })).filter((p) => p.items > 0);
+    return clone({ projects, agents: w.agents, items: w.items.map(view), queue: w.queue, reads: w.reads, now: Date.now() });
+  },
+  async pin(id, on) {
+    await wait();
+    const item = find(id);
+    item.pinned = on;
+    touch(item);
+  },
+  async keep(id) {
+    await wait();
+    const item = find(id);
+    item.held = false;
+    touch(item);
+  },
+  async putBack(id) {
+    await wait();
+    find(id);
+    if (!state().queue.includes(id)) state().queue.push(id);
+  },
+  async remove(id) {
+    await wait();
+    const w = state();
+    w.items = w.items.filter((i) => i.id !== id);
+    w.queue = w.queue.filter((q) => q !== id);
+    w.reads = w.reads.filter((x) => x.item !== id);
+    send({ type: 'remove', id });
+  },
+  async addRule(rule: NewRule) {
+    await wait();
+    const project = rule.project ?? PROJECTS[0].key;
+    const item = ruleItem(rule.text, rule.scope, project, Date.now());
+    state().items.push(item);
+    touch(item);
+    return view(item);
+  },
+  async setRule(id, status, line) {
+    await wait();
+    const item = find(id);
+    const b = item.body as RuleBody;
+    if (line !== undefined && ruleLine(b) !== line) throw new ApiError(409);
+    item.body = { ...b, status, ...(status === 'active' && b.status !== 'active' ? { proof: 'page' as const } : {}) };
+    item.held = status === 'active' ? false : item.held;
+    touch(item);
+  },
+  async removeAgent(id) {
+    await wait();
+    const w = state();
+    if (!w.agents.some((a) => a.id === id)) throw new ApiError(404);
+    w.agents = w.agents.filter((a) => a.id !== id);
+    send({ type: 'agent-removed', id });
+  },
+  async signOut() {
+    await wait();
+    signIn(false);
+  },
+  async merge(from, into) {
+    await wait();
+    for (const item of state().items) if (item.project === from) item.project = into;
+    send({ type: 'reset' });
+  },
+  async exportAll() {
+    const lines = state()
+      .items.map((i) => JSON.stringify(i))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob([lines], { type: 'application/x-ndjson' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'agent-ctx.jsonl';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  async deleteAccount() {
+    await wait();
+    world = { agents: [], items: [], queue: [], reads: [] };
+    signIn(false);
+  },
+  live(on, open) {
+    listeners.add(on);
+    setTimeout(() => open(true), 30);
+    startPulse();
+    return () => {
+      listeners.delete(on);
+      if (!listeners.size && pulse) {
+        clearInterval(pulse);
+        pulse = null;
+      }
+    };
+  },
+  hint(product) {
+    const w = state();
+    if (w.agents.some((a) => a.label === product)) return;
+    setTimeout(() => {
+      if (w.agents.some((a) => a.label === product)) return;
+      const now = Date.now();
+      const agent: Agent = { id: product, label: product, first: now, last: now };
+      w.agents.push(agent);
+      send({ type: 'agent', agent: { ...agent } });
+    }, Number(flag('connect') ?? 2500));
+  },
+};
