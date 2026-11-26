@@ -178,7 +178,7 @@ test('a typo of five characters or more maps only when exactly one card term is 
   assert.equal(rankItems(spread, 'watilist when an evnet is full', NOW)[0]?.item.id, 's05');
 });
 
-test('a synonym matches at a lower weight than the word itself', () => {
+test('a synonym matches at a lower weight than the exact word', () => {
   const pool = [card('a', 'Login loop on the dashboard', 3), card('b', 'Authentication timeout on the dashboard', 3), card('c', 'unrelated card', 3), card('d', 'another unrelated card', 3)];
   const hits = rankItems(pool, 'sign in loop', NOW);
   assert.equal(hits[0]?.item.id, 'a');

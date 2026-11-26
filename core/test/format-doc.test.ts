@@ -44,7 +44,7 @@ const KINDS: [string, string, string][] = [
   ['dropped', 'DroppedBody', 'Body of a dropped item'],
 ];
 
-test('every key of Item and Origin is in its own section of the doc', () => {
+test('every key of Item and Origin has a separate section in the doc', () => {
   for (const k of keysOf('Item')) assert.ok(has(section('Item'), k), `Item.${k}`);
   for (const k of keysOf('Origin')) assert.ok(has(section('Origin'), k), `Origin.${k}`);
 });
@@ -87,6 +87,6 @@ test('each example line parses as JSON, has a known kind and only known keys', (
   assert.deepEqual([...seen].sort(), valuesOf('Kind').sort());
 });
 
-test('the doc names its format version', () => {
+test('the doc names the format version', () => {
   assert.match(section('Version'), /^Format 1\.$/m);
 });

@@ -240,7 +240,7 @@ test('a store under the mark comes back identical', () => {
   assert.deepEqual(out, items);
 });
 
-test('a folded quarantined card stays held with its flags', () => {
+test('a folded quarantined card stays held with the flags of the card', () => {
   const bad = card(2, { held: true, flags: ['override'] });
   const f = foldCard(bad);
   assert.equal(f.held, true);
@@ -312,7 +312,7 @@ test('a quarantined card stays held through a whole ceiling plan', () => {
     assert.equal(sameCard(card(p), card(p)), true);
   });
 
-  test('a merge that adds no line returns the stored card itself', () => {
+  test('a merge that adds no line returns the same stored card', () => {
     const p = month(1).pieces[3].card;
     const old = card(p);
     const again = card({ ...p, decisions: [...p.decisions].reverse(), goal: `Again ${p.goal}`, changed: [...p.changed].reverse() }, undefined, B);

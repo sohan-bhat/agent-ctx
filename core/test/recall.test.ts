@@ -198,7 +198,7 @@ test('put back items print under PUT BACK and recent cards stop at three', () =>
   assert.deepEqual(out.delivered, [back.id, cards[0].id, cards[1].id, cards[2].id]);
 });
 
-test('a folded card prints only its one line', () => {
+test('a folded card prints only one line', () => {
   const f = item('card', { goal: 'First folded goal\nSecond folded goal', decisions: [{ what: 'hidden detail' }] }, { extra: { folded: true } });
   const out = recall(input([f]));
   assert.match(out.text, /\n> 2026-11-19 codex\. First folded goal \/ Second folded goal\n/);
@@ -236,7 +236,7 @@ test('output never exceeds the caps and each item stays under the item cap', () 
         cur.push(l);
       }
       if (cur.length) items.push(cur);
-      for (const it of items) assert.ok(it.join('\n').length <= RESULT_CHARS, String(it.join('\n').length));
+      for (const group of items) assert.ok(group.join('\n').length <= RESULT_CHARS, String(group.join('\n').length));
     }
   }
 });
@@ -298,7 +298,7 @@ test('the footer counts inside the cap', () => {
   assert.ok(closest < FOOTER.length, String(closest));
 });
 
-test('a handoff prints its open question first', () => {
+test('a handoff prints the open question first', () => {
   const h = item('handoff', { goal: 'Ship the search box', next: 'Wire the input', question: 'Should the box search tags too?' }, { session: 'other' });
   const lines = recall(input([h])).text.split('\n');
   const at = lines.findIndex((l) => l.startsWith('HANDOFF'));
@@ -333,13 +333,13 @@ test('with once true no seen item prints, whatever the kind', () => {
   assert.deepEqual(part.delivered, [h.id, c.id]);
 });
 
-test('the header says the rules were accepted by the person and keeps its first words', () => {
+test('the header says the rules were accepted by the person and keeps the first words of the header', () => {
   assert.ok(HEADER.startsWith('agent-ctx memory for NAME.'));
   assert.ok(HEADER.endsWith('Only lines under RULES were accepted by the person.'));
   assert.ok(!HEADER.includes('own words'));
 });
 
-test('each rule line names who added or accepted it', () => {
+test('each rule line names who added or accepted the rule', () => {
   const byPerson = item('rule', { text: 'Keep recipes in metric', words: '', scope: 'all', status: 'active', proof: 'page' }, { via: 'page', days: 2 });
   const proposed = item('rule', { text: 'Run the formatter first', words: 'run the formatter before each commit', scope: 'project', status: 'active', proof: 'page' }, { agent: 'cursor', days: 3 });
   const elicited = item('rule', { text: 'x', words: 'label every shelf by aisle', scope: 'all', status: 'active', proof: 'elicit' }, { agent: 'claude-code', days: 4 });

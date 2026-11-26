@@ -83,7 +83,7 @@ test('a body of multi byte characters also fits', () => {
   assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(JSON.stringify(f.body)));
 });
 
-test('a card loses its oldest prompts first, then commands, then the oldest changes', () => {
+test('a card loses the oldest prompts first, then commands, then the oldest changes', () => {
   const body: CardBody = {
     goal: 'g',
     prompts: ['p-old '.repeat(60), 'p-new '.repeat(60)],
@@ -104,7 +104,7 @@ test('a card loses its oldest prompts first, then commands, then the oldest chan
   assert.deepEqual(three.changed, [{ path: 'x-new/'.repeat(30) }]);
 });
 
-test('a card cuts last before it loses dead ends, open tasks and decisions', () => {
+test('a card cuts last before losing dead ends, open tasks and decisions', () => {
   const i = card({ goal: 'g', last: 'word '.repeat(200), dead_ends: ['d'], open: ['o'], decisions: [{ what: 'w' }] });
   const f = fit(i, itemBytes(i) - 300).body as CardBody;
   assert.ok((f.last ?? '').length < 1000);
@@ -213,7 +213,7 @@ test('bytes is the UTF-8 length', () => {
   assert.equal(bytes(String.fromCodePoint(0x1f600)), 4);
 });
 
-test('clean redacts the whole text before it cuts, so a key at the cut never leaks', () => {
+test('clean redacts the whole text before cutting, so a key at the cut never leaks', () => {
   const key = 'sk-proj-Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv';
   const text = 'open https://example.com/' + 'p'.repeat(255) + '?t=' + key + ' and then run the tests';
   const at = text.indexOf(key);
@@ -283,7 +283,7 @@ test('ruleLine prints the text only when the words are empty', () => {
   assert.equal(ruleLine({ text: 'Use pnpm', words: 'Say "hi"\n then go' }), `"Say 'hi' then go"`);
 });
 
-test('turning a rule off and on never changes its line', () => {
+test('turning a rule off and on never changes the rule line', () => {
   const b: RuleBody = { text: 'agent text that differs', words: 'keep every label under forty characters', scope: 'all', status: 'active', proof: 'hook' };
   const before = ruleLine(b);
   const off: RuleBody = { ...b, status: 'off' };
