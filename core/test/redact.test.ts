@@ -48,3 +48,61 @@ test('keeps ordinary text, paths and names', () => {
   ];
   for (const p of plain) assert.equal(redact(p), p);
 });
+
+const leaks: [string, string][] = [
+  ['Authorization: Bearer ya29.a0AfH6SMBx3kQz_9vLmN-pQrStUvWxYz0123456789abcdefGHIJ', 'a0AfH6SMBx3kQz'],
+  ['curl -H "Authorization: Bearer 8f3kZp_Lq2-Wm9xT.Vn4cRb7Ys1Ae6Ud0Hg5Jk"', '8f3kZp_Lq2'],
+  ['Authorization: Basic YWRtaW46aHVudGVyMjAyNg==', 'YWRtaW46aHVudGVy'],
+  ['AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'wJalrXUtnFEMI'],
+  ['DB_PASSWORD=Tr0ub4dor&3horse', 'Tr0ub4dor'],
+  ['POSTGRES_PASSWORD=correcthorsebattery', 'correcthorse'],
+  ['SECRET_KEY=django-insecure-7x!k2m@p9q#w4e', 'django-insecure'],
+  ['JWT_SECRET=mysupersecretsigningvalue', 'mysupersecret'],
+  ['export STRIPE_WEBHOOK_SECRET=whsec_abcDEFghiJKLmnoPQRstuVWX', 'whsec_abc'],
+  ['post to https://hooks.slack.com/' + 'services/T0FAKE000/B0FAKE000/abcdefghijklmnopqrstuvwx now', 'abcdefghijklmnopqrstuvwx'],
+  ['https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd', 'AbCdEfGhIjKlMnOp'],
+  ['DefaultEndpointsProtocol=https;AccountName=fakeacct;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;EndpointSuffix=core.windows.net', 'Eby8vdM02x'],
+  ['https://fakeacct.blob.core.windows.net/c/f.txt?sv=2022-11-02&sig=AbCdEf1234567890GhIjKlMnOp%2Bqrs%3D', 'AbCdEf1234567890'],
+  ['npm_' + 'aBcDeFgHiJkLmNoPqRsTuVwXyZ012', 'aBcDeFgHiJkL'],
+  ['glpat-' + 'aBcDeFgHiJkLmNo', 'aBcDeFgHiJkLmNo'],
+  ['token=' + 'kT4mX9qWv2LpR7sY1nB6' + '/' + 'dE3fG8hJ0kL5mN', 'kT4mX9qWv2'],
+];
+
+test('drops the token behind an auth scheme, env style names, webhooks and cloud keys', () => {
+  for (const [input, secret] of leaks) {
+    const out = redact(input);
+    assert.ok(!out.includes(secret), `${input} became ${out}`);
+    assert.ok(out.includes(DROPPED), input);
+  }
+});
+
+test('keeps the header and the name when the value goes', () => {
+  assert.equal(redact('Authorization: Bearer ya29.a0AfH6SMBx3kQz_9vLmN-pQrStUvWxYz0123'), `Authorization: Bearer ${DROPPED}`);
+  assert.equal(redact('DB_PASSWORD=Tr0ub4dor&3horse'), `DB_PASSWORD=${DROPPED}`);
+  assert.equal(redact('"apiKey": "zq81Lm0pQr77"'), `"apiKey": "${DROPPED}"`);
+});
+
+test('redacting twice changes nothing more', () => {
+  for (const [input] of leaks) assert.equal(redact(redact(input)), redact(input), input);
+});
+
+test('ordinary sentences with token, key, secret and password stay untouched', () => {
+  const plain = [
+    'API key rotation is planned for next week',
+    'store the secret in the vault and never in the repo',
+    'max_tokens: 4096',
+    'token_count: 123456',
+    'password_field: hidden',
+    'secret_name: production',
+    'the key is to keep the cache warm',
+    'Authorization header with a bearer token is required',
+    'use Basic authentication only in local tests',
+    'Bearer authentication is set up in the gateway',
+    'packages/app2/src/v3/components/Button123.tsx',
+    'com.example.myApplication.MainActivity2',
+    'https://example.com/docs/v2/getting-started/Install2024.html',
+    'see the Slack channel hooks for deploy notes',
+    'renamed DB_PASSWORD to DB_PASS in the env file',
+  ];
+  for (const p of plain) assert.equal(redact(p), p);
+});
