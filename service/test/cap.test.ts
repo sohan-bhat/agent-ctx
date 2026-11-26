@@ -12,7 +12,7 @@ const register = () =>
 
 it('the service stores at most the daily cap of new registrations and metadata document clients still sign in', async () => {
   expect(registrationCap(env.REGISTRATIONS_PER_DAY)).toBe(REGISTRATIONS_PER_DAY);
-  expect([registrationCap(undefined), registrationCap('x'), registrationCap('-1'), registrationCap('12')]).toEqual([300, 300, 300, 12]);
+  expect([registrationCap(undefined), registrationCap('x'), registrationCap('-1'), registrationCap('12')]).toEqual([150, 150, 150, 12]);
   const before = (await env.OAUTH_KV.list({ prefix: 'client:' })).keys.length;
   for (let i = 0; i < REGISTRATIONS_PER_DAY; i++) expect((await register()).status).toBe(201);
   const over = await register();

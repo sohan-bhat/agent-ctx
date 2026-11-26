@@ -36,7 +36,7 @@ describe('page API', () => {
     expect(Object.keys(space).sort()).toEqual(['agents', 'items', 'now', 'projects', 'queue', 'reads']);
     expect(space.reads).toEqual([]);
     expect(space.projects).toEqual([{ key: 'github.com/acme/kiln', name: 'kiln', items: 1 }]);
-    expect((space.agents as { label: string }[]).map((a) => a.label)).toEqual(['Codex']);
+    expect((space.agents as { label: string }[]).map((a) => a.label)).toEqual(['unverified Codex']);
   });
 
   it('a rule of scope all with no folder makes no project and still shows in space and export', async () => {

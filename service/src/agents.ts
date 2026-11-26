@@ -17,18 +17,22 @@ function within(h: string, domain: string): boolean {
   return h === domain || h.endsWith(`.${domain}`);
 }
 
+const DOCUMENTED: Record<string, string> = {
+  [CLAUDE_REDIRECT]: 'Claude',
+  'https://chatgpt.com/connector_platform_oauth_redirect': 'ChatGPT',
+  'cursor://anysphere.cursor-mcp/oauth/callback': 'Cursor',
+};
+
 export function labelFor(c: ClientIdentity): string {
   const id = c.clientId ?? '';
-  const name = c.clientName ?? '';
   const redirect = c.redirectUri ?? '';
-  const idHost = host(id);
-  const redirectHost = host(redirect);
+  const metadataHost = id.startsWith('https://') ? host(id) : '';
   if (id === CLAUDE_CODE_CLIENT) return 'Claude Code';
-  if (redirect === CLAUDE_REDIRECT) return 'Claude';
   if (id.startsWith(CODEX_PREFIX)) return 'Codex';
-  if (within(idHost, 'chatgpt.com') || within(redirectHost, 'chatgpt.com')) return 'ChatGPT';
-  if (within(idHost, 'antigravity.google') || within(redirectHost, 'antigravity.google')) return 'Antigravity';
-  if (/cursor/i.test(name) || /cursor/i.test(redirect)) return 'Cursor';
-  const clean = name.replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} ._-]+/gu, '').replace(/ +/g, ' ').trim().slice(0, 40).trim();
-  return clean || OTHER;
+  if (within(metadataHost, 'chatgpt.com')) return 'ChatGPT';
+  if (within(metadataHost, 'antigravity.google')) return 'Antigravity';
+  if (within(metadataHost, 'cursor.com')) return 'Cursor';
+  if (DOCUMENTED[redirect]) return DOCUMENTED[redirect];
+  const clean = (c.clientName ?? '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} ._-]+/gu, '').replace(/ +/g, ' ').trim().slice(0, 40).trim();
+  return `unverified ${clean || OTHER}`;
 }

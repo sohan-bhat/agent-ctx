@@ -62,7 +62,7 @@ describe('authorization code flow', () => {
     const { verifier, challenge } = await pkce();
     const c = await consent(jar, { clientId, redirect: 'http://127.0.0.1:4567/callback', challenge });
     expect(c.status).toBe(200);
-    expect(c.page).toContain('Allow Test Agent to use your agent-ctx memory?');
+    expect(c.page).toContain('Allow unverified Test Agent to use your agent-ctx memory?');
     expect(c.page).toContain('This app registered itself. Its name is not verified.');
     expect(c.page).toContain('This sends access to an app on this computer.');
     expect(c.page).toContain('Access goes to <strong>127.0.0.1</strong>');
@@ -107,7 +107,7 @@ describe('authorization code flow', () => {
     const c = await consent(jar, { clientId: CIMD_URL, redirect: 'http://127.0.0.1:5678/callback', challenge });
     expect(c.status).toBe(200);
     expect(c.page).toContain('Published by <strong>agent.example</strong>.');
-    expect(c.page).toContain('Allow Example Agent to use');
+    expect(c.page).toContain('Allow unverified Example Agent to use');
     const t = await connect(jar, 'cimd');
     const client = await mcp(t.access);
     expect((await call(client, 'recall', { folder: '/w/kiln' })).text).toBe('No stored memory fits.');
@@ -127,7 +127,7 @@ describe('authorization code flow', () => {
     const c = await consent(jar, { clientId, redirect: 'http://127.0.0.1:4567/callback', challenge });
     expect(c.page).not.toContain('<script>');
     expect(c.page).toContain('&#60;script&#62;alert(1)&#60;/script&#62; Tool');
-    expect(c.page).toContain('Allow scriptalert1script Tool to use');
+    expect(c.page).toContain('Allow unverified scriptalert1script Tool to use');
   });
 
   it('deny sends access_denied back to the client', async () => {

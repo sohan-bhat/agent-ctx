@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-23",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "vars": { "MCP_RESOURCE": "http://localhost:8790/mcp", "REGISTRATIONS_PER_DAY": "300" },
+  "vars": { "MCP_RESOURCE": "http://localhost:8790/mcp", "REGISTRATIONS_PER_DAY": "150" },
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }],
   "ratelimits": [{ "name": "REGISTER_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }, { "name": "TOKEN_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }, { "name": "SIGNIN_LIMIT", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } }],
   "durable_objects": { "bindings": [{ "name": "PERSON", "class_name": "Person" }, { "name": "REGISTRY", "class_name": "Registry" }] },
@@ -15,11 +15,12 @@
     "run_worker_first": ["/mcp", "/authorize", "/oauth/*", "/.well-known/*", "/login*", "/logout", "/api/*"]
   },
   "dev": { "port": 8790 },
-  "observability": { "enabled": true, "traces": { "enabled": true } },
+  "observability": { "enabled": true, "logs": { "enabled": true }, "traces": { "enabled": false } },
   "env": {
     "production": {
       "name": "agent-ctx",
-      "vars": { "MCP_RESOURCE": "https://agent-ctx.invalid/mcp", "REGISTRATIONS_PER_DAY": "300" },
+      "vars": { "MCP_RESOURCE": "https://agent-ctx.invalid/mcp", "REGISTRATIONS_PER_DAY": "150" },
+      "observability": { "enabled": true, "logs": { "enabled": true }, "traces": { "enabled": false } },
       "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "replace-with-the-oauth-kv-namespace-id" }],
       "durable_objects": { "bindings": [{ "name": "PERSON", "class_name": "Person" }, { "name": "REGISTRY", "class_name": "Registry" }] },
       "ratelimits": [{ "name": "REGISTER_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }, { "name": "TOKEN_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }, { "name": "SIGNIN_LIMIT", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } }]

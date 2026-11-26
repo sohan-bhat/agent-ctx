@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { api } from './api.ts';
 import { auth, escape, html, who, type AppEnv } from './auth.ts';
 import { mcpHandler } from './mcp.ts';
-import { CLIENT_TTL, REGISTRATIONS_FULL, SLOW_DOWN, limiterFor, registrationCap } from './open.ts';
+import { CLIENT_TTL, REGISTRATIONS_FULL, SLOW_DOWN, addressKey, limiterFor, registrationCap } from './open.ts';
 
 export { Person } from './person.ts';
 export { Registry } from './registry.ts';
@@ -49,7 +49,7 @@ export default {
   async fetch(request: Request, e: Env, ctx: ExecutionContext): Promise<Response> {
     const limiter = limiterFor(e, new URL(request.url).pathname);
     if (limiter) {
-      const key = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+      const key = addressKey(request.headers.get('CF-Connecting-IP'));
       const { success } = await limiter.limit({ key });
       if (!success) return new Response(SLOW_DOWN, { status: 429, headers: { 'Retry-After': '60', 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
