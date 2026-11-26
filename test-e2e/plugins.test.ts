@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SRC, STAMPED, cleanOrigin, stamp } from '../scripts/stamp.mjs';
+import { NAMES, PLUGINS, cleanOrigin, currentOrigin, stamp } from '../plugins/stamp.mjs';
 
 type Json = Record<string, unknown>;
 interface Handler { type?: string; server?: string; tool?: string; input?: Record<string, string>; [k: string]: unknown }
 interface Group { matcher?: string; hooks: Handler[] }
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const COMMITTED = join(ROOT, 'plugins');
+const COMMITTED = PLUGINS;
 const SERVER = { 'claude-code': 'plugin:agent-ctx:agent-ctx', codex: 'agent-ctx' } as const;
 const HOOKS = { 'claude-code': join('claude-code', 'hooks', 'hooks.json'), codex: join('codex', 'hooks.json') } as const;
 const FIELDS = new Set(['session_id', 'cwd', 'prompt', 'tool_name', 'tool_input.file_path', 'tool_input.notebook_path', 'tool_input.command', 'last_assistant_message', 'error', 'compact_summary', 'source']);
@@ -28,7 +28,7 @@ function walk(dir: string): string[] {
 }
 
 function plugins(dir: string): string[] {
-  return walk(dir).filter((f) => !relative(dir, f).startsWith(`src`));
+  return walk(dir).filter((f) => NAMES.some((n: string) => relative(dir, f).startsWith(`${n}/`)));
 }
 
 function read(path: string): Json {
@@ -183,21 +183,27 @@ test('the bearer flag puts a header on the server entries and nowhere else', () 
 test('the stamp copies the icon byte for byte', () => {
   eachCopy((dir) => {
     const icon = join('claude-code', '.claude-plugin', 'icon.png');
-    const source = readFileSync(join(SRC, icon));
+    const source = readFileSync(join(COMMITTED, icon));
     assert.equal(source.subarray(1, 4).toString('latin1'), 'PNG');
     assert.ok(readFileSync(join(dir, icon)).equals(source));
   });
 });
 
 test('the committed copy is a fresh stamp of the invalid origin', () => {
+  assert.equal(currentOrigin(), 'https://agent-ctx.invalid');
   const s = fresh('https://agent-ctx.invalid');
+  const round = fresh('http://localhost:8790');
   try {
     const want = plugins(s.dir).map((f) => relative(s.dir, f));
     const have = plugins(COMMITTED).map((f) => relative(COMMITTED, f));
     assert.deepEqual(have, want);
     for (const f of want) assert.ok(readFileSync(join(COMMITTED, f)).equals(readFileSync(join(s.dir, f))), f);
+    assert.equal(currentOrigin(round.dir), 'http://localhost:8790');
+    stamp('https://agent-ctx.invalid', undefined, undefined, round.dir);
+    for (const f of want) assert.ok(readFileSync(join(COMMITTED, f)).equals(readFileSync(join(round.dir, f))), `round trip ${f}`);
   } finally {
     s.done();
+    round.done();
   }
 });
 
@@ -207,6 +213,12 @@ test('the stamp takes an origin alone', () => {
   const dir = mkdtempSync(join(tmpdir(), 'stamp-'));
   try {
     assert.throws(() => stamp('https://agent-ctx.invalid', dir, 'two words'));
+    stamp('https://agent-ctx.invalid', dir);
+    assert.throws(() => stamp('https://agent-ctx.invalid', undefined, 'tok-1', dir), /another folder/);
+    assert.equal(readFileSync(join(dir, 'codex', 'mcp.json'), 'utf8').includes('Bearer'), false);
+    writeFileSync(join(dir, 'codex', 'mcp.json'), readFileSync(join(dir, 'codex', 'mcp.json'), 'utf8').replace('https://agent-ctx.invalid', 'https://other.invalid'));
+    assert.throws(() => stamp('http://localhost:8790', undefined, undefined, dir), /2 origins/);
+    assert.throws(() => stamp('https://agent-ctx.invalid', join(PLUGINS, 'codex', 'copy')), /outside the plugin folders/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -217,13 +229,12 @@ test('the stamp never deletes a folder that an earlier stamp did not write', () 
   try {
     mkdirSync(join(dir, 'claude-code'));
     writeFileSync(join(dir, 'claude-code', 'notes.txt'), 'mine');
-    assert.throws(() => stamp('https://agent-ctx.invalid', dir), /earlier stamp did not write/);
+    writeFileSync(join(dir, 'other.txt'), 'mine too');
+    stamp('https://agent-ctx.invalid', dir);
+    stamp('http://localhost:8790', dir);
     assert.equal(readFileSync(join(dir, 'claude-code', 'notes.txt'), 'utf8'), 'mine');
-    const fresh = join(dir, 'fresh');
-    stamp('https://agent-ctx.invalid', fresh);
-    assert.ok(existsSync(join(fresh, STAMPED)));
-    stamp('http://localhost:8790', fresh);
-    assert.ok(readFileSync(join(fresh, 'claude-code', '.claude-plugin', 'plugin.json'), 'utf8').includes('http://localhost:8790'));
+    assert.equal(readFileSync(join(dir, 'other.txt'), 'utf8'), 'mine too');
+    assert.ok(readFileSync(join(dir, 'claude-code', '.claude-plugin', 'plugin.json'), 'utf8').includes('http://localhost:8790'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

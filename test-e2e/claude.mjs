@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { homedir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stamp } from '../scripts/stamp.mjs';
+import { stamp } from '../plugins/stamp.mjs';
 import { ORIGIN } from './service.mjs';
 
 export const BIN = process.env.E2E_CLAUDE_BIN ?? join(homedir(), '.local', 'bin', 'claude');
