@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { browser, context, press, ready, server, web } from './lib.mjs';
+import { browser, context, engine, press, ready, server, web } from './lib.mjs';
 
 const out = process.env.OUT ?? path.join(web, '..', '..', '..', 'shots', 'build-c');
 fs.mkdirSync(out, { recursive: true });
@@ -24,8 +24,8 @@ const b = await browser();
 try {
   for (const scheme of schemes)
     for (const [w, h] of sizes) {
-      const tag = `${w < 600 ? 'phone' : 'desktop'}-${scheme}`;
-      {
+      const tag = `${process.env.ONLY ? `${engine}-` : ''}${w < 600 ? 'phone' : 'desktop'}-${scheme}`;
+      if (!process.env.ONLY) {
         const { ctx, page } = await context(b, { w, h, scheme, dpr: 2 });
         await page.goto(srv.url);
         await ready(page);
@@ -36,11 +36,21 @@ try {
         await ctx.close();
       }
       const { ctx, page, touch } = await context(b, { w, h, scheme, dpr: 2, signedIn: true, flags: { quiet: '1' } });
-      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(srv.url).origin });
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(srv.url).origin }).catch(() => {});
       await page.goto(srv.url);
       await ready(page);
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `${out}/space-${tag}.png` });
+      if (process.env.ONLY) {
+        const gl = await page.evaluate(() => {
+          const c = document.createElement('canvas');
+          const g = c.getContext('webgl2') ?? c.getContext('webgl');
+          return { webgl: !!g, renderer: g ? String(g.getParameter(g.RENDERER)) : '', canvas: !!document.querySelector('[aria-roledescription=space] canvas'), list: !document.querySelector('[data-list]')?.classList.contains('sr-only') };
+        });
+        console.log(tag, JSON.stringify(gl));
+        await ctx.close();
+        continue;
+      }
       if (w >= 600) {
         const box = await page.locator('[aria-roledescription=space]').boundingBox();
         const cx = Math.round(box.x + box.width / 2 - 150);
