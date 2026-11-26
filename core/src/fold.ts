@@ -103,7 +103,6 @@ export function foldPlan(items: Item[], limit: number = STORE_BYTES, at: number 
   ];
   for (const i of late) {
     if (total < target) break;
-    if (isProtected(i, now)) continue;
     dropped.add(i.id);
     total -= itemBytes(i);
   }
