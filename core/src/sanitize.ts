@@ -187,6 +187,7 @@ const LT = '(?:<|&lt;|&#0*60;|&#x0*3c;)';
 const GT = '(?:>|&gt;|&#0*62;|&#x0*3e;)';
 const PRIVATE = new RegExp(String.raw`${LT}[ \t]*private[ \t]*${GT}[\s\S]*?(?:${LT}[ \t]*\/[ \t]*private[ \t]*${GT}|$)`, 'gi');
 const OWN_START = /^[ \t>]*agent-ctx memory\b/i;
+const OWN_END = FOOTER.slice(0, FOOTER.indexOf('.') + 1);
 
 export function stripPrivate(text: string): string {
   if (typeof text !== 'string') return '';
@@ -215,7 +216,7 @@ export function stripOwn(text: string): string {
   for (const line of lines) {
     if (block && !inside && OWN_START.test(line)) inside = true;
     if (inside) {
-      if (line.includes(FOOTER)) inside = false;
+      if (line.includes(OWN_END)) inside = false;
       continue;
     }
     if (recalledLine(line) || (after && RECALLED_MORE.test(line))) {
@@ -223,7 +224,7 @@ export function stripOwn(text: string): string {
       continue;
     }
     after = false;
-    if (RECALLED_TITLE.test(line) || line.trim() === FOOTER) continue;
+    if (RECALLED_TITLE.test(line) || line.trim().startsWith(OWN_END)) continue;
     out.push(line);
   }
   return out.length === lines.length ? text : out.join('\n');

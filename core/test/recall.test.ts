@@ -520,7 +520,7 @@ test('an active rule with proof hook or no proof never prints', () => {
         }
       }
       assert.equal(runs, 1350);
-      assert.equal(h.digest('hex'), '265f43589fb8b946f6ba3cd206047b2511b85cb23b009295c32ef967ba6072bb', String(tool));
+      assert.equal(h.digest('hex'), '5e7a74138c5b925d7e5954b324b6c1697145e6455fbc4cd97eac85b04f8f767f', String(tool));
     }
   });
 
