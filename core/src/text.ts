@@ -13,7 +13,40 @@ export const STOP_LISTS: Readonly<Record<'es' | 'de' | 'fr' | 'pt' | 'it', reado
   it: 'gli tra dello degli dalla dagli nel nella negli nelle sulla sulle essere hanno questo questa questi queste quello quella quelli molto molti gia piu quindi cosi tutto tutte ogni qualche alcuni senza mentre invece oppure dopo cui quale puo'.split(' '),
 };
 
+const EXTRA: Record<keyof typeof STOP_LISTS, string> = {
+  es: 'el la de en con del para las una un al se lo le les su sus es ha como mas pero sin entre ya hay son ni mi me te nos',
+  de: 'der die das den dem des und ist mit im am an auf aus bei fur uber um zu von vom es er man als oder war hat bis so da wo also',
+  fr: 'le la les de des du un une et est en au aux ce ces cet se sa son ses il ils elle on ne pas par pour sur dans qui mais ou nous vous tout plus tres sans mon ma mes nos car si',
+  pt: 'os as de do da dos das em no na nos nas um com para por pelo pela pelos pelas ao aos se que nao mais mas como ele seu sua suas foi tem ser sao ja',
+  it: 'il lo la le di da in con per su del dei dal al alla allo ai agli alle un una uno che non si ci ne ma come sono anche loro ha ho mi ti sul sui fra',
+};
+
+export const FULL_LISTS: Readonly<Record<keyof typeof STOP_LISTS, readonly string[]>> = {
+  es: [...STOP_LISTS.es, ...EXTRA.es.split(' ')],
+  de: [...STOP_LISTS.de, ...EXTRA.de.split(' ')],
+  fr: [...STOP_LISTS.fr, ...EXTRA.fr.split(' ')],
+  pt: [...STOP_LISTS.pt, ...EXTRA.pt.split(' ')],
+  it: [...STOP_LISTS.it, ...EXTRA.it.split(' ')],
+};
+
+const SAFE_BY_WORD = new Map<string, string[]>();
+for (const [l, safe] of Object.entries(STOP_LISTS)) for (const w of safe) SAFE_BY_WORD.set(w, [...(SAFE_BY_WORD.get(w) ?? []), l]);
+
 const ALL_STOP = new Set([...STOP, ...Object.values(STOP_LISTS).flat()]);
+
+function languageStops(words: string[]): Set<string> {
+  const seen = new Map<string, Set<string>>();
+  for (const w of words) {
+    for (const l of SAFE_BY_WORD.get(w) ?? []) {
+      const s = seen.get(l) ?? new Set<string>();
+      s.add(w);
+      seen.set(l, s);
+    }
+  }
+  const out = new Set<string>();
+  for (const [l, s] of seen) if (s.size >= 2) for (const w of FULL_LISTS[l as keyof typeof STOP_LISTS]) out.add(w);
+  return out;
+}
 
 export function isStop(w: string): boolean {
   return ALL_STOP.has(w);
@@ -49,11 +82,11 @@ function fold(text: string): string {
   return capped.normalize('NFKD').replace(FOLDED, '$1').normalize('NFC').toLowerCase();
 }
 
-function word(w: string, out: string[]): void {
+function word(w: string, out: string[], extra: Set<string>): void {
   if (ASCII.test(w)) {
     if (w.length < 2 || w.length > 30) return;
     if (/^\d+$/.test(w) && w.length > 4) return;
-    if (ALL_STOP.has(w)) return;
+    if (ALL_STOP.has(w) || extra.has(w)) return;
     out.push(stem(w));
     return;
   }
@@ -61,17 +94,19 @@ function word(w: string, out: string[]): void {
   if (n >= 2 && n <= 30) out.push(w);
 }
 
-function pairs(units: string[], out: string[]): void {
-  if (units.length === 1) out.push(units[0]);
-  for (let k = 0; k + 1 < units.length; k++) out.push(units[k] + units[k + 1]);
+type Part = [string, boolean];
+
+function pairs(units: string[], out: Part[]): void {
+  if (units.length === 1) out.push([units[0], false]);
+  for (let k = 0; k + 1 < units.length; k++) out.push([units[k] + units[k + 1], false]);
 }
 
-function split(run: string, out: string[]): void {
+function split(run: string, out: Part[]): void {
   let units: string[] = [];
   let rest = '';
   const flush = () => {
     if (units.length) pairs(units, out);
-    if (rest) word(rest, out);
+    if (rest) out.push([rest, true]);
     units = [];
     rest = '';
   };
@@ -95,8 +130,14 @@ function split(run: string, out: string[]): void {
 export function tokens(text: string): string[] {
   if (!text) return [];
   const spaced = text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+  const parts: Part[] = [];
+  for (const m of fold(spaced).matchAll(WORD)) split(m[0], parts);
+  const extra = languageStops(parts.filter((p) => p[1]).map((p) => p[0]));
   const out: string[] = [];
-  for (const m of fold(spaced).matchAll(WORD)) split(m[0], out);
+  for (const [p, isWord] of parts) {
+    if (isWord) word(p, out, extra);
+    else out.push(p);
+  }
   return out;
 }
 

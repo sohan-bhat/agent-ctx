@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { itemText } from '../src/model.ts';
-import { isStop, STOP_LISTS, tokens } from '../src/text.ts';
+import { FULL_LISTS, isStop, STOP_LISTS, tokens } from '../src/text.ts';
 import * as one from './corpus.ts';
 import * as two from './corpus2.ts';
 import * as twoB from './corpus2b.ts';
 
 const LANGS = ['es', 'de', 'fr', 'pt', 'it'] as const;
+
+const stemmed = (w: string): string => tokens(w)[0];
 
 function raw(text: string): string[] {
   const spaced = text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
@@ -37,8 +39,8 @@ test('every list word is a stop word and leaves no term', () => {
 test('function words drop out of each language and content stays', () => {
   const cases: [string, string[]][] = [
     ['los pagos por tarjeta desde que vence', ['pago', 'tarjeta', 'venc']],
-    ['eine Rechnung nicht durch die Bank', ['rechnung', 'die', 'bank']],
-    ['avec une facture depuis toujours', ['une', 'factur']],
+    ['eine Rechnung nicht durch die Bank', ['rechnung', 'bank']],
+    ['avec une facture depuis toujours', ['factur']],
     ['uma fatura quando ainda paga', ['fatura', 'paga']],
     ['nella fattura senza questo sconto', ['fattura', 'sconto']],
   ];
@@ -62,5 +64,30 @@ test('risky words stay out of every list', () => {
   for (const w of risky) {
     assert.ok(!all.has(w), w);
     assert.equal(isStop(w), w === 'also', w);
+  }
+});
+
+test('a full list word drops only when the text holds two safe words of that language', () => {
+  assert.deepEqual(tokens('el pago de la tarjeta'), ['el', 'pago', 'de', 'la', 'tarjeta']);
+  assert.deepEqual(tokens('el pago de la tarjeta que vence'), ['el', 'pago', 'de', 'la', 'tarjeta', 'venc']);
+  assert.deepEqual(tokens('el pago de la tarjeta que vence que'), ['el', 'pago', 'de', 'la', 'tarjeta', 'venc']);
+  assert.deepEqual(tokens('el pago de la tarjeta que vence desde hoy'), ['pago', 'tarjeta', 'venc', 'hoy']);
+  assert.deepEqual(tokens('il pago que vence desde hoy'), ['il', 'pago', 'venc', 'hoy']);
+  assert.deepEqual(tokens('die Rechnung und der Kunde'), ['die', 'rechnung', 'und', 'der', 'kund']);
+  assert.deepEqual(tokens('die Rechnung und der Kunde sind nicht da'), ['rechnung', 'kund']);
+  for (const l of ['es', 'de', 'fr', 'pt', 'it'] as const) {
+    const [a, b] = STOP_LISTS[l];
+    for (const w of FULL_LISTS[l]) {
+      assert.deepEqual(tokens(`${w} ${a} ${b}`), [], `${l} ${w}`);
+      if (!STOP_LISTS[l].includes(w) && !isStop(w)) assert.deepEqual(tokens(`${w} ${a}`), [stemmed(w)], `${l} ${w}`);
+    }
+  }
+});
+
+test('no text of sets 1, 2 and 2b holds two safe words of one language', () => {
+  const texts = [...one.ITEMS, ...two.ITEMS].map(itemText).concat([...one.QUERIES, ...two.QUERIES, ...twoB.QUERIES].map((q) => q.q));
+  for (const t of texts) {
+    const words = new Set(raw(t));
+    for (const l of LANGS) assert.ok(STOP_LISTS[l].filter((w) => words.has(w)).length < 2, `${l} ${t}`);
   }
 });
