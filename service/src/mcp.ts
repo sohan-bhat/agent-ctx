@@ -13,19 +13,32 @@ export const FAILED = 'Memory could not be loaded. Do not assume that nothing is
 
 const DESCRIBE = {
   recall:
-    "Earlier work on this project, the latest handoff and the person's rules. Use it before repeating an investigation or when an earlier decision, fix, command or dead end may help. Pass repo, the output of git remote get-url origin, and folder, the working folder path. Leave query out to get the latest handoff and recent work. Pass query to search.",
-  checkpoint: 'Save what was just done. goal in one line, changed files, decisions with reasons, commands, dead ends, open tasks. Open tasks are shown to the next agent at the start of its session. Pass key when a retry may happen.',
-  handoff: 'Save the state for the next agent. goal, done, next, blockers, files, how to check, and any open question.',
-  rule: "Save a standing rule. words holds the person's exact words, copied.",
+    "Latest handoff, recent work and the person's rules, or a search by query. Use before repeating an investigation or when an earlier decision, fix, command or dead end may help. repo is git remote get-url origin, folder the working folder.",
+  checkpoint: 'Save what was just done. goal in one line, changed files, decisions with reasons, dead ends, open tasks, which the next agent sees at its start.',
+  handoff: 'Save the state for the next agent. goal, done, next, blockers, files, how to check, open question.',
+  rule: "Save a standing rule. words is the person's exact words, copied.",
   event: 'For plugin hooks. Agents never call this tool.',
 };
+
+type Json = Record<string, unknown>;
+
+function lean<T extends z.ZodType>(schema: T, open = false): T {
+  const std = schema['~standard'] as unknown as { jsonSchema: { input: (o: unknown) => Json; output: (o: unknown) => Json } } & Json;
+  const strip = (j: Json): Json => {
+    const { $schema: _drop, additionalProperties: strict, ...rest } = j;
+    return open ? rest : { ...rest, additionalProperties: strict };
+  };
+  const wrapped = { '~standard': { ...std, jsonSchema: { input: (o: unknown) => strip(std.jsonSchema.input(o)), output: (o: unknown) => strip(std.jsonSchema.output(o)) } } };
+  return wrapped as unknown as T;
+}
 
 const str = z.string();
 const list = z.array(z.string());
 const where = { repo: str.optional(), folder: str.optional() };
-const field = z.union([z.string(), z.number(), z.boolean(), z.null()]).optional();
+const field = z.unknown().optional();
+const SCALAR = (v: unknown) => v === undefined || v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 
-const SCHEMA = {
+const ZOD = {
   recall: z.strictObject({ ...where, query: str.optional(), dropped: z.boolean().optional() }),
   checkpoint: z.strictObject({ ...where, goal: str, changed: list.optional(), decisions: list.optional(), commands: list.optional(), dead_ends: list.optional(), open: list.optional(), key: str.optional() }),
   handoff: z.strictObject({ ...where, goal: str, done: str.optional(), next: str, blockers: list.optional(), files: list.optional(), check: str.optional(), question: str.optional(), key: str.optional() }),
@@ -47,7 +60,9 @@ const SCHEMA = {
   }),
 };
 
-const WRITER = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const SCHEMA = { recall: lean(ZOD.recall), checkpoint: lean(ZOD.checkpoint), handoff: lean(ZOD.handoff), rule: lean(ZOD.rule), event: lean(ZOD.event, true) };
+
+const WRITER = { destructiveHint: false, idempotentHint: true };
 
 type Ctx = { http?: { authInfo?: { scopes?: string[] } } };
 
@@ -83,10 +98,10 @@ async function run(ctx: Ctx, fn: (s: ReturnType<typeof stub>, who: Caller) => Pr
   }
 }
 
-const ANNOTATIONS = { recall: { readOnlyHint: true, openWorldHint: false }, checkpoint: WRITER, handoff: WRITER, rule: WRITER, event: WRITER };
+const ANNOTATIONS = { recall: { readOnlyHint: true }, checkpoint: WRITER, handoff: WRITER, rule: WRITER, event: WRITER };
 
 export function toolList(): { name: string; description: string; inputSchema: unknown; annotations: unknown }[] {
-  return (Object.keys(SCHEMA) as (keyof typeof SCHEMA)[]).map((name) => ({ name, description: DESCRIBE[name], inputSchema: z.toJSONSchema(SCHEMA[name]), annotations: ANNOTATIONS[name] }));
+  return (Object.keys(SCHEMA) as (keyof typeof SCHEMA)[]).map((name) => ({ name, description: DESCRIBE[name], inputSchema: SCHEMA[name]['~standard'].jsonSchema.input({ target: 'draft-2020-12' }), annotations: ANNOTATIONS[name] }));
 }
 
 export const TOOL_CHARS = JSON.stringify(toolList()).length;
@@ -100,9 +115,12 @@ export function createServer(): McpServer {
   server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.handoff(who, args)));
   server.registerTool('rule', { description: DESCRIBE.rule, inputSchema: SCHEMA.rule, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.rule(who, args)));
   server.registerTool('event', { description: DESCRIBE.event, inputSchema: SCHEMA.event, annotations: WRITER }, (args, ctx) =>
-    run(ctx, (s, who) => {
+    run(ctx, async (s, who) => {
       const a: Record<string, string | undefined> = {};
-      for (const [k, v] of Object.entries(args)) a[k] = asText(v);
+      for (const [k, v] of Object.entries(args)) {
+        if (!SCALAR(v)) return { ok: false, text: `The field ${k} must be text, a number, true or false.` };
+        a[k] = asText(v);
+      }
       return s.event(who, a);
     }),
   );
