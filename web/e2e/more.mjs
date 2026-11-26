@@ -171,6 +171,47 @@ async function reduced(b, url) {
   }
 }
 
+async function rulesAndAgents(b, url, w, h) {
+  const tag = `${w}x${h}`;
+  const { ctx, page, errors } = await context(b, { w, h, signedIn: true, flags: { quiet: '1' } });
+  try {
+    await page.goto(url);
+    await ready(page);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await page.getByRole('menuitem', { name: 'Rules' }).click();
+    await page.getByRole('textbox', { name: 'New rule' }).waitFor();
+    const first = page.locator('[data-pending]').first();
+    const id = await first.getAttribute('data-pending');
+    const shown = (await first.locator('[data-line]').textContent())?.trim();
+    const who = (await first.locator('.num').textContent())?.trim() ?? '';
+    check(`${tag} a pending rule shows the delivered line and who proposed it`, shown === '"push to the release branch after each fix"' && /^Codex .+, harbor$/.test(who), `${shown} | ${who}`);
+    await page.evaluate(([i]) => window.__mockEdit(i, 'push to main after each fix'), [id]);
+    const kept0 = await page.locator('[data-rule]').count();
+    await first.getByRole('button', { name: 'Accept' }).click();
+    const told = await waitFor(async () => ((await page.locator('[data-changed]').textContent()) ?? '').includes('This rule changed'), 3000);
+    const fresh = await waitFor(async () => ((await page.locator(`[data-pending="${id}"] [data-line]`).textContent()) ?? '').includes('push to main after each fix'), 3000);
+    check(`${tag} Accept on a changed rule reloads and says so`, told && fresh && (await page.locator('[data-rule]').count()) === kept0);
+    await page.locator(`[data-pending="${id}"]`).getByRole('button', { name: 'Accept' }).click();
+    const accepted = await waitFor(async () => (await page.locator('[data-rule]').count()) === kept0 + 1 && !(await page.locator(`[data-pending="${id}"]`).count()), 3000);
+    const keptLine = await page.locator(`[data-rule="${id}"] [data-line]`).textContent().catch(() => '');
+    check(`${tag} Accept sends the shown line and the kept list shows that line`, accepted && keptLine?.trim() === '"push to main after each fix"', keptLine ?? '');
+    await page.keyboard.press('Escape');
+    await waitFor(() => page.evaluate(() => !document.querySelector('[role=dialog]')), 3000);
+    await page.locator('[data-agent="Cursor"] button').click();
+    await page.getByRole('menuitem', { name: 'Disconnect' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Disconnect' }).click();
+    const gone = await waitFor(async () => (await page.locator('[data-agent="Cursor"]').count()) === 0, 3000);
+    check(`${tag} Disconnect behind a confirmation takes the agent off the bar`, gone);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
+    const out = await waitFor(() => page.getByRole('link', { name: 'Sign in with GitHub' }).count(), 5000);
+    check(`${tag} Sign out shows the signed out page`, !!out);
+    check(`${tag} rules and agents have no console error`, !errors.length, errors.join(' | '));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function noWebGL(url) {
   const b = await browser(['--disable-webgl', '--disable-3d-apis']);
   const { ctx, page, errors } = await context(b, { w: 1440, h: 900, signedIn: true, flags: { quiet: '1' } });
@@ -211,6 +252,8 @@ try {
     await theme(b, srv.url, 1440, 900);
     await theme(b, srv.url, 390, 664);
     await reduced(b, srv.url);
+    await rulesAndAgents(b, srv.url, 1440, 900);
+    await rulesAndAgents(b, srv.url, 390, 664);
   } finally {
     await b.close();
   }
