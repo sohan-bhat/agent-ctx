@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DAY, namedProjects, rankItems, recency, recent } from '../src/rank.ts';
+import { DAY, namedProjects, oneEdit, rankItems, recency, recent, typoOf } from '../src/rank.ts';
 import type { Body, CardBody, Item, Kind } from '../src/model.ts';
 
 const NOW = Date.parse('2026-11-20T12:00:00Z');
@@ -117,4 +117,80 @@ test('namedProjects finds other projects named as a whole word', () => {
   assert.deepEqual(namedProjects('pantry login and the weather-station', projects, cur), ['github.com/acme/gale-station', 'folder:pantry']);
   assert.deepEqual(namedProjects('rollcall and the club app', projects, cur), []);
   assert.deepEqual(namedProjects('knightmares and pantryware', projects, cur), []);
+});
+
+const FILLER = 'ok so i was looking at this again today and honestly i am not totally sure what we ended up doing last week, can you look it up and tell me before we go any further with the next part of it';
+
+const spread: Item[] = [
+  card('s01', 'Badge printer driver for check in at the front desk', 2, { decisions: [{ what: 'thermal printer over USB', why: 'labels print in one second' }] }),
+  card('s02', 'Roster export as CSV for club leaders', 4),
+  card('s03', 'Reminder emails the day before an event', 6),
+  card('s04', 'Dark theme for the event pages', 8),
+  card('s05', 'Waitlist when an event is full', 10),
+  card('s06', 'Magic link login for parents', 12),
+  card('s07', 'Room booking clash check', 14),
+  card('s08', 'Recurring weekly meetings', 16),
+];
+
+test('a long prompt passes on absolute evidence however many words no card holds', () => {
+  const q = `${FILLER}, the badge printer driver kept jamming on thermal labels at the front desk`;
+  assert.ok(q.split(' ').length > 40);
+  const hits = rankItems(spread, q, NOW);
+  assert.deepEqual(hits.map((h) => h.item.id), ['s01']);
+  assert.ok(hits[0].matched >= 3);
+});
+
+test('a long prompt with fewer than three matched terms returns nothing', () => {
+  assert.deepEqual(rankItems(spread, `${FILLER}, something about the badge on the monitor`, NOW), []);
+});
+
+test('a long prompt that brushes many cards lightly returns nothing', () => {
+  const light = Array.from({ length: 10 }, (_, k) => card(`l${k}`, `Event ${k} notes about leaders and rooms and emails`, k + 1, { open: [`follow up ${k}`] }));
+  const q = `${FILLER}, the event leaders rooms emails notes all look off to me lately`;
+  assert.deepEqual(rankItems([...light, ...spread.slice(0, 3)], q, NOW), []);
+});
+
+test('a short query still uses the share rule', () => {
+  assert.equal(rankItems(spread, 'badge printer driver', NOW)[0]?.item.id, 's01');
+  assert.deepEqual(rankItems(spread, 'badge kubernetes autoscaler gpu', NOW), []);
+});
+
+test('oneEdit counts one change, one insert or one swap of neighbours', () => {
+  assert.equal(oneEdit('waitlist', 'watilist'), true);
+  assert.equal(oneEdit('waitlist', 'waitlizt'), true);
+  assert.equal(oneEdit('waitlist', 'waitlst'), true);
+  assert.equal(oneEdit('waitlist', 'waitlists'), true);
+  assert.equal(oneEdit('waitlist', 'waitlist'), false);
+  assert.equal(oneEdit('waitlist', 'wiatlits'), false);
+  assert.equal(oneEdit('waitlist', 'roster'), false);
+});
+
+test('a typo of five characters or more maps only when exactly one card term is one edit away', () => {
+  assert.equal(typoOf('watilist', ['waitlist', 'roster']), 'waitlist');
+  assert.equal(typoOf('hatch', ['latch', 'match']), null);
+  assert.equal(typoOf('rostr', ['roster']), 'roster');
+  assert.equal(typoOf('mgic', ['magic']), null);
+  assert.equal(rankItems(spread, 'watilist when an evnet is full', NOW)[0]?.item.id, 's05');
+});
+
+test('a synonym matches at a lower weight than the word itself', () => {
+  const pool = [card('a', 'Login loop on the dashboard', 3), card('b', 'Authentication timeout on the dashboard', 3), card('c', 'unrelated card', 3), card('d', 'another unrelated card', 3)];
+  const hits = rankItems(pool, 'sign in loop', NOW);
+  assert.equal(hits[0]?.item.id, 'a');
+  const syn = rankItems([card('x', 'Authentication timeout', 3), card('y', 'Login timeout', 3), card('z', 'other', 3), card('w', 'more', 3)], 'login timeout', NOW);
+  assert.equal(syn[0].item.id, 'y');
+});
+
+test('a card must stand out from the median of every card with any match', () => {
+  const groups = [['quartz', 'zephyr', 'nimbus', 'falcon', 'ember'], ['cobalt', 'tundra', 'mosaic', 'harbor', 'violet'], ['saffron', 'glacier', 'pylon', 'meadow', 'thistle']];
+  const even: Item[] = [];
+  groups.forEach((g, k) => {
+    even.push(card(`e${k}a`, `${g.join(' ')} notes`, k + 1));
+    even.push(card(`e${k}b`, `${g.join(' ')} more notes`, k + 2));
+  });
+  for (let k = 0; k < 4; k++) even.push(card(`u${k}`, `unrelated chores ${k}`, 9));
+  const q = `${FILLER} ${groups.flat().join(' ')}`;
+  assert.deepEqual(rankItems(even, q, NOW), []);
+  const strong = card('strong', `${groups.flat().join(' ')} obsidian lantern all in one`, 1);
+  assert.deepEqual(rankItems([...even, strong], `${q} obsidian lantern`, NOW).map((h) => h.item.id), ['strong']);
 });
