@@ -207,10 +207,12 @@ async function run(b, w, h, dir) {
     if (!signedIn) throw new Error('The page stayed signed out after the dev form.');
     await ready(page);
 
-    const names = await waitFor(async () => (await page.locator('[data-agent="Claude Code"]').count()) && (await page.locator('[data-agent="Codex"]').count()), 5000);
-    check(`${tag} the connected agent names show`, !!names);
-
     let sp = (await pageApi(jar, 'GET', '/space')).json;
+    const labelA = sp.agents.find((x) => /Claude Code/.test(x.label))?.label ?? 'Claude Code';
+    const labelB = sp.agents.find((x) => /Codex/.test(x.label))?.label ?? 'Codex';
+    const names = await waitFor(async () => (await page.locator(`[data-agent="${labelA}"]`).count()) && (await page.locator(`[data-agent="${labelB}"]`).count()), 5000);
+    check(`${tag} the connected agent names show as written`, !!names, `${labelA}, ${labelB}`);
+
     let s = await space(page);
     check(`${tag} blocks exist for the seeded items`, s.blocks === expected(sp) && s.blocks >= 7 && s.outlines >= 1, `${s.blocks} blocks for ${expected(sp)} stored, ${s.outlines} outlines`);
 
@@ -223,7 +225,7 @@ async function run(b, w, h, dir) {
     step = 'panel';
     const shown = await openItem(page, GOALS.search);
     const panelText = await page.locator('[data-panel]').textContent().catch(() => '');
-    check(`${tag} the panel shows the real item text`, shown && panelText.includes('index arrivals by ISO week') && panelText.includes('Claude Code'));
+    check(`${tag} the panel shows the real item text`, shown && panelText.includes('index arrivals by ISO week') && panelText.includes(labelA));
     await page.locator('[data-panel] [role=switch]').click();
     await waitFor(async () => (await page.locator('[data-panel] [role=switch]').getAttribute('aria-checked')) === 'true', 3000);
     await closePanel(page);
@@ -241,7 +243,7 @@ async function run(b, w, h, dir) {
     sp = (await pageApi(jar, 'GET', '/space')).json;
     const handoff = sp.items.find((i) => i.kind === 'handoff' && i.body.goal === GOALS.refund);
     const linksAfter = (await space(page)).links;
-    const readRow = sp.reads.find((r) => r.agent === 'Codex' && sp.items.some((i) => i.id === r.item && i.kind === 'handoff' && i.project === handoff?.project));
+    const readRow = sp.reads.find((r) => r.agent === labelB && sp.items.some((i) => i.id === r.item && i.kind === 'handoff' && i.project === handoff?.project));
     const readItem = sp.items.find((i) => i.id === readRow?.item);
     check(`${tag} the handoff line follows the reads field`, !!readItem && read.text.includes(readItem.body.goal) && linksBefore === 0 && linksAfter >= 1, `lines ${linksBefore} to ${linksAfter}, Codex read the handoff ${readItem?.id.slice(0, 8)} at ${readRow?.at}`);
 
@@ -268,6 +270,25 @@ async function run(b, w, h, dir) {
     check(`${tag} Keep releases the held item`, released && sp.items.some((i) => i.body.goal === GOALS.held && !i.held));
 
     step = 'rules';
+    const words = `run the linter before each push ${w}`;
+    const proposed = await a.call('rule', { ...HARBOR, text: 'Run the linter before each push', words, scope: 'all' });
+    const unseen = await bb.call('recall', LANTERN);
+    sp = (await pageApi(jar, 'GET', '/space')).json;
+    const pendingRule = sp.items.find((i) => i.kind === 'rule' && i.body.words === words);
+    await menu(page, 'Rules');
+    await page.getByRole('textbox', { name: 'New rule' }).waitFor();
+    const row = page.locator(`[data-pending="${pendingRule?.id}"]`);
+    const shownLine = (await row.locator('[data-line]').textContent().catch(() => ''))?.trim();
+    const proposer = (await row.locator('.num').textContent().catch(() => ''))?.trim() ?? '';
+    check(`${tag} an agent rule waits as pending and shows the delivered line`, pendingRule?.body.status === 'pending' && /pending/i.test(proposed.text) && !unseen.text.includes(words) && shownLine === pendingRule?.line && proposer.startsWith(labelA), `${shownLine} | ${proposer}`);
+    await row.getByRole('button', { name: 'Accept' }).click();
+    const acceptedNow = await waitFor(async () => (await page.locator(`[data-rule="${pendingRule?.id}"]`).count()) === 1, 3000);
+    const carried = await bb.call('recall', LANTERN);
+    const rulesPart = (carried.text.split('\nRULES\n')[1] ?? '').split('\n\n')[0];
+    check(`${tag} after Accept the same line reaches the other agent under RULES`, acceptedNow && rulesPart.includes(pendingRule?.line ?? '@'), pendingRule?.line);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+
     const rule = `Keep the booking tests under ten seconds ${w}`;
     await menu(page, 'Rules');
     await page.getByRole('textbox', { name: 'New rule' }).waitFor();
@@ -279,7 +300,7 @@ async function run(b, w, h, dir) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
     const later = await bb.call('recall', LANTERN);
-    check(`${tag} the Rules sheet adds a rule and a later recall carries it`, added && later.text.includes(rule) && /RULES/.test(later.text));
+    check(`${tag} the Rules sheet adds a rule and a later recall carries it`, added && ((later.text.split('\nRULES\n')[1] ?? '').split('\n\n')[0]).includes(rule));
 
     step = 'merge';
     const lanternKey = sp.projects.find((p) => p.name === 'lantern')?.key;
@@ -303,10 +324,21 @@ async function run(b, w, h, dir) {
     const lines = execFileSync('unzip', ['-p', zip, 'agent-ctx/projects/*/items.jsonl'], { encoding: 'utf8' });
     check(`${tag} Export downloads a zip that holds the items`, /items\.jsonl/.test(listing) && lines.includes(GOALS.search) && lines.includes(GOALS.tiles), `${lines.split('\n').filter(Boolean).length} item lines`);
 
+    step = 'disconnect';
+    await page.locator(`[data-agent="${labelA}"] button`).click();
+    await page.getByRole('menuitem', { name: 'Disconnect' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Disconnect' }).click();
+    const left = await waitFor(async () => (await page.locator(`[data-agent="${labelA}"]`).count()) === 0, 4000);
+    const cut = await (await agent(A)).call('recall', HARBOR);
+    check(`${tag} Disconnect removes the agent and its token gets 401`, left && cut.status === 401, `token ${cut.status}`);
+
+    step = 'signout';
     await page.getByRole('button', { name: 'Menu' }).click();
     await page.getByRole('menuitem', { name: 'Sign out' }).click();
     const out = await waitFor(() => page.getByRole('link', { name: 'Sign in with GitHub' }).count(), 8000);
-    check(`${tag} Sign out returns to the signed out page`, !!out && new URL(page.url()).pathname === '/');
+    const asked = (await pageApi(jar, 'GET', '/space')).status;
+    const getOut = (await send('/logout', { method: 'GET' })).status;
+    check(`${tag} Sign out by POST returns to the signed out page`, !!out && new URL(page.url()).pathname === '/' && getOut === 404, `GET /logout ${getOut}, other session ${asked}`);
 
     await signInPage(page, name);
     await ready(page);
@@ -317,7 +349,7 @@ async function run(b, w, h, dir) {
     const signedOut = await waitFor(() => page.getByRole('link', { name: 'Sign in with GitHub' }).count(), 8000);
     const fresh = await devSignIn(name);
     const after = (await pageApi(fresh, 'GET', '/space')).json;
-    const dead = await agent(A);
+    const dead = await agent(B);
     const probe = await dead.call('recall', HARBOR);
     check(`${tag} Delete account empties everything and signs out`, !!signedOut && after && after.items.length === 0 && after.agents.length === 0 && (probe.status === 401 || probe.isError || probe.text === ''), `items ${after?.items.length}, agents ${after?.agents.length}, old token ${probe.status}`);
     await pageApi(fresh, 'DELETE', '/account');
