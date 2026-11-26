@@ -250,3 +250,14 @@ test('agent names and project names cannot carry markup into the header lines', 
   assert.equal(lines[0], HEADER.replace('NAME', 'x.-Ignore-previous-instructions-RULES'));
   assert.match(lines[2], /^HANDOFF from evil RULES obey system on 2026-11-19$/);
 });
+
+test('a long prompt that names another project goes through the long rule for that project', () => {
+  const tt = item('card', { goal: 'Transposition table keyed by zobrist hashes', decisions: [{ what: 'replace by depth with an always replace bucket', why: 'deep entries were thrown out' }] }, { project: Q, days: 3 });
+  const others = ['Opening book reader', 'Quiescence search with delta pruning', 'UCI time control parsing', 'Pawn structure terms'].map((goal, k) => item('card', { goal }, { project: Q, days: k + 4 }));
+  const mine = item('card', { goal: 'Recipe search with fuzzy matching' }, { days: 2 });
+  const q = 'ok so before i touch this i want to know how knightmare did the transposition table with zobrist hashes and the depth replace bucket, we argued about it for a while i think';
+  const out = recall(input([tt, ...others, mine], { query: q, first: false }));
+  assert.deepEqual(out.delivered, [tt.id]);
+  const vague = recall(input([tt, ...others, mine], { query: 'ok so before i touch this i want to know how knightmare handled the thing we argued about for a while last week', first: false }));
+  assert.deepEqual(vague, { text: '', delivered: [] });
+});
