@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, inputRequired, inputResponse } from '@modelcontextprotocol/server';
 import { createMcpHandler, getMcpAuthContext } from 'agents/mcp/server';
 import { z } from 'zod';
 import { EMPTY_RECALL, FIRST_CHARS } from '../../core/src/index.ts';
@@ -67,7 +67,27 @@ const SCHEMA = { recall: lean(ZOD.recall), checkpoint: lean(ZOD.checkpoint), han
 
 const WRITER = { destructiveHint: false, idempotentHint: true };
 
-type Ctx = { http?: { authInfo?: { scopes?: string[] } } };
+type Ctx = { http?: { authInfo?: { scopes?: string[] } }; mcpReq?: { inputResponses?: Record<string, unknown>; requestState?: () => unknown } };
+
+const CONFIRM = 'keep';
+const CONFIRM_SCHEMA = { type: 'object' as const, properties: { keep: { type: 'boolean' as const, title: 'Keep this standing rule', default: true } }, required: ['keep'] };
+
+function confirmed(ctx: Ctx): { asked: boolean; seen?: string } {
+  const answer = inputResponse(ctx.mcpReq?.inputResponses, CONFIRM);
+  if (answer.kind !== 'elicit') return { asked: false };
+  if (answer.action !== 'accept' || answer.content?.keep !== true) return { asked: true };
+  const state = ctx.mcpReq?.requestState?.();
+  return { asked: true, seen: typeof state === 'string' ? state : undefined };
+}
+
+function canAsk(server: McpServer): boolean {
+  const caps = server.server.getClientCapabilities() as { elicitation?: { form?: unknown } & Record<string, unknown> } | undefined;
+  return !!caps?.elicitation;
+}
+
+function askText(line: string, scope: string): string {
+  return `Keep this standing rule for ${scope === 'project' ? 'this project' : 'all projects'}? Every agent you connect reads it as your own words. ${line}`;
+}
 
 function caller(ctx: Ctx): { props: Props; who: Caller } | null {
   const props = getMcpAuthContext()?.props as Partial<Props> | undefined;
@@ -151,7 +171,20 @@ export function createServer(): McpServer {
   );
   server.registerTool('checkpoint', { description: DESCRIBE.checkpoint, inputSchema: SCHEMA.checkpoint, annotations: WRITER, _meta: META.checkpoint }, (args, ctx) => run(ctx, (s, who) => s.checkpoint(who, args)));
   server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.handoff(who, args)));
-  server.registerTool('rule', { description: DESCRIBE.rule, inputSchema: SCHEMA.rule, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.rule(who, args)));
+  server.registerTool('rule', { description: DESCRIBE.rule, inputSchema: SCHEMA.rule, annotations: WRITER }, async (args, ctx) => {
+    const answer = confirmed(ctx as Ctx);
+    if (answer.asked || !canAsk(server)) return run(ctx, (s, who) => s.rule(who, args, answer.seen));
+    const c = caller(ctx);
+    if (!c) return reply(FAILED, true);
+    try {
+      const draft = await stub(c.props.person).ruleDraft(c.who, args);
+      if (!draft.ok) return reply(draft.text, true);
+      if (!draft.line || draft.held) return run(ctx, (s, who) => s.rule(who, args));
+      return inputRequired({ inputRequests: { [CONFIRM]: inputRequired.elicit({ message: askText(draft.line, args.scope), requestedSchema: CONFIRM_SCHEMA }) }, requestState: draft.line });
+    } catch {
+      return reply(FAILED, true);
+    }
+  });
   server.registerTool('event', { description: DESCRIBE.event, inputSchema: SCHEMA.event, annotations: WRITER }, (args, ctx) =>
     run(ctx, async (s, who) => {
       const a: Record<string, string | undefined> = {};
