@@ -1,7 +1,6 @@
 export * from './model.ts';
 export * from './sanitize.ts';
 export * from './events.ts';
-export * from './rules.ts';
 export * from './rank.ts';
 export * from './recall.ts';
 export * from './fold.ts';

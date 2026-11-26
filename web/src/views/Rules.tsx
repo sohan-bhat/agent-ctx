@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { ruleLine } from '@core/rules.ts';
+import { ruleLine } from '@core/model.ts';
 import { ApiError, type Item, type NewRule, type Project, type RuleBody } from '@/lib/api';
 import { stamp, useNarrow } from '@/lib/utils';
 

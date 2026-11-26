@@ -1,5 +1,5 @@
 import { itemBytes } from '@core/model.ts';
-import { ruleLine } from '@core/rules.ts';
+import { ruleLine } from '@core/model.ts';
 import { ApiError } from '@/lib/api';
 import type { Agent, CardBody, DroppedBody, HandoffBody, Item, Kind, Live, Me, NewRule, Origin, Project, Read, RuleBody, Space, Transport } from '@/lib/api';
 

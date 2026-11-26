@@ -1,6 +1,5 @@
-import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, cut, itemText, projectName, type CardBody, type DroppedBody, type HandoffBody, type Item, type RuleBody } from './model.ts';
+import { CALL_CHARS, FIRST_CHARS, RESULT_CHARS, RULES_SHOWN, cut, itemText, projectName, ruleLine, type CardBody, type DroppedBody, type HandoffBody, type Item, type RuleBody } from './model.ts';
 import { isChat, namedProjects, namesOf, rankItems, recent, typoOf } from './rank.ts';
-import { ruleLine } from './rules.ts';
 import { idf, joinPhrases, synonymsOf, tokens } from './text.ts';
 
 export interface RecallInput {

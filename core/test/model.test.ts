@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CALL_CHARS, FIRST_CHARS, FOLD_AT, ITEM_BYTES, RESULT_CHARS, RULES_AUTO_PER_DAY, RULES_SHOWN, RULE_MAX, RULE_MIN, RULE_PROMPT_MAX, STORE_BYTES, bytes, clean, cleanRemote, cut, fit, folderName, itemBytes, itemText, newItem, projectName, resolveProject, type CardBody, type HandoffBody, type Item, type Known, type Origin, type RuleBody } from '../src/model.ts';
 import { DROPPED, redact } from '../src/redact.ts';
-import { PENDING, decideRule, readRule, ruleLine } from '../src/rules.ts';
+import { PENDING, decideRule, readRule, ruleLine } from '../src/model.ts';
 import * as core from '../src/index.ts';
 
 const at = Date.parse('2026-11-10T09:00:00Z');

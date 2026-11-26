@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ruleLine } from '@core/rules.ts';
+import { ruleLine } from '@core/model.ts';
 import type { CardBody, DroppedBody, HandoffBody, Item, RuleBody } from './api';
 
 export { cn } from 'cn';
