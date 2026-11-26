@@ -1,19 +1,17 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Instance, Instances, Segment, Segments } from '@react-three/drei';
 import { Color, type Group, type Object3D } from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { siblingKey } from '@/lib/model';
 import { blockMaterials } from './rounded';
-import { EDGE, FLAT, type Placed } from './layout';
-import type { Palette } from './palette';
+import { EDGE, FLAT, type Link, type Placed } from './layout';
+import { agentColor, type Palette } from './palette';
 
 export interface Pointing {
   hover: string | null;
   selected: string | null;
   onHover: (id: string | null, x: number, y: number) => void;
-  onPress: (id: string, x: number, y: number) => void;
-  onFrame: (id: string) => void;
+  onPress: (id: string) => void;
 }
 
 interface Shape {
@@ -21,6 +19,7 @@ interface Shape {
   z: number;
   w: number;
   d: number;
+  y: number;
   h: number;
 }
 
@@ -31,10 +30,12 @@ interface Move {
   dur: number;
 }
 
-const shapeOf = (p: Placed): Shape => ({ x: p.cx, z: p.cz, w: p.w, d: p.d, h: p.h });
+export const RISE = 400;
+const shapeOf = (p: Placed): Shape => ({ x: p.cx, z: p.cz, w: p.w, d: p.d, y: p.y0, h: p.h });
 const ease = (t: number) => 1 - (1 - t) ** 3;
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-const same = (a: Shape, b: Shape) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.z - b.z) < 1e-6 && Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.d - b.d) < 1e-6 && Math.abs(a.h - b.h) < 1e-6;
+const same = (a: Shape, b: Shape) => Math.abs(a.x - b.x) + Math.abs(a.z - b.z) + Math.abs(a.w - b.w) + Math.abs(a.d - b.d) + Math.abs(a.y - b.y) + Math.abs(a.h - b.h) < 1e-5;
+export const itemId = (id: string) => (id.endsWith('^') ? id.slice(0, -1) : id);
 
 export function mix(a: string, b: string, t: number): Color {
   return new Color(a).lerp(new Color(b), t);
@@ -45,7 +46,7 @@ function idOf(e: ThreeEvent<PointerEvent | MouseEvent>): string | null {
   return typeof id === 'string' ? id : null;
 }
 
-function handlers(pointing: Pointing, live: (id: string) => boolean) {
+export function handlers(pointing: Pointing, live: (id: string) => boolean) {
   return {
     onPointerMove: (e: ThreeEvent<PointerEvent>) => {
       const id = idOf(e);
@@ -58,62 +59,33 @@ function handlers(pointing: Pointing, live: (id: string) => boolean) {
     },
     onClick: (e: ThreeEvent<MouseEvent>) => {
       const id = idOf(e);
-      if (!id || !live(id) || e.delta > 4) return;
+      if (!id || !live(id) || e.delta > 6) return;
       e.stopPropagation();
-      pointing.onPress(id, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-    },
-    onDoubleClick: (e: ThreeEvent<MouseEvent>) => {
-      const id = idOf(e);
-      if (!id || !live(id) || e.delta > 4) return;
-      e.stopPropagation();
-      pointing.onFrame(id);
+      pointing.onPress(id);
     },
   };
 }
 
-function useTint(placed: Placed[], palette: Palette, hover: string | null) {
-  return useMemo(() => {
-    const table = new Color(palette.table);
-    const white = new Color('#ffffff');
-    const kinds = new Map(Object.entries(palette.kinds).map(([k, v]) => [k, new Color(v)]));
-    const cache = new Map<string, Color>();
-    const tone = (p: Placed, look: 'base' | 'lit' | 'dim') => {
-      const key = `${p.piece.block.kind}|${p.tone}|${p.piece.state}|${look}`;
-      let c = cache.get(key);
-      if (c) return c;
-      const k = kinds.get(p.piece.block.kind) ?? white;
-      if (p.piece.state === 'gone') c = table.clone().lerp(k, look === 'lit' ? 0.45 : 0.2);
-      else c = k.clone().lerp(table, p.tone);
-      if (look === 'lit' && p.piece.state !== 'gone') c.lerp(white, 0.14);
-      if (look === 'dim') c.lerp(table, palette.dark ? 0.55 : 0.5);
-      cache.set(key, c);
-      return c;
-    };
-    const byId = new Map(placed.map((p) => [p.id, p]));
-    const h = hover ? byId.get(hover) : undefined;
-    const key = h ? siblingKey(h.piece.block) : null;
-    const out = new Map<string, Color>();
-    for (const p of placed) {
-      if (!h) out.set(p.id, tone(p, 'base'));
-      else if (p.id === h.id || (key !== null && siblingKey(p.piece.block) === key)) out.set(p.id, tone(p, 'lit'));
-      else out.set(p.id, tone(p, 'dim'));
-    }
-    return out;
-  }, [placed, palette, hover]);
+function tone(p: Placed, palette: Palette, lit: boolean): Color {
+  const base = p.look === 'post' ? new Color(palette.foreground) : new Color(agentColor(palette, p.slot));
+  if (p.look === 'cap') base.lerp(new Color('#ffffff'), palette.dark ? 0.45 : 0.55);
+  if (lit) base.lerp(new Color('#ffffff'), 0.18);
+  return base;
 }
 
 const Item = memo(function Item({ color, data, attach }: { id: string; color: Color; data: { id: string }; attach: (o: Object3D | null) => void }) {
   return <Instance userData={data} color={color} ref={attach} matrixAutoUpdate={false} />;
 });
 
+const SOLID = new Set(['solid', 'cap', 'post']);
+
 export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[]; palette: Palette; pointing: Pointing; reduced: boolean }) {
   const geometry = useMemo(() => new RoundedBoxGeometry(1, 1, 1, 1, 0.1), []);
   const mats = useMemo(() => blockMaterials(EDGE, 0.3), []);
-  mats.rim.value = palette.dark ? 0.32 : 0.42;
+  mats.rim.value = palette.dark ? 0.26 : 0.36;
   const invalidate = useThree((s) => s.invalidate);
   const gl = useThree((s) => s.gl);
-  const regress = useThree((s) => s.performance.regress);
-  const standing = useMemo(() => placed.filter((p) => p.piece.state === 'stand'), [placed]);
+  const standing = useMemo(() => placed.filter((p) => p.shown && SOLID.has(p.look)), [placed]);
   const [leaving, setLeaving] = useState<Placed[]>([]);
   const exiting = useRef(new Set<string>());
   const refs = useRef(new Map<string, Object3D>());
@@ -125,34 +97,30 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
   const moves = useRef(new Map<string, Move>());
   const prev = useRef<Placed[]>([]);
   const lastChange = useRef(0);
-  const tint = useTint(placed, palette, pointing.hover);
 
   useLayoutEffect(() => {
     const t = performance.now();
-    const dur = reduced || prev.current.length === 0 ? 0 : Math.min(300, t - lastChange.current);
+    const quick = Math.min(RISE, t - lastChange.current);
     lastChange.current = t;
     const next = new Set(standing.map((p) => p.id));
-    let changed = 0;
     for (const p of standing) {
       const to = shapeOf(p);
       const cur = now.current.get(p.id);
       if (cur && same(cur, to) && !moves.current.has(p.id)) continue;
       const from = cur ? { ...cur } : { ...to, h: 0 };
-      moves.current.set(p.id, { from, to, t0: t, dur });
-      changed++;
+      moves.current.set(p.id, { from, to, t0: t, dur: reduced ? 0 : cur ? quick : RISE });
     }
     const gone = prev.current.filter((p) => !next.has(p.id));
     for (const p of gone) {
       const from = now.current.get(p.id) ?? shapeOf(p);
-      moves.current.set(p.id, { from: { ...from }, to: { ...from, h: 0 }, t0: t, dur });
+      moves.current.set(p.id, { from: { ...from }, to: { ...from, h: 0 }, t0: t, dur: reduced ? 0 : Math.max(120, quick) });
     }
     prev.current = standing;
-    if (changed + gone.length > 200 && dur > 0) regress();
-    exiting.current = new Set(dur > 0 ? gone.map((p) => p.id) : []);
-    setLeaving(dur > 0 ? gone : []);
-    if (!dur) for (const p of gone) now.current.delete(p.id);
+    exiting.current = new Set(reduced ? [] : gone.map((p) => p.id));
+    setLeaving(reduced ? [] : gone);
+    if (reduced) for (const p of gone) now.current.delete(p.id);
     invalidate();
-  }, [standing, reduced, invalidate, regress]);
+  }, [standing, reduced, invalidate]);
 
   useFrame(() => {
     if (!moves.current.size) return;
@@ -167,10 +135,11 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
       s.z = lerp(m.from.z, m.to.z, e);
       s.w = lerp(m.from.w, m.to.w, e);
       s.d = lerp(m.from.d, m.to.d, e);
+      s.y = lerp(m.from.y, m.to.y, e);
       s.h = lerp(m.from.h, m.to.h, e);
       const o = refs.current.get(id);
       if (o) {
-        o.position.set(s.x, s.h / 2, s.z);
+        o.position.set(s.x, s.y + s.h / 2, s.z);
         o.scale.set(s.w, Math.max(s.h, 1e-4), s.d);
         o.updateMatrix();
         o.updateMatrixWorld();
@@ -191,14 +160,14 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
   latest.current = new Map(standing.map((p) => [p.id, p]));
   for (const p of leaving) if (!latest.current.has(p.id)) latest.current.set(p.id, p);
   const stable = (id: string, c: Color) => {
-    const prev = colors.current.get(id);
-    if (prev && prev.equals(c)) return prev;
+    const was = colors.current.get(id);
+    if (was && was.equals(c)) return was;
     colors.current.set(id, c);
     return c;
   };
   const dataOf = (id: string) => {
     let d = datas.current.get(id);
-    if (!d) datas.current.set(id, (d = { id }));
+    if (!d) datas.current.set(id, (d = { id: itemId(id) }));
     return d;
   };
   const attachOf = (id: string) => {
@@ -211,8 +180,8 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
         }
         refs.current.set(id, o);
         const p = latest.current.get(id);
-        const s = now.current.get(id) ?? (p ? { ...shapeOf(p), h: 0 } : { x: 0, z: 0, w: 1e-4, d: 1e-4, h: 0 });
-        o.position.set(s.x, s.h / 2, s.z);
+        const s = now.current.get(id) ?? (p ? { ...shapeOf(p), h: 0 } : { x: 0, z: 0, w: 1e-4, d: 1e-4, y: 0, h: 0 });
+        o.position.set(s.x, s.y + s.h / 2, s.z);
         o.scale.set(s.w, Math.max(s.h, 1e-4), s.d);
         o.updateMatrix();
         o.updateMatrixWorld();
@@ -222,13 +191,13 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
     return f;
   };
   const all = leaving.length ? [...standing, ...leaving.filter((p) => !standing.some((s) => s.id === p.id))] : standing;
-  const live = useMemo(() => new Set(standing.map((p) => p.id)), [standing]);
+  const live = useMemo(() => new Set(standing.map((p) => itemId(p.id))), [standing]);
   const limit = 2 ** Math.ceil(Math.log2(Math.max(256, all.length)));
   return (
     <group {...handlers(pointing, (id) => live.has(id))}>
       <Instances key={limit} limit={limit} range={all.length} geometry={geometry} material={mats.surface} customDepthMaterial={mats.depth} castShadow receiveShadow frustumCulled={false}>
         {all.map((p) => (
-          <Item key={p.id} id={p.id} color={stable(p.id, tint.get(p.id) ?? new Color(palette.kinds[p.piece.block.kind]))} data={dataOf(p.id)} attach={attachOf(p.id)} />
+          <Item key={p.id} id={p.id} color={stable(p.id, tone(p, palette, pointing.hover === itemId(p.id)))} data={dataOf(p.id)} attach={attachOf(p.id)} />
         ))}
       </Instances>
     </group>
@@ -236,45 +205,37 @@ export function Blocks({ placed, palette, pointing, reduced }: { placed: Placed[
 }
 
 export function Foundations({ placed, palette, pointing }: { placed: Placed[]; palette: Palette; pointing: Pointing }) {
-  const gone = useMemo(() => placed.filter((p) => p.piece.state === 'gone'), [placed]);
+  const flat = useMemo(() => placed.filter((p) => p.shown && p.look === 'flat'), [placed]);
   const geometry = useMemo(() => new RoundedBoxGeometry(1, 1, 1, 1, 0.02), []);
   const group = useRef<Group>(null);
-  const tint = useTint(placed, palette, pointing.hover);
   useLayoutEffect(() => {
     group.current?.traverse((o) => o.layers.set(1));
   });
-  const live = useMemo(() => new Set(gone.map((p) => p.id)), [gone]);
-  if (!gone.length) return null;
-  const limit = 2 ** Math.ceil(Math.log2(Math.max(64, gone.length)));
+  const live = useMemo(() => new Set(flat.map((p) => p.id)), [flat]);
+  if (!flat.length) return null;
+  const limit = 2 ** Math.ceil(Math.log2(Math.max(64, flat.length)));
   const y = FLAT + 0.002;
   return (
     <group ref={group} {...handlers(pointing, (id) => live.has(id))}>
-      <Instances key={limit} limit={limit} range={gone.length} geometry={geometry} receiveShadow frustumCulled={false}>
+      <Instances key={limit} limit={limit} range={flat.length} geometry={geometry} receiveShadow frustumCulled={false}>
         <meshStandardMaterial roughness={1} metalness={0} />
-        {gone.map((p) => (
-          <Instance key={p.id} userData={{ id: p.id }} position={[p.cx, FLAT / 2, p.cz]} scale={[p.w, FLAT, p.d]} color={tint.get(p.id)} />
+        {flat.map((p) => (
+          <Instance key={p.id} userData={{ id: p.id }} position={[p.cx, FLAT / 2, p.cz]} scale={[p.w, FLAT, p.d]} color={mix(palette.table, agentColor(palette, p.slot), pointing.hover === p.id ? 0.42 : 0.2)} />
         ))}
       </Instances>
-      <Segments limit={gone.length * 4} lineWidth={1.25}>
-        {gone.flatMap((p) => {
-          const x0 = p.cx - p.w / 2;
-          const x1 = p.cx + p.w / 2;
-          const z0 = p.cz - p.d / 2;
-          const z1 = p.cz + p.d / 2;
-          const c = mix(palette.table, palette.kinds[p.piece.block.kind], 0.85);
-          return [
-            <Segment key={`${p.id}a`} start={[x0, y, z0]} end={[x1, y, z0]} color={c} />,
-            <Segment key={`${p.id}b`} start={[x1, y, z0]} end={[x1, y, z1]} color={c} />,
-            <Segment key={`${p.id}c`} start={[x1, y, z1]} end={[x0, y, z1]} color={c} />,
-            <Segment key={`${p.id}d`} start={[x0, y, z1]} end={[x0, y, z0]} color={c} />,
-          ];
+      <Segments limit={flat.length * 4} lineWidth={1.25}>
+        {flat.flatMap((p) => {
+          const c = mix(palette.table, agentColor(palette, p.slot), 0.9);
+          return edges(p, 0, y)
+            .filter((_, i) => i % 3 === 0)
+            .map(([a, b], i) => <Segment key={`${p.id}${i}`} start={a} end={b} color={c} />);
         })}
       </Segments>
     </group>
   );
 }
 
-function edges(p: { cx: number; cz: number; w: number; d: number }, h: number, y0 = 0): [number, number, number][][] {
+export function edges(p: { cx: number; cz: number; w: number; d: number }, h: number, y0 = 0): [number, number, number][][] {
   const x0 = p.cx - p.w / 2;
   const x1 = p.cx + p.w / 2;
   const z0 = p.cz - p.d / 2;
@@ -295,40 +256,75 @@ function edges(p: { cx: number; cz: number; w: number; d: number }, h: number, y
   return out;
 }
 
-export function Marks({ placed, palette, selected, queued, pinned, outline }: { placed: Placed[]; palette: Palette; selected: string | null; queued: Set<string>; pinned: Set<string>; outline: (p: Placed) => number }) {
-  const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
+export function Outlines({ placed, palette, pointing }: { placed: Placed[]; palette: Palette; pointing: Pointing }) {
+  const list = useMemo(() => placed.filter((p) => p.shown && p.look === 'outline'), [placed]);
   const group = useRef<Group>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     group.current?.traverse((o) => o.layers.set(1));
   });
-  const sel = selected ? byId.get(selected) : undefined;
-  const lines: { key: string; a: [number, number, number]; b: [number, number, number]; color: Color }[] = [];
-  for (const id of queued) {
-    const p = byId.get(id);
-    if (!p) continue;
-    const c = mix(palette.table, palette.kinds[p.piece.block.kind], 0.95);
-    edges(p, outline(p)).forEach(([a, b], i) => lines.push({ key: `q${id}${i}`, a, b, color: c }));
-  }
-  if (sel) {
-    const pad = 0.03;
-    const ring = new Color(palette.ring);
-    edges({ cx: sel.cx, cz: sel.cz, w: sel.w + pad * 2, d: sel.d + pad * 2 }, (sel.piece.state === 'gone' && !queued.has(sel.id) ? FLAT : queued.has(sel.id) ? outline(sel) : sel.h) + pad).forEach(([a, b], i) => lines.push({ key: `s${i}`, a, b, color: ring }));
-  }
-  const pins = [...pinned].map((id) => byId.get(id)).filter((p): p is Placed => !!p);
+  const live = useMemo(() => new Set(list.map((p) => p.id)), [list]);
+  if (!list.length) return null;
+  return (
+    <group ref={group} {...handlers(pointing, (id) => live.has(id))}>
+      {list.map((p) => (
+        <mesh key={p.id} userData={{ id: p.id }} position={[p.cx, p.h / 2, p.cz]} scale={[Math.max(p.w, 0.2), p.h, Math.max(p.d, 0.2)]}>
+          <boxGeometry />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      ))}
+      <Segments key={list.length} limit={list.length * 12} lineWidth={pointing.hover && live.has(pointing.hover) ? 2 : 1.5}>
+        {list.flatMap((p) => {
+          const c = new Color(p.item.kind === 'rule' ? palette.foreground : agentColor(palette, p.slot));
+          if (pointing.hover === p.id) c.lerp(new Color(palette.dark ? '#ffffff' : '#000000'), 0.25);
+          return edges(p, p.h).map(([a, b], i) => <Segment key={`${p.id}${i}`} start={a} end={b} color={c} />);
+        })}
+      </Segments>
+    </group>
+  );
+}
+
+export function Links({ links, time, palette }: { links: Link[]; time: number; palette: Palette }) {
+  const shown = links.filter((l) => l.at <= time);
+  const group = useRef<Group>(null);
+  useLayoutEffect(() => {
+    group.current?.traverse((o) => o.layers.set(1));
+  });
+  if (!shown.length) return null;
+  const y = 0.02;
   return (
     <group ref={group}>
-      {lines.length > 0 && (
-        <Segments key={lines.length} limit={lines.length} lineWidth={1.5}>
-          {lines.map((l) => (
-            <Segment key={l.key} start={l.a} end={l.b} color={l.color} />
+      <Segments key={shown.length} limit={shown.length} lineWidth={1.5}>
+        {shown.map((l) => (
+          <Segment key={l.id} start={[l.a[0], y, l.a[1]]} end={[l.b[0], y, l.b[1]]} color={mix(palette.table, agentColor(palette, l.slot), 0.95)} />
+        ))}
+      </Segments>
+    </group>
+  );
+}
+
+export function Marks({ placed, palette, selected }: { placed: Placed[]; palette: Palette; selected: string | null }) {
+  const group = useRef<Group>(null);
+  useLayoutEffect(() => {
+    group.current?.traverse((o) => o.layers.set(1));
+  });
+  const sel = selected ? placed.find((p) => p.id === selected && p.shown) : undefined;
+  const pins = placed.filter((p) => p.shown && p.item.pinned && p.look !== 'cap');
+  const ring = new Color(palette.ring);
+  const pad = 0.03;
+  const top = (p: Placed) => p.y0 + p.h + (p.item.kind === 'handoff' && !p.item.held ? 0.07 : 0);
+  return (
+    <group ref={group}>
+      {sel && (
+        <Segments key={sel.id} limit={12} lineWidth={2}>
+          {edges({ cx: sel.cx, cz: sel.cz, w: sel.w + pad * 2, d: sel.d + pad * 2 }, top(sel) + pad).map(([a, b], i) => (
+            <Segment key={i} start={a} end={b} color={ring} />
           ))}
         </Segments>
       )}
       {pins.map((p) => {
-        const top = p.piece.state === 'gone' ? (queued.has(p.id) ? outline(p) : FLAT) : p.h;
         const r = Math.min(0.09, Math.min(p.w, p.d) * 0.3);
         return (
-          <mesh key={p.id} position={[p.cx, top + 0.02, p.cz]} castShadow>
+          <mesh key={p.id} position={[p.cx, top(p) + 0.02, p.cz]} castShadow>
             <cylinderGeometry args={[r, r, 0.04, 24]} />
             <meshStandardMaterial color={palette.foreground} roughness={0.7} />
           </mesh>

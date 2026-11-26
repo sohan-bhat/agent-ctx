@@ -60,6 +60,7 @@ export interface Placed {
 export interface Link {
   id: string;
   slot: number;
+  at: number;
   a: [number, number];
   b: [number, number];
 }
@@ -224,7 +225,7 @@ export function layout({ projects, agents, items, narrow }: LayoutInput): Omit<L
       if (!dist || !from) continue;
       const tx = Math.min(Math.max(from.cx, dist.x0 + 0.2), dist.x1 - 0.2);
       const tz = Math.min(Math.max(from.cz, dist.z0 + 0.2), dist.z1 - 0.2);
-      links.push({ id: `${h.id}>${reader.id}`, slot: slotOf(agents, reader.origin.agent), a: [from.cx, from.cz], b: [tx, tz] });
+      links.push({ id: `${h.id}>${reader.id}`, slot: slotOf(agents, reader.origin.agent), at: reader.created, a: [from.cx, from.cz], b: [tx, tz] });
     }
   });
   if (box.isEmpty()) box.set(new Vector3(-MIN_SIDE / 2, -PLATE, -MIN_SIDE / 2), new Vector3(MIN_SIDE / 2, H_MAX, MIN_SIDE / 2));
