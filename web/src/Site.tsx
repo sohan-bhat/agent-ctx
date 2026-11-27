@@ -27,10 +27,10 @@ const PILL = 'h-11 rounded-full px-5 text-[0.9375rem]';
 
 const FAQ = [
   ['What does agent-ctx do?', 'One memory is shared by all of your coding agents, so work started in one agent is continued in the next agent without a new explanation.'],
-  ['Which agents work with agent-ctx?', 'Claude Code, Cursor, Codex, Gemini CLI and the Claude desktop app are supported, and the first release is still being tested.'],
+  ['Which agents work with agent-ctx?', 'Claude Code comes first and is being tested now. Cursor, Codex, Gemini CLI and the Claude desktop app are built from the documents of each vendor and are tested next.'],
   ['Where is the memory kept?', 'The memory is one database file in the folder .agent-ctx in your home folder, and no account exists.'],
-  ['What is active in the background?', 'Nothing is active while no agent is open. Each agent starts a small helper while that agent is open, and one hook is run at each prompt for under a tenth of a second.'],
-  ['What leaves my computer?', 'Nothing leaves your computer unless you turn on a copy to storage of your own.'],
+  ['What is active in the background?', 'Nothing is active while no agent is open. Each agent starts a small helper while that agent is open, and one hook is run at each prompt for a fraction of a second.'],
+  ['What leaves my computer?', 'Nothing leaves your computer.'],
   ['Can my agents be tricked by a web page or a file through the memory?', 'Text from a web page or a file is stored as information and is delivered to an agent as quoted memory. Such text never becomes a rule unless you accept the rule yourself.'],
   ['How do I remove agent-ctx?', 'Every entry that was added is taken out with one command, and the memory file stays until you delete the folder.'],
   ['What does agent-ctx cost?', 'agent-ctx is free and open source under the MIT licence.'],
