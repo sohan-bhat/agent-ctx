@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cleanOrigin, stamp } from '../plugins/stamp.mjs';
+import { cleanOrigin, stamp } from './plugins/stamp.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const SERVICE = join(ROOT, 'service');

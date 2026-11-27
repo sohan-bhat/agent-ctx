@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { homedir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stamp } from '../../plugins/stamp.mjs';
+import { stamp } from '../plugins/stamp.mjs';
 import { jarFrom, open, ORIGIN, page } from './lib.mjs';
 import { ITEMS, QUERIES_2B as QUERIES } from '../../core/test/corpus2.ts';
 import { GALE, PANTRY } from '../../core/test/corpus.ts';

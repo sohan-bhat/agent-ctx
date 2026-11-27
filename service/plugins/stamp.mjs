@@ -78,7 +78,7 @@ if (main) {
   const bearer = at >= 0 ? args[at + 1] : undefined;
   const rest = at >= 0 ? args.filter((_, i) => i !== at && i !== at + 1) : args;
   if (rest.length < 1 || rest.length > 2 || (at >= 0 && !bearer)) {
-    console.log('Give an origin, as in node plugins/stamp.mjs https://agent-ctx.example, to write that origin into the plugin files in place.');
+    console.log('Give an origin, as in node service/plugins/stamp.mjs https://agent-ctx.example, to write that origin into the plugin files in place.');
     console.log('Add a folder after the origin to write a copy there, and --bearer TOKEN to put a bearer header on that copy for local tests only.');
     process.exit(rest.length === 0 ? 0 : 1);
   }

@@ -121,14 +121,14 @@ function cover(host: Host, path: string): { cases: number; names: string[]; matc
 }
 
 test('every event and matcher of the Claude Code plugin file gives the fields of that file', () => {
-  const { cases, names, matchers } = cover('claude-code', '../../plugins/claude-code/hooks/hooks.json');
+  const { cases, names, matchers } = cover('claude-code', '../../service/plugins/claude-code/hooks/hooks.json');
   assert.equal(cases, 12);
   assert.deepEqual(names.sort(), ['PostCompact', 'PostToolUse', 'PostToolUseFailure', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit']);
   assert.deepEqual(matchers, { PostToolUse: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash'], PostToolUseFailure: ['Bash'], SessionStart: ['clear', 'compact'] });
 });
 
 test('a Claude Code event or matcher value outside the plugin file gives null', () => {
-  const { names, matchers } = cover('claude-code', '../../plugins/claude-code/hooks/hooks.json');
+  const { names, matchers } = cover('claude-code', '../../service/plugins/claude-code/hooks/hooks.json');
   for (const name of ['PreToolUse', 'SessionEnd', 'SubagentStop', 'PreCompact', 'Notification', 'UserPromptExpansion', 'PostToolBatch', 'PermissionRequest', 'Setup']) {
     assert.ok(!names.includes(name));
     assert.equal(read('claude-code', JSON.stringify(claude(name, { prompt: ASK, source: 'clear', ...made('Bash', { command: CMD }) }))), null, name);
@@ -145,7 +145,7 @@ test('a Claude Code event or matcher value outside the plugin file gives null', 
 });
 
 test('every event and matcher of the Codex plugin file gives the fields of that file', () => {
-  const { cases, names, matchers } = cover('codex', '../../plugins/codex/hooks.json');
+  const { cases, names, matchers } = cover('codex', '../../service/plugins/codex/hooks.json');
   assert.equal(cases, 3);
   assert.deepEqual(names.sort(), ['PostToolUse', 'Stop', 'UserPromptSubmit']);
   assert.deepEqual(matchers, { PostToolUse: ['Bash'] });

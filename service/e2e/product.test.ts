@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { cleanOrigin, currentOrigin, NAMES, PLUGINS, stamp } from '../../plugins/stamp.mjs';
+import { cleanOrigin, currentOrigin, NAMES, PLUGINS, stamp } from '../plugins/stamp.mjs';
 import { MAX } from '../src/limits.ts';
 import { ITEM_BYTES, STORE_BYTES } from '../../core/src/index.ts';
 import { PAGE, PLUGINS_OUT, SAY, SERVICE } from '../deploy.mjs';
@@ -414,8 +414,8 @@ const COPY = [
   'docs/format.md',
   'docs/cost.md',
   'docs/vendors.md',
-  'plugins/claude-code/README.md',
-  'plugins/codex/README.md',
+  'service/plugins/claude-code/README.md',
+  'service/plugins/codex/README.md',
 ];
 
 function proseLines(text: string): string[] {
