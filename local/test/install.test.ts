@@ -20,6 +20,7 @@ const NODE = '/opt/node/bin/node';
 const APP = '/opt/agent-ctx/app/agent-ctx.js';
 const MOVED = '/opt/agent-ctx/next/agent-ctx.js';
 const BACKUP = '.agent-ctx-backup';
+const beside = (app: string): string => join(dirname(app), 'hook.mjs');
 const FILES = { command: 'npx', args: ['-y', 'files-server'] };
 
 function make(t: TestContext, prefix = 'agent-ctx-home-'): Paths {
@@ -132,7 +133,7 @@ function suite(kit: Kit): void {
     check(moved, kit.both(moved));
     for (const change of changes) {
       assert.equal(change.what.endsWith(` updated in ${change.file} for the program path ${MOVED}.`), true, change.what);
-      assert.equal(text(change.file).includes(APP), false);
+      assert.equal(text(change.file).includes(APP) || text(change.file).includes(beside(APP)), false);
     }
     assert.deepEqual(plan(agent, moved), []);
   });
@@ -165,7 +166,7 @@ function suite(kit: Kit): void {
       assert.equal(change.after, change.before);
       assert.equal(change.what.startsWith(`${change.file} `), true, change.what);
       assert.match(change.what, / and was left alone\. To connect by hand, add /);
-      assert.equal(change.what.includes(APP), true, change.what);
+      assert.equal(change.what.includes(dirname(APP)), true, change.what);
     }
     apply(changes);
     apply(unplan(agent, p));
@@ -197,7 +198,7 @@ function suite(kit: Kit): void {
     const p = make(t, 'agent ctx home ');
     p.app = join(p.home, '.agent-ctx', 'app', 'agent-ctx.js');
     connect(agent, p);
-    check(p, kit.ours(p, `"${p.app}"`));
+    check(p, kit.ours(p, `"${beside(p.app)}"`));
     assert.deepEqual(plan(agent, p), []);
     disconnect(agent, p);
     assert.deepEqual(tree(p.home), {});
@@ -351,7 +352,7 @@ describe('claude-desktop', () => {
 });
 
 const cursorServer = (p: Paths): unknown => ({ type: 'stdio', command: p.node, args: [p.app, 'mcp', '--agent', 'cursor'] });
-const cursorHook = (p: Paths, shown = p.app): unknown => ({ command: `${p.node} ${shown} hook --agent cursor` });
+const cursorHook = (p: Paths, shown = beside(p.app)): unknown => ({ command: `${p.node} ${shown} --agent cursor` });
 const AUDIT = { command: './audit.sh' };
 const SHELL = { command: './check.sh', matcher: 'curl' };
 const cursorHooks = (hook: unknown, stop: unknown[] = [hook], more: Files = {}): unknown => ({
@@ -380,7 +381,7 @@ describe('cursor', () => {
 
   test('cursor keeps a hook of another tool with the same words', (t) => {
     const p = make(t);
-    const other = { command: '/opt/other/tool.js hook --agent cursor' };
+    const other = { command: '/opt/other/hook.mjs --agent cursor' };
     put(join(p.home, '.cursor/hooks.json'), { version: 1, hooks: { stop: [other] } });
     connect('cursor', p);
     assert.deepEqual(look(join(p.home, '.cursor/hooks.json')), cursorHooks(cursorHook(p), [other, cursorHook(p)]));
@@ -391,7 +392,7 @@ describe('cursor', () => {
   test('cursor loses a hook of ours under an event outside the plan', (t) => {
     const p = make(t);
     put(join(p.home, '.cursor/mcp.json'), { mcpServers: { 'agent-ctx': { type: 'stdio', command: NODE, args: ['/old/agent-ctx.js', 'mcp', '--agent', 'cursor'] } } });
-    const stale = { command: `${NODE} /old/agent-ctx.js hook --agent cursor` };
+    const stale = { command: `${NODE} /old/hook.mjs --agent cursor` };
     put(join(p.home, '.cursor/hooks.json'), { version: 1, hooks: { preToolUse: [stale, AUDIT], afterFileEdit: [stale], stop: [AUDIT, stale, SHELL] } });
     connect('cursor', p);
     assert.deepEqual(look(join(p.home, '.cursor/hooks.json')), cursorHooks(cursorHook(p), [AUDIT, cursorHook(p), SHELL], { preToolUse: [AUDIT] }));
@@ -402,7 +403,7 @@ describe('cursor', () => {
     connect('cursor', p);
     check(p, {
       '.cursor/mcp.json': { mcpServers: { 'agent-ctx': cursorServer(p) } },
-      '.cursor/hooks.json': cursorHooks({ command: `"${p.node}" ${p.app} hook --agent cursor` }),
+      '.cursor/hooks.json': cursorHooks({ command: `"${p.node}" C:\\Tools\\agent-ctx\\app\\hook.mjs --agent cursor` }),
     });
     assert.deepEqual(plan('cursor', p), []);
   });
@@ -413,10 +414,10 @@ describe('cursor', () => {
     p.app = join(p.home, 'a $b `c` "d"', 'agent-ctx.js');
     fs.mkdirSync(dirname(p.node));
     fs.symlinkSync(process.execPath, p.node);
-    put(p.app, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+    for (const file of [p.app, beside(p.app)]) put(file, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
     connect('cursor', p);
     const hooks = look(join(p.home, '.cursor/hooks.json')) as { hooks: { stop: { command: string }[] } };
-    assert.equal(execFileSync('/bin/sh', ['-c', hooks.hooks.stop[0].command], { encoding: 'utf8' }), '["hook","--agent","cursor"]');
+    assert.equal(execFileSync('/bin/sh', ['-c', hooks.hooks.stop[0].command], { encoding: 'utf8' }), '["--agent","cursor"]');
     const servers = look(join(p.home, '.cursor/mcp.json')) as { mcpServers: Record<string, { command: string; args: string[] }> };
     const entry = servers.mcpServers['agent-ctx'];
     assert.equal(execFileSync(entry.command, entry.args, { encoding: 'utf8' }), '["mcp","--agent","cursor"]');
@@ -427,7 +428,7 @@ describe('cursor', () => {
 });
 
 const geminiServer = (p: Paths): unknown => ({ command: p.node, args: [p.app, 'mcp', '--agent', 'gemini'] });
-const geminiHook = (p: Paths, shown = p.app): unknown => ({ hooks: [{ name: 'agent-ctx', type: 'command', command: `${p.node} ${shown} hook --agent gemini` }] });
+const geminiHook = (p: Paths, shown = beside(p.app)): unknown => ({ hooks: [{ name: 'agent-ctx', type: 'command', command: `${p.node} ${shown} --agent gemini` }] });
 const LINT = { matcher: 'write_file', hooks: [{ name: 'lint', type: 'command', command: './lint.sh' }] };
 const SETTINGS = '.gemini/settings.json';
 const geminiKit: Kit = {
@@ -455,7 +456,7 @@ describe('gemini', () => {
 
   test('gemini keeps other handlers that share a group with ours and keeps settings under hooks', (t) => {
     const p = make(t);
-    const mine = { name: 'agent-ctx', type: 'command', command: `${NODE} ${APP} hook --agent gemini` };
+    const mine = { name: 'agent-ctx', type: 'command', command: `${NODE} ${beside(APP)} --agent gemini` };
     const lint = LINT.hooks[0];
     put(join(p.home, SETTINGS), { mcpServers: { 'agent-ctx': geminiServer(p) }, hooks: { enabled: true, AfterTool: [{ matcher: 'write_file', hooks: [lint, mine] }] } });
     disconnect('gemini', p);
@@ -466,7 +467,7 @@ describe('gemini', () => {
 const TOML = 'model = "o5"\n\n[mcp_servers.files]\ncommand = "npx"\nargs = ["-y", "files-server"]\n';
 const CONFIG = '.codex/config.toml';
 const table = (p: Paths): string => `[mcp_servers.agent-ctx]\ncommand = "${p.node}"\nargs = ["${p.app}", "mcp", "--agent", "codex"]\n`;
-const codexHook = (p: Paths, shown = p.app): unknown => ({ hooks: [{ type: 'command', command: `${p.node} ${shown} hook --agent codex` }] });
+const codexHook = (p: Paths, shown = beside(p.app)): unknown => ({ hooks: [{ type: 'command', command: `${p.node} ${shown} --agent codex` }] });
 const NOTIFY = { hooks: [{ type: 'command', command: './notify.sh' }] };
 const GUARD = { matcher: 'Bash', hooks: [{ type: 'command', command: './guard.sh' }] };
 const codexKit: Kit = {
@@ -490,7 +491,7 @@ describe('codex', () => {
     const p = make(t);
     const rest = 'startup_timeout_sec = 20\n\n[mcp_servers."agent-ctx".env]\nLEVEL = "debug"\n\n[profiles.fast]\nmodel = "o5"\n';
     put(join(p.home, CONFIG), `[mcp_servers."agent-ctx"]\ncommand = 'node'\nargs = ['/old/agent-ctx.js', "mcp", "--agent", "codex"]\n${rest}`);
-    put(join(p.home, '.codex/hooks.json'), { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node /old/agent-ctx.js hook --agent codex' }] }] } });
+    put(join(p.home, '.codex/hooks.json'), { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node /old/hook.mjs --agent codex' }] }] } });
     connect('codex', p);
     assert.equal(text(join(p.home, CONFIG)), `[mcp_servers."agent-ctx"]\ncommand = "${NODE}"\nargs = ["${APP}", "mcp", "--agent", "codex"]\n${rest}`);
     check(p, { '.codex/hooks.json': codexKit.ours(p)['.codex/hooks.json'] });

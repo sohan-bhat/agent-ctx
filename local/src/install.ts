@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, posix, relative, win32 } from 'node:path';
 
 export type Agent = 'claude-code' | 'cursor' | 'codex' | 'gemini' | 'claude-desktop';
 export interface Paths { home: string; app: string; node: string; platform: 'darwin' | 'linux' | 'win32' }
@@ -15,8 +15,8 @@ interface Pair { name: string; full: string[]; value: string }
 
 const NAME = 'agent-ctx';
 const BACKUP = `.${NAME}-backup`;
-const HOOK = 'hook --agent';
-const MARK = /"agent-ctx"\s*:|hook --agent|^\s*\[\s*mcp_servers\s*\.\s*["']?agent-ctx/m;
+const HOOK = 'hook.mjs';
+const MARK = /"agent-ctx"\s*:|hook\.mjs\\?"? --agent |^\s*\[\s*mcp_servers\s*\.\s*["']?agent-ctx/m;
 const LAYOUT = 'has an unexpected layout';
 const LINK = 'is a link to a place outside the home folder';
 const UNSAFE = `has ${NAME} in a form unsafe for a text edit`;
@@ -93,6 +93,11 @@ function word(text: string, p: Paths): string {
   return win ? `"${text}"` : `"${text.replace(/[\\"$`]/g, '\\$&')}"`;
 }
 
+function beside(app: string, p: Paths): string {
+  const path = p.platform === 'win32' ? win32 : posix;
+  return path.join(path.dirname(app), HOOK);
+}
+
 function former(args: unknown): string[] {
   return Array.isArray(args) && typeof args[0] === 'string' && args[1] === 'mcp' && args[2] === '--agent' ? [args[0]] : [];
 }
@@ -100,7 +105,7 @@ function former(args: unknown): string[] {
 function owned(p: Paths, apps: string[]): Mine {
   return (value) => {
     const text = dig(value, 'command');
-    return typeof text === 'string' && text.includes(HOOK) && apps.some((app) => app !== '' && (text.includes(app) || text.includes(word(app, p))));
+    return typeof text === 'string' && text.includes(' --agent ') && apps.some((app) => app !== '' && (text.includes(beside(app, p)) || text.includes(word(beside(app, p), p))));
   };
 }
 
@@ -361,7 +366,7 @@ function changes(agent: Agent, p: Paths, on: boolean): Change[] {
   const server: Obj = { command: p.node, args };
   if (agent === 'claude-desktop') return json({ file: desktop(p), server }, p, on, [p.app]);
   const folder = join(p.home, `.${agent}`);
-  const run: Obj = { type: 'command', command: `${word(p.node, p)} ${word(p.app, p)} ${HOOK} ${agent}` };
+  const run: Obj = { type: 'command', command: `${word(p.node, p)} ${word(beside(p.app, p), p)} --agent ${agent}` };
   if (agent === 'cursor') {
     const file = join(folder, 'mcp.json');
     const apps = [p.app, ...former(dig(loose(load(file, p)), 'mcpServers', NAME, 'args'))];
