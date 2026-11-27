@@ -24,7 +24,6 @@ export default defineConfig(({ mode }) => {
     publicDir: site ? false : 'public',
     plugins: [react(), tailwindcss(), ...(site ? [siteIndex] : [])],
     resolve: { alias: { '@core': path.join(here, '..', 'core', 'src'), '@': path.join(here, 'src') } },
-    define: site ? { 'import.meta.env.VITE_RELEASED': JSON.stringify(process.env.VITE_RELEASED === '1' ? '1' : '') } : {},
     build: {
       outDir: site ? path.join(here, 'dist-site') : path.join(here, '..', 'service', 'public'),
       emptyOutDir: true,
