@@ -91,12 +91,16 @@ function asOrigin(o: unknown, created: number): Origin {
   return out as unknown as Origin;
 }
 
+function everywhere(kind: unknown, body: unknown, project: unknown): boolean {
+  return project === '' && kind === 'rule' && isObj(body) && body.scope === 'all';
+}
+
 function asItem(x: unknown): Item | null {
-  if (!isObj(x) || typeof x.id !== 'string' || !ID.test(x.id) || !plain(x.project)) return null;
+  if (!isObj(x) || typeof x.id !== 'string' || !ID.test(x.id) || !(plain(x.project) || everywhere(x.kind, x.body, x.project))) return null;
   if (!KINDS.includes(x.kind as Kind) || !isObj(x.body) || !isTime(x.created)) return null;
   const kind = x.kind as Kind;
   const flags = Array.isArray(x.flags) ? x.flags.filter((f): f is string => typeof f === 'string' && FLAG.test(f)) : [];
-  return { id: x.id, project: x.project, kind, body: asBody(kind, x.body), origin: asOrigin(x.origin, x.created), flags, held: x.held === true, pinned: x.pinned === true, folded: x.folded === true, created: x.created };
+  return { id: x.id, project: x.project as string, kind, body: asBody(kind, x.body), origin: asOrigin(x.origin, x.created), flags, held: x.held === true, pinned: x.pinned === true, folded: x.folded === true, created: x.created };
 }
 
 function check(x: unknown): Rec | null {
@@ -340,11 +344,11 @@ function byId(a: Item, b: Item): number {
 
 export function pages(items: Item[], projects: { key: string; names: string[] }[], now: number): Record<string, string> {
   const until = Number.isFinite(now) ? now + DAY_MS : Infinity;
-  const live =(items ?? []).filter((i) => i && !i.held && plain(i.project) && isTime(i.created) && i.created <= until);
+  const live = (items ?? []).filter((i) => i && !i.held && (plain(i.project) || everywhere(i.kind, i.body, i.project)) && isTime(i.created) && i.created <= until);
   const rules = live.filter(activeRule).sort((a, b) => a.created - b.created || byId(a, b));
   const shown = live.filter((i) => i.kind === 'card' || i.kind === 'handoff').sort((a, b) => b.created - a.created || byId(a, b));
   const known = (projects ?? []).filter((p) => p && plain(p.key));
-  const keys = [...new Set([...known.map((p) => p.key), ...shown.map((i) => i.project), ...rules.map((i) => i.project)])].sort();
+  const keys = [...new Set([...known.map((p) => p.key), ...shown.map((i) => i.project), ...rules.map((i) => i.project)])].filter(Boolean).sort();
   const files = fileNames(keys);
   const out: Record<string, string> = {};
   const rows: string[] = [];

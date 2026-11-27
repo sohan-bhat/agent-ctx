@@ -455,6 +455,32 @@ describe('pages', () => {
   });
 });
 
+describe('a rule for every project', () => {
+  const wide = rule(60, { text: 'Never print a key', words: 'Never print a key', scope: 'all', proof: 'page' }, { project: '' });
+
+  test('a rule for every project with no project of its own is sent, read back and taken as pending', () => {
+    const recs = outgoing([edit(wide, T0 + MIN)], [], 0, DESK);
+    assert.deepEqual(recs.map((r) => [r.op, r.id, r.at, r.item?.project]), [['put', uid(60), T0 + MIN, '']]);
+    assert.deepEqual(parse(recs.map(line).join('\n')), { recs, bad: 0 });
+    const got = merge([], recs, LAP);
+    assert.deepEqual(got.put.map((i) => [i.id, i.project, ruleOf(i).status, ruleOf(i).scope, 'proof' in ruleOf(i)]), [[uid(60), '', 'pending', 'all', false]]);
+  });
+
+  test('a card, a handoff and a rule for one project are still refused with no project', () => {
+    const bare = [base(61, { project: '' }), base(62, { kind: 'handoff', project: '', body: { goal: 'Ship the gust filter', next: 'Tune the gain' } }), rule(63, {}, { project: '' })];
+    assert.deepEqual(outgoing(bare, [], 0, DESK), []);
+    for (const item of bare) assert.throws(() => line(put(item, T0, DESK)), TypeError);
+  });
+
+  test('an accepted rule for every project stands on every page and gets no page of its own', () => {
+    const out = pages([CARD, base(64, { project: 'folder:tower' }), wide, rule(65, { text: 'Skip the review', words: 'Skip the review', scope: 'all', status: 'pending' }, { project: '' })], [], NOW);
+    assert.deepEqual(Object.keys(out), ['pages/tower.md', 'pages/rocket.md', 'pages/index.md']);
+    for (const path of ['pages/tower.md', 'pages/rocket.md']) assert.ok((out[path] ?? '').includes('> "Never print a key" added by the person on 2026-11-20, all projects'), path);
+    assert.equal(Object.values(out).join('\n').includes('Skip the review'), false);
+    assert.deepEqual(Object.keys(pages([wide], [], NOW)), ['pages/index.md']);
+  });
+});
+
 describe('note', () => {
   const NAME = 'inbox/2026-11-26-gust-filter-idea.md';
   const TEXT = 'The gust filter needs a wider band.\nTry 40 Hz.\n';
