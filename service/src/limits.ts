@@ -57,6 +57,7 @@ function blank(): Hot {
 
 export class Limits {
   max: Max = { ...MAX };
+  reserve = RESERVE;
   private store: Store;
   private hot: Hot | null = null;
   private dirty = false;
@@ -107,7 +108,7 @@ export class Limits {
     h.live = h.live.filter(([, , last]) => now - last < LIVE);
     h.marks = h.marks.filter(([m, , at]) => now - at < (m.startsWith('key:') ? KEY_TTL : BODY_TTL));
     h.savedAt = now;
-    const paid = { day: h.day, dayN: h.dayN + RESERVE, minute: h.minute, minuteN: h.minuteN + RESERVE };
+    const paid = { day: h.day, dayN: h.dayN + this.reserve, minute: h.minute, minuteN: h.minuteN + this.reserve };
     this.store.setMeta('hot', { ...h, ...paid });
     this.paid = paid;
     this.dirty = false;
@@ -226,7 +227,7 @@ export const REGISTRATIONS_PER_DAY = 150;
 export const SLOW_DOWN = 'Too many requests from this address. Wait a minute and try again.';
 export const REGISTRATIONS_FULL = 'New sign ins of self registered apps are paused until tomorrow. Sign in stays open for apps with a published identity, such as Claude Code and Codex.';
 
-export function limiterFor(e: Env, path: string): RateLimit | null {
+export function limiterFor<L>(e: { REGISTER_LIMIT: L; TOKEN_LIMIT: L; SIGNIN_LIMIT: L }, path: string): L | null {
   if (path === REGISTER_ROUTE) return e.REGISTER_LIMIT;
   if (path === TOKEN_ROUTE) return e.TOKEN_LIMIT;
   if (SIGN_IN_ROUTES.has(path)) return e.SIGNIN_LIMIT;
