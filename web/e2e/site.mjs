@@ -14,8 +14,10 @@ const HOME = `https://github.com/${REPO}`;
 const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
 const END = 18 * 60;
+const NAMES = ['Cursor', 'Codex', 'Gemini CLI', 'Claude desktop'];
+const SPOKEN = 'Work started in Claude Code is continued in Cursor.';
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
-const schemes = (process.env.SCHEMES ?? 'light,dark').split(',');
+const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
 const shots = process.env.SHOTS;
 const GROUND = { light: 'rgb(250, 250, 250)', dark: 'rgb(20, 20, 20)' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
@@ -108,6 +110,41 @@ function decode(png) {
   return { w, h, n, px };
 }
 
+function encode({ w, h, n, px }) {
+  const row = w * n;
+  const raw = Buffer.alloc((row + 1) * h);
+  for (let y = 0; y < h; y++) px.copy(raw, y * (row + 1) + 1, y * row, (y + 1) * row);
+  const chunk = (kind, data) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    out.write(kind, 4, 'latin1');
+    data.copy(out, 8);
+    out.writeUInt32BE(zlib.crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+    return out;
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(w, 0);
+  head.writeUInt32BE(h, 4);
+  head[8] = 8;
+  head[9] = n === 4 ? 6 : 2;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+async function whole(page, file, h) {
+  const tall = await page.evaluate(() => document.documentElement.scrollHeight);
+  const parts = [];
+  for (let y = 0; y < tall; y += h) {
+    const at = Math.max(0, Math.min(y, tall - h));
+    await page.evaluate((v) => scrollTo(0, v), at);
+    await page.waitForTimeout(250);
+    const shot = decode(await page.screenshot());
+    const skip = Math.round(((y - at) * shot.h) / h);
+    parts.push({ ...shot, h: shot.h - skip, px: shot.px.subarray(skip * shot.w * shot.n) });
+  }
+  fs.writeFileSync(file, encode({ w: parts[0].w, n: parts[0].n, h: parts.reduce((a, p) => a + p.h, 0), px: Buffer.concat(parts.map((p) => p.px)) }));
+  await page.evaluate(() => scrollTo(0, 0));
+}
+
 async function paint(page, dpr = 1) {
   const box = await page.locator('[aria-roledescription=space]').boundingBox();
   const { w, h, n, px } = decode(await page.screenshot({ clip: box }));
@@ -117,12 +154,14 @@ async function paint(page, dpr = 1) {
   const grid = new Uint16Array(cols * rows);
   const hues = new Map();
   let coloured = 0;
+  let light = 0;
   for (let y = 0; y < rows * cell; y++)
     for (let x = 0; x < cols * cell; x++) {
       const i = (y * w + x) * n;
       const r = px[i];
       const g = px[i + 1];
       const b = px[i + 2];
+      light += 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const max = Math.max(r, g, b);
       const spread = max - Math.min(r, g, b);
       if (spread < 60) continue;
@@ -141,7 +180,7 @@ async function paint(page, dpr = 1) {
       spots.push({ x: box.x + ((cx + 0.5) * cell) / dpr, y: box.y + ((cy + 0.5) * cell) / dpr, weight });
     }
   spots.sort((a, b) => b.weight - a.weight);
-  return { box, coloured, share: coloured / (w * h), hues: [...hues.values()].filter((v) => v > 150 * dpr * dpr).length, spots };
+  return { box, coloured, share: coloured / (w * h), light: light / (rows * cols * cell * cell), hues: [...hues.values()].filter((v) => v > 150 * dpr * dpr).length, spots };
 }
 
 const minutes = (text) => {
@@ -152,7 +191,10 @@ const readout = async (page) => minutes(await page.locator('[data-readout]').tex
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const box = (page, sel) => page.locator(sel).first().boundingBox().catch(() => null);
 const inside = (r, w, h) => !!r && r.width > 0 && r.height > 0 && r.x >= -0.5 && r.y >= -0.5 && r.x + r.width <= w + 0.5 && r.y + r.height <= h + 0.5;
+const span = (r) => (r ? `${Math.round(r.y)} to ${Math.round(r.y + r.height)}` : 'missing');
 const top = (page) => page.evaluate(() => Math.round(scrollY));
+const panel = (page) => page.evaluate(() => document.querySelector('[data-panel]')?.getAttribute('data-panel') ?? null);
+const ground = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 const settle = async (page) => {
   let last = -1;
   for (let i = 0; i < 40; i++) {
@@ -163,24 +205,84 @@ const settle = async (page) => {
   }
   return last;
 };
-const panel = (page) => page.evaluate(() => document.querySelector('[data-panel]')?.getAttribute('data-panel') ?? null);
+const centre = async (page) => {
+  await page.evaluate(() => document.querySelector('[data-site=demo]').scrollIntoView({ block: 'center' }));
+  await settle(page);
+  return box(page, '[aria-roledescription=space]');
+};
 
-const words = (page) =>
-  page.evaluate(() =>
-    [document.title, document.querySelector('meta[name=description]')?.getAttribute('content') ?? '', document.body.innerText, ...[...document.querySelectorAll('[aria-label]')].map((e) => e.getAttribute('aria-label') ?? '')].join('\n'),
-  );
+const texts = (page) =>
+  page.evaluate(() => {
+    const out = [document.title, document.querySelector('meta[name=description]')?.getAttribute('content') ?? ''];
+    const asked = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const el = node.parentElement;
+      const text = node.textContent.trim();
+      if (!el || !text || el.closest('script, style')) continue;
+      out.push(text);
+      if (text.includes('?') && !el.closest('[data-site=faq] h3')) asked.push(text);
+    }
+    for (const name of ['aria-label', 'title', 'alt', 'placeholder', 'data-room']) for (const el of document.querySelectorAll(`[${name}]`)) out.push(el.getAttribute(name));
+    return { out, asked };
+  });
 
-function faults(text) {
+function faults(list) {
   const found = [];
   const rules = [
     ['a banned word', /\b(?:itself|its|it)\b/gi],
     ['a dash as punctuation', /[‒-―−]|(?:^|\s)-+(?=\s|$)/gm],
     ['a semicolon', /;/g],
+    ['a colon in prose', /:(?=\s|$)/gm],
     ['a parenthesis', /[()]/g],
   ];
-  for (const [what, re] of rules) for (const m of text.matchAll(re)) found.push(`${what} in "${text.slice(Math.max(0, m.index - 24), m.index + 24).replace(/\s+/g, ' ').trim()}"`);
+  for (const text of list) for (const [what, re] of rules) for (const m of text.matchAll(re)) found.push(`${what} in "${text.slice(Math.max(0, m.index - 24), m.index + 24).replace(/\s+/g, ' ').trim()}"`);
   return found;
 }
+
+const shape = (page) =>
+  page.evaluate(() => {
+    const out = (e) => !e.closest('[data-site=demo]');
+    const count = (s) => s.trim().split(/\s+/).filter(Boolean).length;
+    const size = (e) => parseFloat(getComputedStyle(e).fontSize);
+    const heads = [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')].filter(out);
+    const small = (e, by) => !!e && !/^H[1-6]$/.test(e.tagName) && count(e.innerText ?? '') > 0 && count(e.innerText ?? '') <= 4 && size(e) <= by;
+    const frame = document.querySelector('[data-site=demo]');
+    const marks = heads.filter((h) => small(h.previousElementSibling, size(h))).map((h) => h.textContent.trim());
+    if (frame && (small(frame.previousElementSibling, 99) || small(frame.nextElementSibling, 99))) marks.push('demo frame');
+    if ([...document.querySelectorAll('body *')].some((e) => !e.children.length && /^demo$/i.test(e.textContent.trim()))) marks.push('demo');
+    let words = 0;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const el = node.parentElement;
+      if (!el || el.closest('[data-site=faq], [data-site=demo], .sr-only, script, style') || !el.checkVisibility({ visibilityProperty: true })) continue;
+      words += count(node.textContent);
+    }
+    const items = [...document.querySelectorAll('[data-site=faq] h3')].map((h) => ({ q: h.textContent.trim(), a: h.nextElementSibling?.tagName === 'P' ? h.nextElementSibling.textContent.trim() : '' }));
+    const day = document.querySelector('[data-site=day]');
+    const nav = document.querySelector('nav');
+    const foot = document.querySelector('footer');
+    const pills = [...document.querySelectorAll('[data-site=action] a')];
+    const typed = document.querySelector('[data-site=typed]');
+    const said = typed?.cloneNode(true);
+    for (const e of said?.querySelectorAll('[aria-hidden]') ?? []) e.remove();
+    return {
+      h1: heads.filter((h) => h.tagName === 'H1').map((h) => h.textContent.trim()),
+      h2: heads.filter((h) => h.tagName === 'H2').map((h) => h.textContent.trim()),
+      marks,
+      words,
+      items,
+      day: day ? { text: day.innerText.trim().split(/\s*\n\s*/), under: day.previousElementSibling?.previousElementSibling?.textContent ?? '' } : null,
+      nav: nav ? { text: nav.innerText.trim().split(/\s+/), links: [...nav.querySelectorAll('a')].map((a) => a.href), parts: nav.children.length, toggles: nav.querySelectorAll('[role=switch]').length } : null,
+      foot: foot ? { text: foot.innerText, links: [...foot.querySelectorAll('a')].map((a) => a.href), tops: [...foot.children].map((e) => Math.round(e.getBoundingClientRect().top / 8)) } : null,
+      pills: pills.map((a) => [a.textContent.trim(), a.getAttribute('href'), a.dataset.variant]),
+      status: document.querySelector('[data-site=status]')?.textContent ?? '',
+      spoken: said?.textContent.trim() ?? '',
+      live: !!typed?.closest('[aria-live], [role=status], [role=alert], [role=log]') || !!typed?.querySelector('[aria-live]'),
+      kept: localStorage.length + sessionStorage.length,
+      cookie: document.cookie,
+    };
+  });
 
 async function open(page, touch, spots) {
   for (const s of spots.slice(0, 14)) {
@@ -193,26 +295,44 @@ async function open(page, touch, spots) {
 
 async function walk(b, site, w, h, scheme) {
   const tag = `${scheme} ${w}x${h}`;
+  const wide = w >= 1000;
+  const other = scheme === 'light' ? 'dark' : 'light';
   const { ctx, page, errors, touch } = await context(b, { w, h, scheme });
   const cdp = touch && engine === 'chromium' ? await ctx.newCDPSession(page) : null;
   const asked = [];
   page.on('request', (r) => asked.push(r.url()));
+  const tap = (loc) => (touch ? loc.tap() : loc.click());
   try {
     await page.goto(site.url);
     await ready(page);
+    await page.evaluate((names) => {
+      const seen = new Set();
+      const tall = new Set();
+      window.__typed = { seen, tall };
+      setInterval(() => {
+        const p = document.querySelector('[data-site=typed]');
+        const text = p?.querySelector('[data-site=agent]')?.textContent ?? '';
+        if (names.includes(text)) seen.add(text);
+        if (p) tall.add(Math.round(p.getBoundingClientRect().height));
+      }, 50);
+    }, NAMES);
 
-    const h1 = await box(page, 'h1');
-    const line = await box(page, '[data-site=line]');
-    const action = await box(page, '[data-site=action] a');
-    const mark = await box(page, '[data-site=wordmark]');
-    check(`${tag} the wordmark, the h1, the line and the action pill are inside the first screen`, [mark, h1, line, action].every((r) => inside(r, w, h)), [mark, h1, line, action].map((r) => (r ? `${Math.round(r.y)} to ${Math.round(r.y + r.height)}` : 'missing')).join(', '));
-    const scene = await box(page, '[aria-roledescription=space]');
+    const first = [await box(page, 'h1'), await box(page, '[data-site=typed]'), await box(page, '[data-site=line]'), await box(page, '[data-site=action] a >> nth=0'), await box(page, '[data-site=action] a >> nth=1')];
+    check(`${tag} the name, the typed line, the sentence and both pills are inside the first screen`, first.every((r) => inside(r, w, h)), first.map(span).join(', '));
+    const frame = await box(page, '[data-site=demo]');
+    const column = await box(page, '[data-site=column]');
+    check(`${tag} the top of the demo frame is inside the first screen`, !!frame && frame.y > 0 && frame.y < h - 40, `frame ${span(frame)}`);
+    check(`${tag} the text column is ${wide ? 'between 600 and 700 px wide' : 'as wide as the screen allows'}`, !!column && (wide ? column.width >= 600 && column.width <= 700 : column.width <= w - 16 && column.width >= w - 80), `${Math.round(column?.width ?? 0)} px`);
+    check(`${tag} the demo frame is ${wide ? 'wider than the text column and at most 1100 px' : 'no wider than the screen'}`, !!frame && !!column && (wide ? frame.width >= column.width + 200 && frame.width <= 1100.5 : frame.width <= w), `${Math.round(frame?.width ?? 0)} px`);
+    await page.waitForTimeout(700);
+    const rest = await top(page);
+
+    let scene = await centre(page);
     const slider = await box(page, '[data-slot=slider]');
-    check(`${tag} the scene and the time slider are inside the first screen`, inside(scene, w, h) && inside(slider, w, h) && scene.height >= 200, scene && slider ? `scene ${Math.round(scene.width)} by ${Math.round(scene.height)}, slider ends at ${Math.round(slider.y + slider.height)}` : 'missing');
-
+    check(`${tag} the scene and the time slider fit in one screen`, inside(scene, w, h) && inside(slider, w, h) && scene.height >= 200, scene && slider ? `scene ${Math.round(scene.width)} by ${Math.round(scene.height)}, slider ends at ${Math.round(slider.y + slider.height)}` : 'missing');
     await page.waitForTimeout(1600);
     const played = await readout(page);
-    check(`${tag} the demo day plays from 08:00 and the page stays at the top`, played > START && played < END && (await top(page)) === 0, `${clock(played)} after 1.6 s, scroll ${await top(page)}`);
+    check(`${tag} the demo day plays from 08:00 and the page stays at the top until a press`, played > START && played < END && rest === 0, `${clock(played)}, scroll ${rest} before the first press`);
 
     const thumb = page.locator('[data-slot=slider-thumb]');
     const tb = await thumb.boundingBox();
@@ -232,82 +352,109 @@ async function walk(b, site, w, h, scheme) {
     await page.keyboard.press('End');
     check(`${tag} the slider moves by keyboard`, last === END && back === END - 1, `End gives ${clock(last)}, ArrowLeft gives ${clock(back)}`);
     await page.evaluate(() => document.activeElement?.blur());
+    await page.mouse.move(2, 2);
+    scene = await centre(page);
     await page.waitForTimeout(1500);
 
     const drawn = await paint(page);
     check(`${tag} the scene draws real pixels`, drawn.share > 0.02 && drawn.hues >= 2, `${drawn.coloured} coloured pixels in ${drawn.hues} hues, ${(drawn.share * 100).toFixed(1)} percent of the scene`);
 
+    const look = await page.evaluate(() => {
+      const bars = [...document.querySelectorAll('[data-site=day] [data-site=bar]')];
+      const on = (svg) => [...svg.querySelectorAll('rect')].reduce((a, r) => a + r.getBoundingClientRect().width, 0);
+      return { ground: getComputedStyle(document.body).backgroundColor, fills: bars.map((s) => getComputedStyle(s.querySelector('rect')).fill), share: bars.map((s) => on(s) / s.getBoundingClientRect().width) };
+    });
+    const seen = (site.fills[scheme] ??= look.fills);
+    check(`${tag} the page follows the system theme`, look.ground === GROUND[scheme] && look.fills.length === 2 && seen.join() === look.fills.join() && (!site.fills[other] || look.fills.every((v, i) => v !== site.fills[other][i])), `ground ${look.ground}, bars ${look.fills.join(' and ')}`);
+
+    const toggle = page.locator('nav [role=switch]');
+    const was = await toggle.getAttribute('aria-checked').catch(() => null);
+    await page.evaluate(() => scrollTo(0, 0));
+    await tap(toggle).catch(() => {});
+    await centre(page);
+    await page.waitForTimeout(900);
+    const forced = { ground: await ground(page), light: (await paint(page)).light, on: await toggle.getAttribute('aria-checked').catch(() => null) };
+    await page.evaluate(() => scrollTo(0, 0));
+    await tap(toggle).catch(() => {});
+    scene = await centre(page);
+    await page.waitForTimeout(900);
+    const home = { ground: await ground(page), light: (await paint(page)).light };
+    const key = `${w}x${h}`;
+    const mine = ((site.light[key] ??= {})[scheme] = { own: drawn.light, forced: forced.light });
+    const twin = site.light[key][other];
+    const same = !twin || (Math.abs(forced.light - twin.own) <= 4 && Math.abs(twin.forced - mine.own) <= 4);
+    check(
+      `${tag} the theme switch turns the page and the scene to the other theme and back`,
+      was === String(scheme === 'dark') && forced.on === String(scheme !== 'dark') && forced.ground === GROUND[other] && Math.abs(forced.light - drawn.light) > 40 && home.ground === GROUND[scheme] && Math.abs(home.light - drawn.light) <= 4 && same,
+      `scene light ${drawn.light.toFixed(1)} to ${forced.light.toFixed(1)} to ${home.light.toFixed(1)}${twin ? `, the ${other} run had ${twin.own.toFixed(1)} and ${twin.forced.toFixed(1)}` : ''}`,
+    );
+
     const id = await open(page, touch, drawn.spots);
     const title = id ? ((await page.locator('[data-panel] h2').textContent()) ?? '').trim() : '';
     check(`${tag} a press on a block opens a card`, !!id && title.length > 3, `item ${id}, ${title}`);
     if (touch) await page.locator('[data-slot=sheet-close]').tap().catch(() => {});
-    else await page.mouse.click(h1 ? h1.x + 4 : 4, h1 ? h1.y + 4 : 4);
+    else await page.mouse.click(4, 4);
     const closed = await waitFor(async () => !(await panel(page)), 3000);
     check(`${tag} the card can be closed`, !!id && closed);
     await page.waitForTimeout(600);
 
     const cx = scene.x + scene.width / 2;
     const cy = scene.y + scene.height / 2;
+    const from = await top(page);
     if (touch && cdp) await touchDrag(page, cdp, cx, cy + 70, cx, cy - 130);
     else {
       await page.mouse.move(cx, cy);
       await page.mouse.wheel(0, 320);
     }
-    const moved = await waitFor(async () => ((await top(page)) > 60 ? top(page) : 0), 2000);
-    check(`${tag} the page scrolls from over the scene`, moved > 60, `scroll ${moved}`);
+    const moved = await waitFor(async () => ((await top(page)) > from + 60 ? (await top(page)) - from : 0), 2000);
+    check(`${tag} the page scrolls from over the scene`, moved > 60, `scrolled ${moved}`);
     await settle(page);
-    await page.evaluate(() => scrollTo(0, 0));
     await page.mouse.move(2, 2);
+    scene = await centre(page);
     await page.waitForTimeout(300);
-    await settle(page);
 
     const before = await labels(page);
+    const held = await top(page);
     await drag(page, touch, cdp, scene.x + scene.width * 0.8, scene.y + scene.height * 0.9, scene.x + scene.width * 0.4, scene.y + scene.height * 0.9);
     await page.waitForTimeout(600);
     const after = await labels(page);
     const turned = before.length && after.length ? Math.max(...before.map((a, i) => Math.hypot(a.x - (after[i]?.x ?? a.x), a.y - (after[i]?.y ?? a.y)))) : 0;
-    check(`${tag} a drag turns the scene`, turned > 8 && (await top(page)) === 0, `label moved ${turned.toFixed(1)} px`);
+    check(`${tag} a drag turns the scene`, turned > 8 && (await top(page)) === held, `label moved ${turned.toFixed(1)} px`);
 
     const o = await overflow(page);
     check(`${tag} nothing is wider than the screen`, o.scroll <= 0 && !o.wide.length, JSON.stringify(o));
 
-    const facts = await page.evaluate(() => ({
-      h1: document.querySelectorAll('h1').length,
-      parts: [...document.querySelectorAll('[data-site=part] h2')].map((e) => e.textContent.trim()),
-      steps: document.querySelectorAll('[data-site=steps] li').length,
-      rows: document.querySelectorAll('[data-site=rows] dt').length,
-      links: [...document.querySelectorAll('footer a')].map((a) => a.href),
-      foot: document.querySelector('footer')?.innerText ?? '',
-      pill: document.querySelector('[data-site=action] a')?.href ?? '',
-      status: document.querySelector('[data-site=status]')?.textContent ?? '',
-    }));
+    const s = await shape(page);
+    check(`${tag} the page has exactly one h1 and exactly one h2 and the h2 says FAQ`, s.h1.length === 1 && s.h1[0] === 'agent-ctx' && s.h2.length === 1 && s.h2[0] === 'FAQ', `h1 ${s.h1.join(' and ')}, h2 ${s.h2.join(' and ')}`);
+    const sentences = (a) => (a.match(/[.!?](?=\s|$)/g) ?? []).length;
+    const weak = s.items.filter((i) => !i.q.endsWith('?') || i.a.length < 20 || sentences(i.a) < 1 || sentences(i.a) > 2);
+    check(`${tag} eight questions exist and each has an answer of one or two sentences`, s.items.length === 8 && !weak.length, `${s.items.length} questions${weak.length ? `, weak ${weak.map((i) => i.q).join(' ')}` : ''}`);
+    check(`${tag} no small label sits above a heading or beside the demo`, !s.marks.length, s.marks.join(' | '));
+    check(`${tag} fewer than 60 words stand outside the FAQ and the demo frame`, s.words > 20 && s.words < 60, `${s.words} words`);
+    check(`${tag} the top bar holds the GitHub link and the theme switch and nothing else`, !!s.nav && s.nav.parts === 3 && s.nav.toggles === 1 && s.nav.links.length === 1 && s.nav.links[0] === HOME && s.nav.text.join(' ') === 'GitHub Dark', s.nav ? s.nav.text.join(' ') : 'missing');
     check(
-      `${tag} the page has one h1, three parts, the action pill and the footer facts`,
-      facts.h1 === 1 && facts.parts.length === 3 && facts.steps > 0 && facts.steps <= 3 && facts.rows === 4 && facts.links.includes(HOME) && /\bMIT\b/.test(facts.foot) && /cookie/.test(facts.foot) && facts.pill === HOME && /tested/.test(facts.status),
-      `${facts.h1} h1, ${facts.parts.length} parts, ${facts.steps} steps, ${facts.rows} rows`,
+      `${tag} the main pill goes to GitHub, the plain pill to the FAQ, and the testing line shows`,
+      s.pills.length === 2 && s.pills[0].join() === ['View on GitHub', HOME, 'default'].join() && s.pills[1].join() === ['Read the FAQ', '#faq', 'outline'].join() && /first release is being tested/.test(s.status),
+      s.pills.map((p) => p[0]).join(' and '),
     );
+    check(`${tag} the day bars sit under the answer about the background with the two labels only`, !!s.day && s.day.text.join('|') === 'A background server|agent-ctx' && /background/.test(s.day.under) && look.share.length === 2 && look.share[0] > 0.99 && look.share[1] > 0.1 && look.share[1] < 0.6, s.day ? `${s.day.text.join(' and ')}, ${look.share.map((v) => `${(v * 24).toFixed(1)} hours`).join(' and ')}` : 'missing');
+    check(`${tag} the footer holds the licence, the repository link and the cookie sentence${wide ? ' in one line' : ''}`, !!s.foot && /\bMIT\b/.test(s.foot.text) && s.foot.links.includes(HOME) && /No cookie is set/.test(s.foot.text) && /another host/.test(s.foot.text) && (!wide || new Set(s.foot.tops).size === 1), s.foot ? `${new Set(s.foot.tops).size} lines` : 'missing');
 
-    const text = await words(page);
-    const bad = faults(text);
-    check(`${tag} the wording rules hold`, text.length > 400 && !bad.length, bad.slice(0, 4).join(' | '));
-    check(`${tag} no install line is shown`, !text.includes('npx') && !(await page.locator('[data-site=install]').count()));
+    const t = await texts(page);
+    const bad = faults(t.out);
+    check(`${tag} the wording rules hold in every text node`, t.out.length > 40 && !bad.length, bad.slice(0, 4).join(' | '));
+    check(`${tag} a question mark stands only on the eight questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
+    check(`${tag} no install line is shown`, !t.out.join('\n').includes('npx') && !(await page.locator('[data-site=install]').count()));
 
-    const look = await page.evaluate(() => {
-      const bars = [...document.querySelectorAll('[data-site=day] [data-site=bar]')];
-      const wide = (svg) => [...svg.querySelectorAll('rect')].reduce((a, r) => a + r.getBoundingClientRect().width, 0);
-      return { ground: getComputedStyle(document.body).backgroundColor, ink: getComputedStyle(document.body).color, fills: bars.map((s) => getComputedStyle(s.querySelector('rect')).fill), full: bars.map((s) => s.getBoundingClientRect().width), on: bars.map(wide), cookie: document.cookie };
-    });
-    const seen = (site.fills[scheme] ??= look.fills.join());
-    const other = site.fills[scheme === 'light' ? 'dark' : 'light'];
-    check(`${tag} the page follows the system theme`, look.ground === GROUND[scheme] && look.fills.length === 2 && seen === look.fills.join() && other !== seen, `ground ${look.ground}, bars ${look.fills.join(' and ')}`);
-    const share = look.on.map((v, i) => v / look.full[i]);
-    check(`${tag} the day bars show 24 hours beside the hours with an agent open`, share.length === 2 && share[0] > 0.99 && share[1] > 0.1 && share[1] < 0.6, share.map((v) => `${(v * 24).toFixed(1)} hours`).join(' and '));
+    const typed = await page.evaluate(() => ({ seen: [...window.__typed.seen], tall: [...window.__typed.tall] }));
+    check(`${tag} the typed line shows at least two agent names over time and keeps one height`, typed.seen.length >= 2 && typed.tall.length === 1, `${typed.seen.join(', ')}, heights ${typed.tall.join(' ')}`);
+    check(`${tag} screen readers get the full sentence once and no live updates`, s.spoken === SPOKEN && !s.live, s.spoken);
 
     const axe = await new AxeBuilder({ page }).analyze();
     const hits = axe.violations.flatMap((v) => v.nodes.map((n) => `${v.id} ${n.target.join(' ')}`));
     check(`${tag} the page has no accessibility violation`, !hits.length, hits.slice(0, 4).join(' | '));
 
-    check(`${tag} no cookie is set`, look.cookie === '' && !(await ctx.cookies()).length);
+    check(`${tag} no cookie is set and nothing is stored`, s.cookie === '' && s.kept === 0 && !(await ctx.cookies()).length);
     const away = asked.filter((u) => !u.startsWith(site.url));
     check(`${tag} every request stays under ${BASE} on the local server`, asked.length > 3 && !away.length, `${asked.length} requests${away.length ? `, away ${away.slice(0, 3).join(' ')}` : ''}`);
     check(`${tag} the page has no console error`, !errors.length, errors.join(' | '));
@@ -318,7 +465,7 @@ async function walk(b, site, w, h, scheme) {
 
 async function released(b, site, w, h) {
   const tag = `released ${w}x${h}`;
-  const { ctx, page, errors, touch } = await context(b, { w, h });
+  const { ctx, page, errors, touch } = await context(b, { w, h, scheme: 'dark' });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: site.origin }).catch(() => {});
   try {
     await page.goto(site.url);
@@ -326,47 +473,57 @@ async function released(b, site, w, h) {
     const code = page.locator('[data-site=install]');
     const copy = page.locator('[data-site=action]').getByRole('button', { name: 'Copy' });
     const shown = ((await code.textContent().catch(() => '')) ?? '').trim();
-    check(`${tag} the install line shows with a Copy button inside the first screen`, shown === LINE && inside(await box(page, '[data-site=install]'), w, h) && inside(await copy.boundingBox().catch(() => null), w, h), shown);
+    const s = await shape(page);
+    check(
+      `${tag} the install line with Copy and the plain pill to GitHub are inside the first screen`,
+      shown === LINE && inside(await box(page, '[data-site=install]'), w, h) && inside(await copy.boundingBox().catch(() => null), w, h) && s.pills.length === 1 && s.pills[0].join() === ['View on GitHub', HOME, 'outline'].join() && inside(await box(page, '[data-site=action] a'), w, h),
+      shown,
+    );
     if (touch) await copy.tap().catch(() => {});
     else await copy.click().catch(() => {});
     const done = await waitFor(() => page.locator('[data-site=action]').getByRole('button', { name: 'Copied' }).count(), 2000);
     const held = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
     check(`${tag} Copy puts the install line on the clipboard`, !!done && held === LINE, held);
     const o = await overflow(page);
-    const bad = faults(await words(page));
-    check(`${tag} the testing line and the pill are gone and the rules still hold`, !(await page.locator('[data-site=status]').count()) && !(await page.locator('[data-site=action] a').count()) && o.scroll <= 0 && !o.wide.length && !bad.length && !errors.length, [...bad, ...errors].slice(0, 3).join(' | '));
+    const t = await texts(page);
+    const bad = faults(t.out);
+    check(`${tag} the testing line is gone, the rules hold and the word count stays under 60`, !s.status && o.scroll <= 0 && !o.wide.length && !bad.length && !t.asked.length && s.words < 60 && !errors.length, [`${s.words} words`, ...bad, ...errors].slice(0, 3).join(' | '));
   } finally {
     await ctx.close();
   }
 }
 
 async function still(b, site) {
-  const { ctx, page, errors } = await context(b, { w: 1440, h: 900, reduced: true });
+  const { ctx, page, errors } = await context(b, { w: 1440, h: 900, scheme: 'dark', reduced: true });
   try {
     await page.goto(site.url);
     await ready(page);
+    const name = () => page.locator('[data-site=agent]').textContent();
     const t0 = await readout(page);
-    await page.waitForTimeout(1500);
+    const n0 = await name();
+    await page.waitForTimeout(4200);
     const t1 = await readout(page);
+    const n1 = await name();
+    const caret = await page.evaluate(() => getComputedStyle(document.querySelector('.site-caret')).animationName);
     const blocks = Number(await page.locator('[aria-roledescription=space]').getAttribute('data-blocks'));
     check('reduced motion leaves the demo still at the end of the day', t0 === END && t1 === END && blocks > 20 && !errors.length, `${clock(t0)} then ${clock(t1)}, ${blocks} blocks`);
+    check('reduced motion leaves the typed line still with Cursor', n0 === NAMES[0] && n1 === NAMES[0] && caret === 'none', `${n0} then ${n1}, caret animation ${caret}`);
   } finally {
     await ctx.close();
   }
 }
 
 async function shoot(b, site, w, h, scheme, name = '') {
-  const { ctx, page, touch } = await context(b, { w, h, scheme, dpr: 2 });
+  const { ctx, page, touch } = await context(b, { w, h, scheme, dpr: 2, reduced: true });
   try {
     await page.goto(site.url);
     await ready(page);
-    await page.locator('[data-slot=slider-thumb]').focus();
-    await page.keyboard.press('End');
-    await page.evaluate(() => document.activeElement?.blur());
-    await page.waitForTimeout(1800);
+    await page.waitForTimeout(1500);
     await page.screenshot({ path: path.join(shots, `${name}first-${w}x${h}-${scheme}.png`) });
     if (name) return;
-    await page.screenshot({ path: path.join(shots, `page-${w}x${h}-${scheme}.png`), fullPage: true });
+    await whole(page, path.join(shots, `page-${w}x${h}-${scheme}.png`), h);
+    await centre(page);
+    await page.waitForTimeout(400);
     if (!(await open(page, touch, (await paint(page, 2)).spots))) return;
     await page.waitForTimeout(700);
     await page.screenshot({ path: path.join(shots, `card-${w}x${h}-${scheme}.png`) });
@@ -406,7 +563,7 @@ try {
   await build(null, false);
   await build(path.join(temp, 'released'), true);
   built(DIST);
-  plain = { ...(await serve(DIST)), fills: {} };
+  plain = { ...(await serve(DIST)), fills: {}, light: {} };
   later = await serve(path.join(temp, 'released'));
   b = await browser();
   for (const scheme of schemes) for (const [w, h] of sizes) await run(`${scheme} ${w}x${h} walk`, () => walk(b, plain, w, h, scheme));
@@ -415,7 +572,7 @@ try {
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });
     for (const scheme of schemes) for (const [w, h] of sizes) await shoot(b, plain, w, h, scheme);
-    for (const [w, h] of sizes) await shoot(b, later, w, h, 'light', 'released-');
+    for (const scheme of schemes) for (const [w, h] of sizes) await shoot(b, later, w, h, scheme, 'released-');
   }
 } finally {
   await b?.close();
