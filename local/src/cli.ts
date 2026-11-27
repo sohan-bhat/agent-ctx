@@ -11,15 +11,15 @@ import { command as mirror } from './sync.ts';
 
 declare const VERSION: string;
 
-const NAMES: Record<Agent, string> = { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', gemini: 'Gemini CLI', 'claude-desktop': 'the Claude desktop app' };
+const NAMES: Record<Agent, string> = { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', gemini: 'Gemini CLI', antigravity: 'Antigravity', grok: 'Grok Build', muse: 'Muse Code', 'claude-desktop': 'the Claude desktop app' };
 const AGENTS = Object.keys(NAMES) as Agent[];
 const BUILT = ['agent-ctx.mjs', 'hook.mjs', 'LICENSES.txt'];
 const ONE = 'agent-ctx';
 const FILES = PROGRAM ? [ONE] : BUILT;
 const BACKUP = '.agent-ctx-backup';
 const DONE: Record<string, string> = { install: 'installed', uninstall: 'removed', add: 'added', remove: 'removed' };
-const SIGNS = ['CLAUDECODE', 'CURSOR_AGENT', 'CODEX_SANDBOX', 'GEMINI_CLI'];
-const ASKS: Agent[] = ['cursor', 'codex', 'gemini', 'claude-desktop'];
+const SIGNS = ['CLAUDECODE', 'CURSOR_AGENT', 'CODEX_SANDBOX', 'GEMINI_CLI', 'GROK_SESSION_ID', 'MUSE_SESSION_ID'];
+const ASKS: Agent[] = ['cursor', 'codex', 'gemini', 'antigravity', 'grok', 'muse', 'claude-desktop'];
 const HELD = 'because the text has the form of an instruction to an agent';
 
 type Row = { kind: string; status: string | null; held: number; n: number };

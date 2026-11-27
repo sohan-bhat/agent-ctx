@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test as plainTest } from 'node:test';
-import { BANNED, MAIN, PTY, ROOT, SCRIPTS, calls, hook, one, place, plain, preload, program, put, rows, run, server, stub, terminal, tree, typing, type Place } from './kit.ts';
+import { BANNED, MAIN, PTY, ROOT, SCRIPTS, calls, envOf, hook, one, place, plain, preload, program, put, rows, run, server, stub, terminal, tree, typing, type Place, type Ran } from './kit.ts';
 
 const TMP = mkdtempSync(join(tmpdir(), 'agent-ctx-cli-'));
 const INSTALL = 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
@@ -256,6 +257,84 @@ test(
     assert.equal(next.out.includes('dates'), false);
     assert.equal(next.out.includes('previous instructions'), false);
     assert.deepEqual(lines(run(MAIN, ['rules'], where).out), ['No rule is pending.', '1 rule is held and stays off, because the text has the form of an instruction to an agent.']);
+  },
+  !PTY,
+);
+
+const NEWER = 'Antigravity, Grok Build and Muse Code';
+
+function newer(seeded: boolean): Place {
+  const where = place(TMP);
+  stub(where);
+  for (const folder of ['.grok', '.config/muse']) mkdirSync(join(where.HOME, folder), { recursive: true });
+  put(join(where.HOME, '.gemini/antigravity-cli/settings.json'), THEME);
+  if (seeded) {
+    put(join(where.HOME, '.gemini/config/mcp_config.json'), FILES_SERVER);
+    put(join(where.HOME, '.grok/config.toml'), MODEL);
+    put(join(where.HOME, '.config/muse/settings.json'), { schema_version: 1 });
+  }
+  return where;
+}
+
+test('install connects Antigravity, Grok Build and Muse Code in both forms with no Gemini CLI file, and uninstall leaves the home as before', () => {
+  for (const [form, seeded] of [['script', false], ['script', true], ['program', false], ['program', true]] as const) {
+    const where = newer(seeded);
+    const before = tree(where.HOME);
+    const go = (args: string[]): Ran => (form === 'script' ? run(MAIN, args, where) : one(args, where));
+    const placed = form === 'script' ? app(where) : app(where, 'agent-ctx');
+    const me = form === 'script' ? `node ${placed}` : placed;
+    const want = (agent: string): { command: string; args: string[] } => (form === 'script' ? { command: process.execPath, args: [placed, 'mcp', '--agent', agent] } : { command: placed, args: ['mcp', '--agent', agent] });
+    const file = (name: string): string => readFileSync(join(where.HOME, name), 'utf8');
+    const r = go(['install', '--yes']);
+    assert.deepEqual([r.code, r.err], [0, '']);
+    const said = lines(r.out);
+    assert.equal(said[0], `${NEWER} were found on this computer.`);
+    assert.equal(said.length, 2 + 4 + 3, r.out);
+    assert.deepEqual(said.slice(-3), [`Open a new session in ${NEWER} so the memory is loaded.`, 'Approve the agent-ctx server and hooks if an agent asks.', `Type ${me} status to see what is connected.`]);
+    for (const line of said) assert.equal(BANNED.exec(plain(line, where)), null, line);
+    assert.deepEqual([existsSync(join(where.HOME, '.gemini/settings.json')), calls(where)], [false, []]);
+    assert.deepEqual(json(where, '.gemini/config/mcp_config.json').mcpServers['agent-ctx'], want('antigravity'));
+    assert.deepEqual(Object.keys(json(where, '.gemini/config/mcp_config.json').mcpServers), seeded ? ['files', 'agent-ctx'] : ['agent-ctx']);
+    assert.deepEqual(JSON.parse(file('.config/muse/settings.json')), { schema_version: 1, mcp_servers: { 'agent-ctx': { transport: 'stdio', ...want('muse'), mode: 'optional' } } });
+    assert.equal(file('.grok/config.toml'), `${seeded ? `${MODEL}\n` : ''}[mcp_servers.agent-ctx]\ncommand = "${want('grok').command}"\nargs = [${want('grok').args.map((arg) => `"${arg}"`).join(', ')}]\n`);
+    const hooks = JSON.parse(file('.gemini/config/hooks.json')) as Record<string, Record<string, unknown>>;
+    assert.deepEqual([Object.keys(hooks), Object.keys(hooks['agent-ctx'])], [['agent-ctx'], ['PreInvocation', 'PostToolUse', 'Stop']]);
+    const lead = form === 'script' ? `${process.execPath} ${app(where, 'hook.mjs')}` : `${placed} hook`;
+    const commands = [...file('.gemini/config/hooks.json').matchAll(/"command": "([^"]*)"/g)].map((m) => m[1]);
+    assert.deepEqual(commands, ['PreInvocation', 'PostToolUse', 'Stop'].map((event) => `${lead} --agent antigravity --event ${event}`));
+    if (form === 'script') {
+      const input = JSON.stringify({ conversationId: 'v-1', workspacePaths: [KILN], modelName: 'model-v', invocationNum: 0, initialNumSteps: 1, lastUserInput: 'Glaze the kiln shelf with the cone 6 mix' });
+      const fired = spawnSync('/bin/sh', ['-c', commands[0]], { encoding: 'utf8', env: envOf(where), input });
+      assert.deepEqual([fired.status, fired.stdout, fired.stderr], [0, '{}', '']);
+      assert.deepEqual(rows<{ t: string; text: string }>(where, 'SELECT t, text FROM events'), [{ t: 'prompt', text: 'Glaze the kiln shelf with the cone 6 mix' }]);
+    }
+    const once = tree(where.HOME);
+    assert.equal(lines(go(['install', '--yes']).out).at(-1), `${NEWER} are already connected, so nothing was changed.`);
+    assert.deepEqual(tree(where.HOME), once);
+    assert.equal(lines(go(['status']).out).at(-1), `${NEWER} are connected.`);
+    const gone = go(['uninstall', '--yes']);
+    assert.deepEqual([gone.code, gone.err], [0, '']);
+    assert.deepEqual(tree(where.HOME), before);
+    assert.equal(lines(gone.out).includes(`The folder ${join(where.HOME, '.gemini/config')} is removed, because no file is left in the folder.`), !seeded, gone.out);
+    for (const line of lines(gone.out).slice(0, -1)) assert.equal(BANNED.exec(plain(line, where)), null, line);
+    assert.deepEqual(calls(where), []);
+  }
+});
+
+test(
+  'a rule is not accepted at a terminal that has a variable of Grok Build or Muse Code',
+  async () => {
+    const where = home();
+    await server(where, 'cursor', [['rule', RULE]]);
+    const status = (): string[] => rows<{ status: string }>(where, "SELECT json_extract(body, '$.status') AS status FROM items WHERE kind = 'rule'").map((r) => r.status);
+    const id = rows<{ id: string }>(where, "SELECT id FROM items WHERE kind = 'rule'")[0].id.slice(0, 8);
+    for (const sign of ['GROK_SESSION_ID', 'MUSE_SESSION_ID']) {
+      const r = terminal(['rules', 'accept', id], where, { [sign]: 's-1' });
+      assert.deepEqual([r.code, lines(r.out)], [1, ['A rule is turned on or down by a person at a terminal, so type npx -y github:sohan-bhat/agent-ctx rules accept ID in a terminal of your own.']], sign);
+    }
+    assert.deepEqual(status(), ['pending']);
+    assert.equal(terminal(['rules', 'accept', id], where, { GROK_HOME: '/work/grok', MUSE_TRANSPORT_TRACE: '1' }).code, 0);
+    assert.deepEqual(status(), ['active']);
   },
   !PTY,
 );
