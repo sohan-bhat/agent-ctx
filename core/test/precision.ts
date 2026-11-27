@@ -63,6 +63,8 @@ export const SET_LANG2: TestSet = { items: lang.SECOND.items, queries: lang.SECO
 
 export const SET_LANG3: TestSet = { items: lang.THIRD.items, queries: lang.THIRD.queries, projects: lang.THIRD.projects, now: lang.THIRD.now };
 
+export const SET_LANG4: TestSet = { items: lang.FOURTH.items, queries: lang.FOURTH.queries, projects: lang.FOURTH.projects, now: lang.FOURTH.now };
+
 export const TOOL_KINDS = new Set(['short', 'other', 'cross']);
 
 export function reachable(set: TestSet, loose: Partial<LooseSettings> = {}): number {
@@ -76,6 +78,16 @@ export function reachable(set: TestSet, loose: Partial<LooseSettings> = {}): num
     if (query.want.some((id) => shown.has(id))) reached++;
   }
   return asked ? reached / asked : 0;
+}
+
+export function reachableWanted(set: TestSet): number {
+  const asked = set.queries.filter((query) => query.want.length);
+  const reached = asked.filter((query) => {
+    const out = recall({ project: query.project, items: set.items, projects: set.projects, query: query.q, first: false, session: 'eval', seen: [], now: set.now, tool: true });
+    const shown = new Set([...out.delivered, ...(out.topics ?? [])]);
+    return query.want.some((id) => shown.has(id));
+  });
+  return asked.length ? reached.length / asked.length : 0;
 }
 
 function isMain(): boolean {
@@ -127,4 +139,15 @@ if (isMain()) {
     const own = rows3.filter((r) => r.query.project === lang.THIRD.projects[lang.THIRD.langs.indexOf(code)].key);
     console.log(`lang3_${code}_precision_at_3 ${measure(own).precision_at_3.toFixed(2)}`);
   }
+  const rows4 = run(SET_LANG4);
+  const s4 = measure(rows4);
+  console.log(`lang4_precision_at_3 ${s4.precision_at_3.toFixed(2)}`);
+  console.log(`lang4_empty_correct ${s4.empty_correct.toFixed(2)}`);
+  console.log(`lang4_found ${s4.found.toFixed(2)}`);
+  for (const code of lang.FOURTH.langs) {
+    const own = measure(rows4.filter((r) => r.query.project === lang.FOURTH.projects[lang.FOURTH.langs.indexOf(code)].key));
+    console.log(`lang4_${code}_precision_at_3 ${own.precision_at_3.toFixed(2)}`);
+    console.log(`lang4_${code}_found ${own.found.toFixed(2)}`);
+  }
+  console.log(`lang4_tool_reachable ${reachableWanted(SET_LANG4).toFixed(2)}`);
 }
