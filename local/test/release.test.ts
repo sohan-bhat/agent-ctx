@@ -155,12 +155,12 @@ test('the release workflow builds four programs on native runners with one pinne
 test('the pages workflow publishes the install script and the README names the curl line before the npx line', () => {
   const pages = readFileSync(join(ROOT, '.github', 'workflows', 'pages.yml'), 'utf8');
   assert.match(pages, /paths:\n(\s+- \S+\n)*\s+- local\/install\.sh\n/);
-  assert.match(pages, /npm run build:site\n\s+working-directory: web\n\s+- run: cp local\/install\.sh web\/dist-site\/install\.sh\n\s+- uses: actions\/upload-pages-artifact/);
+  assert.match(pages, /npm run build:site\n\s+working-directory: web\n\s+env:\n\s+VITE_RELEASED: "1"\n\s+- run: cp local\/install\.sh web\/dist-site\/install\.sh\n\s+- uses: actions\/upload-pages-artifact/);
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
   const curl = readme.search(/\n {4}curl -fsSL https:\/\/\S+\/agent-ctx\/install\.sh \| sh\n/);
   const npx = readme.search(/\n {4}npx -y github:\S+\/agent-ctx\n/);
   assert.ok(curl > 0 && npx > curl, `${curl} ${npx}`);
-  assert.equal(readme.split('once the coordinator has proven the line.').length, 3);
+  assert.equal(readme.includes('coordinator'), false);
   assert.equal(/(^|\n) {4}agent-ctx /.test(readme), false);
   const script = readFileSync(SCRIPT, 'utf8');
   assert.equal(script.startsWith('#!/bin/sh\nset -eu\n'), true);
