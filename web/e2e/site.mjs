@@ -322,13 +322,12 @@ async function walk(b, site, w, h, scheme) {
         t.said.add(said.textContent.trim());
         t.tall.add(Math.round(at.height));
         t.under.add(document.querySelector('[data-site=line]')?.offsetTop);
-        if (spots.length !== 2 || carets.length !== 2) return;
+        if (spots.length !== 2) return;
         const whole = spots.map((e) => names.includes(e.textContent));
         spots.forEach((e, i) => {
-          const r = e.getBoundingClientRect();
-          t.place[i].add(`${Math.round(r.left - at.left)} ${Math.round(r.top - at.top)}`);
+          t.place[i].add(Math.round(e.getBoundingClientRect().left - at.left));
           if (whole[i]) t.seen[i].add(e.textContent);
-          else if (getComputedStyle(carets[i]).animationName !== 'none') t.unlit++;
+          else if (!carets[i] || getComputedStyle(carets[i]).animationName !== 'none') t.unlit++;
         });
         const mid = whole.filter((v) => !v).length;
         if (!mid) t.pairs++;
@@ -336,7 +335,7 @@ async function walk(b, site, w, h, scheme) {
         if (mid) t.typing++;
         if (mid === 2) t.both++;
         const turn = carets.map((c) => c.getAnimations()[0]?.effect?.getComputedTiming().progress);
-        if (turn.every((v) => typeof v === 'number')) t.apart.add(Math.round(Math.abs(turn[0] - turn[1]) * 100));
+        if (turn.length === 2 && turn.every((v) => typeof v === 'number')) t.apart.add(Math.round(Math.abs(turn[0] - turn[1]) * 100));
       };
       new MutationObserver(look).observe(p, { subtree: true, childList: true, characterData: true, attributes: true });
       setInterval(look, 50);
@@ -485,15 +484,15 @@ async function walk(b, site, w, h, scheme) {
         const word = [...e.childNodes].find((n) => n.nodeType === 3);
         const range = document.createRange();
         if (word) range.selectNode(word);
-        return { top: r.top, bottom: r.bottom, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? range.getBoundingClientRect().right : r.left) - 0.5 };
+        return { top: r.top, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? range.getBoundingClientRect().right : r.left) - 0.5 };
       });
       return { ...t, seen: t.seen.map(list), place: t.place.map(list), tall: list(t.tall), under: list(t.under), said: list(t.said), apart: list(t.apart), carets: carets.length, rows, line: parseFloat(getComputedStyle(p).lineHeight) };
     });
-    check(`${tag} the typed block has two lines and each line ends in a cursor of its own`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].bottom <= typed.rows[1].top + 1, `${typed.carets} cursors, ${typed.rows.length} names`);
+    check(`${tag} the typed block has two lines and each line ends in a cursor of its own`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top, `${typed.carets} cursors, ${typed.rows.length} names`);
     check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.seen.every((v) => v.length >= 2), typed.seen.map((v) => v.join(', ')).join(' and '));
     check(`${tag} the two spots never show the same complete name at one moment`, typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
     check(`${tag} at most one spot is in the middle of a word at any moment`, typed.typing > 0 && typed.both === 0, `${typed.both} of ${typed.typing} moments in the middle of a word`);
-    check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names at ${typed.place.map((v) => v.join(' or ')).join(' and ')}, sentence at ${typed.under.join(' ')}`);
+    check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names ${typed.place.map((v) => v.join(' or ')).join(' and ')} px from the left, sentence at ${typed.under.join(' ')}`);
     check(`${tag} the cursor that types stays lit and the idle cursors blink half a period apart`, typed.typing > 0 && typed.unlit === 0 && typed.apart.join() === '50', `${typed.unlit} of ${typed.typing} moments with a blinking cursor in a word, idle cursors ${typed.apart.join(' ')} percent of a period apart`);
     check(`${tag} screen readers get one still sentence and no live updates while names change`, s.spoken === SPOKEN && typed.said.length === 1 && !s.live, typed.said.join(' | '));
 

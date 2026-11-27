@@ -59,19 +59,23 @@
 }
 
 .site-typed {
-  display: grid;
   margin-top: 1.25rem;
   font-size: clamp(1.0625rem, 0.98rem + 0.4vw, 1.1875rem);
   line-height: 1.4;
 }
 
-.site-typed::before {
+.site-typed [data-room] {
+  display: grid;
+}
+
+.site-typed [data-room]::before {
   content: attr(data-room);
   grid-area: 1 / 1;
+  padding-right: 2.5px;
   visibility: hidden;
 }
 
-.site-typed > span {
+.site-typed [data-room] > span {
   grid-area: 1 / 1;
 }
 
@@ -83,6 +87,14 @@
   background: currentColor;
   vertical-align: text-bottom;
   animation: site-caret 1.1s steps(1) infinite;
+}
+
+.site-caret[data-caret='next'] {
+  animation-delay: -0.55s;
+}
+
+.site-caret[data-caret='lit'] {
+  animation: none;
 }
 
 @keyframes site-caret {

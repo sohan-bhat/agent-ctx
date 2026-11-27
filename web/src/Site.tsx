@@ -31,8 +31,14 @@ const INSTALL = "curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh";
 const RATE = (DEMO_END - DEMO_START) / 30_000;
 const AGENTS = DEMO_AGENTS.map((a) => a.label);
 const NONE = new Set<string>();
-const LEAD = "Work started in Claude Code is continued in ";
-const NAMES = ["Cursor", "Codex", "Gemini CLI", "Claude desktop"];
+const LEADS = ["Work started in", "is continued in"];
+const NAMES = [
+  "Claude Code",
+  "Cursor",
+  "Codex",
+  "Gemini CLI",
+  "Claude desktop",
+];
 const OPEN = [
   [8, 12],
   [13, 18],
@@ -150,42 +156,62 @@ function Top() {
 function Typed() {
   const reduced = useReduced();
   const [at, setAt] = useState({
-    name: 0,
-    shown: NAMES[0].length,
+    names: [0, 1],
+    spot: 1,
+    shown: NAMES[1].length,
     back: false,
   });
+  const whole = NAMES[at.names[at.spot]].length;
+  const busy = at.back || at.shown < whole;
   useEffect(() => {
     if (reduced) return;
-    const full = at.shown === NAMES[at.name].length;
     const id = setTimeout(
       () => {
-        if (at.back)
-          setAt(
-            at.shown
-              ? { ...at, shown: at.shown - 1 }
-              : { name: (at.name + 1) % NAMES.length, shown: 0, back: false },
-          );
+        const other = 1 - at.spot;
+        if (!busy) setAt({ ...at, back: true });
+        else if (at.back && at.shown) setAt({ ...at, shown: at.shown - 1 });
+        else if (at.back)
+          setAt({
+            ...at,
+            names: at.names.map((n, i) =>
+              i === at.spot ? (n + 1) % NAMES.length : n,
+            ),
+            back: false,
+          });
+        else if (at.shown + 1 < whole) setAt({ ...at, shown: at.shown + 1 });
         else
-          setAt(full ? { ...at, back: true } : { ...at, shown: at.shown + 1 });
+          setAt({ ...at, spot: other, shown: NAMES[at.names[other]].length });
       },
-      at.back ? (at.shown ? 55 : 500) : full ? 2600 : 110,
+      at.back ? (at.shown ? 55 : 500) : busy ? 110 : 2000,
     );
     return () => clearTimeout(id);
-  }, [at, reduced]);
+  }, [at, busy, whole, reduced]);
   return (
-    <p
-      className="site-typed"
-      data-site="typed"
-      data-room={`${LEAD}${NAMES[NAMES.length - 1]}`}
-    >
-      <span>
-        {LEAD}
-        <span className="sr-only">{NAMES[0]}.</span>
-        <span aria-hidden data-site="agent">
-          {reduced ? NAMES[0] : NAMES[at.name].slice(0, at.shown)}
-        </span>
-        <span className="site-caret" aria-hidden />
+    <p className="site-typed" data-site="typed">
+      <span className="sr-only">
+        {`${LEADS[0]} ${NAMES[0]} ${LEADS[1]} ${NAMES[1]}.`}
       </span>
+      {LEADS.map((lead, spot) => (
+        <span
+          key={lead}
+          aria-hidden
+          data-room={`${lead} ${NAMES[NAMES.length - 1]}`}
+        >
+          <span>
+            {lead}{" "}
+            <span data-site="agent">
+              {spot === at.spot
+                ? NAMES[at.names[spot]].slice(0, at.shown)
+                : NAMES[at.names[spot]]}
+            </span>
+            <span
+              key={at.spot}
+              className="site-caret"
+              data-caret={spot !== at.spot ? undefined : busy ? "lit" : "next"}
+            />
+          </span>
+        </span>
+      ))}
     </p>
   );
 }
