@@ -1,8 +1,5 @@
 import { read as readFd } from 'node:fs';
-import { clean, stripOwn, stripPrivate } from '../../core/src/index.ts';
 import type { EventArgs, Part } from '../../service/src/engine.ts';
-import { fitEvent } from '../../service/src/limits.ts';
-import { caller, local, open, who } from './db.ts';
 import { fits, hears, read, write, type Host } from './hook.ts';
 
 const WAIT = 1000;
@@ -50,7 +47,7 @@ function plain(text: string): string {
   if (!text) return '';
   try {
     const inner = (JSON.parse(text) as { hookSpecificOutput?: { additionalContext?: unknown } }).hookSpecificOutput?.additionalContext;
-    return typeof inner === 'string' ? local(inner) : '';
+    return typeof inner === 'string' ? inner : '';
   } catch {
     return '';
   }
@@ -63,6 +60,7 @@ async function run(): Promise<string> {
   const a = read(host, await input());
   if (!a?.event) return '';
   const event = a.event;
+  const [{ clean, stripOwn, stripPrivate }, { fitEvent }, { caller, local, open, who }] = await Promise.all([import('../../core/src/index.ts'), import('../../service/src/limits.ts'), import('./db.ts')]);
   const db = open(WAIT);
   try {
     db.patience(started + WAIT - Date.now());
@@ -70,7 +68,7 @@ async function run(): Promise<string> {
       const c = who(host);
       const send = async (args: EventArgs, part?: Part): Promise<string> => {
         const fit = fitEvent({ ...args, host: FRAME });
-        return fit ? plain((await engine.event(c, fit, part)).text) : '';
+        return fit ? local(plain((await engine.event(c, fit, part)).text)) : '';
       };
       const late = !hears(host, 'UserPromptSubmit') && !!a.session && a.session.length <= ID_MAX;
       const key = `asked:${a.session}`;

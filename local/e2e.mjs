@@ -416,7 +416,7 @@ async function speed() {
   const med = Object.fromEntries(Object.entries(times).map(([name, list]) => [name, median(list)]));
   const over = Object.entries(med).filter(([name, ms]) => !['bare node', 'hook command of the main file'].includes(name) && ms > TARGET_MS).map(([name]) => name);
   const above = (name) => Math.round(med[name] - med['bare node']);
-  const why = over.length ? ` Over the target of ${TARGET_MS} ms are ${over.join(', ')}. In a fresh process about ${Math.round(med['tool outside the kept list'] - med['bare node'])} ms go to loading the hook file before any work and about 10 ms to the first use of the safety patterns, and for a prompt with recall the stored cards are read and ranked with no process kept alive.` : '';
+  const why = over.length ? ` Over the target of ${TARGET_MS} ms are ${over.join(', ')}. In a fresh process about ${Math.round(med['tool outside the kept list'] - med['bare node'])} ms go to starting the hook file, and the engine with the safety patterns is then loaded and used for the first time. For a prompt with a query the stored cards are read and ranked with no process kept alive, and at the end of a turn one card and one handoff are rebuilt and cleaned.` : '';
   return { pass: over.length === 0, evidence: `median of ${RUNS} runs with ${cards} cards stored, in ms. ${Object.entries(med).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(', ')}. Above bare node, a finished tool takes ${above('finished tool')} ms and a first prompt ${above('first prompt with recall')} ms.${why}` };
 }
 
