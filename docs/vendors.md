@@ -21,13 +21,13 @@ From the form on the consent page, the browser may be sent on to the origin of t
 
 ## Settings on one computer by vendor
 
-Below is what each vendor published about three more agent products, read on 2026-11-27. The entries written by the installer for these three are built from the facts below alone, and none of the three was tested with the real program. A fact marked third party was found only on a page of another publisher.
+Below is what each vendor published about three more agent products, read on 2026-11-27. The entries written by the installer for these three are built from the facts below alone, and none of the three was tested with the real program. A fact marked third party was found only on a page of another publisher. On a computer, Antigravity is found by one of the folders `~/.gemini/antigravity-cli`, `~/.gemini/antigravity` and `~/.gemini/config`, Grok Build by `~/.grok` and Muse Code by `~/.config/muse`.
 
 | Product | MCP settings for one user | Vendor command for adding a server | How the product is found |
 |---|---|---|---|
 | Antigravity | `~/.gemini/config/mcp_config.json`, named for the CLI and the IDE, with the path in the app copied through Copy Config File Path. JSON with the key `mcpServers`, and a stdio entry has `command`, `args`, `env` and `cwd`. One workspace has `.agents/mcp_config.json` | None. A server is added in the `/mcp` panel or by an edit of the file | The CLI is the program `agy` at `~/.local/bin/agy`, or in `AppData\Local\agy\bin` on Windows. CLI settings lie in `~/.gemini/antigravity-cli`, conversations in `~/.gemini/antigravity` and shared settings in `~/.gemini/config` |
 | Grok Build | `~/.grok/config.toml`, or `$GROK_HOME/config.toml`. TOML with one table `[mcp_servers.NAME]`, and a stdio table has `command`, `args`, `env` and `cwd` | `grok mcp add NAME -- COMMAND ARGS` | The program `grok` is put on PATH by the install script, with no folder named. The settings folder is `~/.grok` |
-| Muse Code | `~/.config/muse/settings.json`, JSON that must contain `"schema_version": 1`, with the key `mcp_servers`. A stdio entry has `transport`, `command`, `args` and `env`, and every entry takes `enabled` and `mode` | `muse mcp add` and `muse mcp add-json`, named in the changelog of 1.4.15 with no syntax | The program `muse` is put on PATH by the install script, with no folder named. `~/.local/bin/muse` is a third party fact |
+| Muse Code | `~/.config/muse/settings.json`, JSON that must contain `"schema_version": 1`, with the key `mcp_servers`. A stdio entry has `transport`, `command`, `args` and `env`, and `enabled` and `mode` are allowed in every entry | `muse mcp add` and `muse mcp add-json`, named in the changelog of 1.4.15 with no syntax | The program `muse` is put on PATH by the install script, with no folder named. `~/.local/bin/muse` is a third party fact |
 
 | Product | Hook with text for the model | Variable set by the product | Written by the installer |
 |---|---|---|---|
@@ -53,7 +53,7 @@ Text for the model is given on `SessionStart` and on `PreInvocation` through the
 
     { "injectSteps": [{ "systemMessage": { "systemMessage": "TEXT" } }] }
 
-Nothing is stated about an empty output, a failed command or a timeout, about a size limit, or about whether `PreInvocation` comes once per prompt or before every model call. For that reason `{}` is printed where no text is added, the text is cut at 7,500 characters, and a prompt is stored again only when the words of `lastUserInput` change.
+Nothing is stated about an empty output, a failed command or a timeout, about a size limit, or about whether `PreInvocation` comes once per prompt or before every model call. For that reason `{}` is printed where no text is added, the text is cut at 7,500 characters, and a prompt is stored again only when the words of `lastUserInput` change. At an uninstall the folder `~/.gemini/config` is removed when no file is left there.
 
 ### Gemini CLI
 
