@@ -317,3 +317,233 @@ test('a deleted memory is filled again by restore with a new device name, and a 
   assert.deepEqual([cli(empty, 'restore', join(TMP, 'no-such-folder')).code, existsSync(join(empty.AGENT_CTX_HOME, 'memory.db'))], [1, false]);
   for (const text of [...said(back), ...said(again)]) assert.equal(BANNED.exec(proper(text, a)), null, text);
 });
+
+test('two syncs at once, a failed push, a folder that vanished and a half written last line each leave the memory intact and one plain line', async () => {
+  const twice = place(TMP);
+  const bare = remote(twice);
+  const copy = clone(twice, bare);
+  await server(twice, 'cursor', [['checkpoint', CARD]]);
+  cli(twice, 'mirror', 'on', copy);
+  await server(twice, 'cursor', [['checkpoint', { folder: KILN, goal: 'Sharpen the lathe chisels', changed: ['tools.md'] }]]);
+  const kept = items(twice);
+  slow(twice, '0.3');
+  const first = spawn(process.execPath, [MAIN, 'sync'], { env: envOf(twice), stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  first.stdout.on('data', (d) => (out += String(d)));
+  await until(() => {
+    const lock = meta<Lock>(twice, 'mirror:lock');
+    return lock && !lock.done && lock.pid === first.pid;
+  });
+  const second = cli(twice, 'sync');
+  assert.deepEqual([second.code, said(second), second.ms < 2500], [1, [BUSY], true]);
+  assert.equal(await new Promise((done) => first.on('exit', done)), 0);
+  assert.deepEqual([out.trim(), items(twice)], [counts('1 item', '0 items'), kept]);
+  rmSync(join(twice.bin, 'git'));
+
+  writeFileSync(join(bare, 'hooks', 'pre-receive'), '#!/bin/sh\nexit 1\n');
+  chmodSync(join(bare, 'hooks', 'pre-receive'), 0o755);
+  await server(twice, 'cursor', [['checkpoint', { folder: KILN, goal: 'Label the pigment jars', changed: ['shelf.md'] }]]);
+  const [memory, files, head] = [items(twice), tree(join(copy, 'log')), sh(twice, GIT, '-C', copy, 'rev-parse', 'HEAD')];
+  const failed = cli(twice, 'sync');
+  assert.deepEqual([failed.code, said(failed)], [1, [PUSH]]);
+  assert.deepEqual([items(twice), tree(join(copy, 'log')), sh(twice, GIT, '-C', copy, 'rev-parse', 'HEAD'), sh(twice, GIT, '-C', copy, 'status', '--porcelain')], [memory, files, head, '']);
+  assert.equal(said(cli(twice, 'mirror'))[2], PUSH);
+  rmSync(join(bare, 'hooks', 'pre-receive'));
+  assert.deepEqual(said(cli(twice, 'sync')), [counts('1 item', '0 items')]);
+  assert.equal(said(cli(twice, 'mirror')).includes(PUSH), false);
+  assert.equal(sh(twice, GIT, '-C', bare, 'log', '--format=%s').split('\n').length, 3);
+
+  const gone = place(TMP);
+  const lost = folder();
+  await server(gone, 'cursor', [['checkpoint', CARD]]);
+  cli(gone, 'mirror', 'on', lost);
+  rmSync(lost, { recursive: true });
+  const missing = cli(gone, 'sync');
+  assert.deepEqual([missing.code, said(missing)], [1, [`The mirror folder ${lost} is missing, so nothing was synced.`]]);
+  assert.deepEqual([items(gone).map(goal), said(cli(gone, 'mirror'))[2]], [['Glaze the kiln shelf'], said(missing)[0]]);
+
+  const half = place(TMP);
+  const shared = folder();
+  const other = 'other-00000001';
+  const made = (id: string, text: string): string => line({ v: 1, at: Date.now() - 5000, device: other, op: 'put', id, item: { id, project: 'folder:kiln', kind: 'card', body: { goal: text }, origin: { agent: 'codex', via: 'tool', source: 'agent', at: Date.now() - 5000 }, flags: [], held: false, pinned: false, folded: false, created: Date.now() - 5000 } });
+  const [whole, cut] = [made('other-card-1', 'Thread the loom heddles'), made('other-card-2', 'Wind the warp beam')];
+  mkdirSync(join(shared, 'log', other), { recursive: true });
+  writeFileSync(join(shared, 'log', other, '2026-11.jsonl'), `${whole}\n${cut.slice(0, 80)}`);
+  await server(half, 'cursor', [['checkpoint', CARD]]);
+  const open = `The last line of log/${other}/2026-11.jsonl is not complete, so that line is read at a later sync.`;
+  assert.deepEqual(said(cli(half, 'mirror', 'on', shared)).slice(-1), [counts('1 item', '1 item')]);
+  assert.deepEqual([items(half).map(goal).sort(), said(cli(half, 'mirror'))[2]], [['Glaze the kiln shelf', 'Thread the loom heddles'], open]);
+  appendFileSync(join(shared, 'log', other, '2026-11.jsonl'), `${cut.slice(80)}\nnot a record\n`);
+  assert.deepEqual(said(cli(half, 'sync')), [counts('0 items', '1 item')]);
+  assert.deepEqual([items(half).map(goal).sort(), said(cli(half, 'mirror'))[2]], [['Glaze the kiln shelf', 'Thread the loom heddles', 'Wind the warp beam'], '1 line in the logs of other computers could not be read and was passed over.']);
+  for (const text of [BUSY, PUSH, said(missing)[0], open, said(cli(half, 'mirror'))[2]]) assert.equal(BANNED.exec(proper(text, half)), null, text);
+});
+
+test('a hook starts the sync and returns at once, at most once in 60 seconds, and no sync process is alive ten seconds later', async () => {
+  const where = place(TMP);
+  const bare = remote(where);
+  const copy = clone(where, bare);
+  cli(where, 'mirror', 'on', copy);
+  await server(where, 'cursor', [['checkpoint', CARD]]);
+  slow(where, '0.15');
+  const started = Date.now();
+  const ran = stop(where);
+  assert.deepEqual([ran.code, ran.out, ran.err, ran.ms < 1000], [0, '', '', true]);
+  const running = await until(() => {
+    const lock = meta<Lock>(where, 'mirror:lock');
+    return lock && lock.at >= started && !lock.done ? lock : null;
+  });
+  assert.equal(alive(running.pid), true);
+  const kicked = meta<number>(where, 'mirror:kick');
+  assert.deepEqual([stop(where).code, hook(where, 'claude-code', { hook_event_name: 'SessionStart', session_id: 's-stop', cwd: KILN, source: 'clear' }).code], [0, 0]);
+  assert.deepEqual([typeof kicked, meta<number>(where, 'mirror:kick')], ['number', kicked]);
+  const done = await until(() => {
+    const lock = meta<Lock>(where, 'mirror:lock');
+    return lock?.done ? lock : null;
+  });
+  assert.ok(done.done !== undefined && done.done - done.at > 1500, 'the sync took longer than the hook');
+  await until(() => !alive(running.pid), 10000 - (Date.now() - started));
+  assert.ok(Date.now() - started < 10000);
+  assert.deepEqual([done.pid, meta<Lock>(where, 'mirror:lock')?.at], [running.pid, running.at]);
+  assert.deepEqual([sh(where, GIT, '-C', bare, 'log', '--format=%s').split('\n').length, sh(where, GIT, '-C', copy, 'status', '--porcelain')], [2, '']);
+  rows(where, "UPDATE meta SET v = ? WHERE k = 'mirror:kick'", String(Date.now() - 61000));
+  assert.equal(hook(where, 'claude-code', { hook_event_name: 'SessionStart', session_id: 's-stop', cwd: KILN, source: 'clear' }).code, 0);
+  const next = await until(() => {
+    const lock = meta<Lock>(where, 'mirror:lock');
+    return lock && lock.at > running.at && lock.done ? lock : null;
+  });
+  await until(() => !alive(next.pid), 5000);
+  const off = place(TMP);
+  assert.equal(stop(off).code, 0);
+  await pause(600);
+  assert.deepEqual([meta<Lock>(off, 'mirror:lock'), meta<number>(off, 'mirror:kick')], [null, null]);
+});
+
+void plainTest('the hook is no slower with a mirror on, by the median of 12 runs', { timeout: 180000 }, async (t) => {
+  const [plainHome, mirrored] = [place(TMP), place(TMP)];
+  for (const where of [plainHome, mirrored]) await server(where, 'cursor', [['checkpoint', CARD]]);
+  cli(mirrored, 'mirror', 'on', clone(mirrored, remote(mirrored)));
+  slow(mirrored, '0.2');
+  const before = Date.now();
+  const first = stop(mirrored).ms;
+  await until(() => {
+    const lock = meta<Lock>(mirrored, 'mirror:lock');
+    return lock && lock.at >= before && lock.done;
+  });
+  stop(plainHome);
+  const times: Record<string, number[]> = { off: [], on: [] };
+  for (let i = 0; i < 12; i++) {
+    times.off.push(stop(plainHome).ms);
+    times.on.push(stop(mirrored).ms);
+  }
+  const [off, on] = [median(times.off), median(times.on)];
+  t.diagnostic(`Stop hook, median of 12 in ms. No mirror ${off.toFixed(1)}, mirror on ${on.toFixed(1)}, and the one run that started a sync ${first.toFixed(1)}.`);
+  assert.ok(on < off * 1.25 + 10, `${on} against ${off}`);
+  assert.ok(first < 1000, String(first));
+});
+
+test('the mirror commands say what is on, where and how to turn a mirror on in at most ten plain lines, and mirror off leaves the folder as found', async () => {
+  const where = place(TMP);
+  const shared = folder();
+  const none = cli(where, 'mirror');
+  assert.deepEqual([none.code, none.err, said(none).length, said(none)[0]], [0, '', 5, 'No mirror is on, so the memory exists only on this computer.']);
+  for (const word of ['mirror on github', 'mirror on icloud', 'mirror on FOLDER', 'restore']) assert.ok(none.out.includes(` ${word} `), word);
+  assert.deepEqual([existsSync(where.AGENT_CTX_HOME), cli(where, 'sync').code, said(cli(where, 'sync')), said(cli(where, 'mirror', 'off'))], [false, 1, ['No mirror is on, so nothing was synced.'], ['No mirror is on, so nothing was changed.']]);
+  await server(where, 'cursor', [['checkpoint', CARD]]);
+  for (const [dir, why] of [
+    [where.AGENT_CTX_HOME, 'contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.'],
+    [join(where.AGENT_CTX_HOME, 'app'), 'contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.'],
+    [where.root, 'contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.'],
+    [join(TMP, 'no-such-folder'), 'is not a folder on this computer, so no mirror was turned on.'],
+  ]) {
+    mkdirSync(join(where.AGENT_CTX_HOME, 'app'), { recursive: true });
+    const r = cli(where, 'mirror', 'on', dir);
+    assert.deepEqual([r.code, said(r)], [1, [`${dir.includes('no-such') ? '' : 'The folder '}${dir} ${why}`]]);
+  }
+  assert.deepEqual([meta<State>(where, 'mirror'), Object.keys(tree(where.root)).filter((name) => /^(log|pages|inbox)\/|README\.md$/.test(name))], [null, []]);
+  for (const odd of [['mirror', 'on'], ['mirror', 'up', shared]]) assert.deepEqual([cli(where, ...odd).code, said(cli(where, ...odd)).length], [1, 1], odd.join(' '));
+  assert.equal(cli(where, 'mirror', 'on', shared).code, 0);
+  const on = cli(where, 'mirror');
+  assert.deepEqual(said(on).slice(0, 2), [`A mirror is on in the folder ${shared}.`, 'The last sync ended less than a minute ago.']);
+  assert.match(said(on)[2], / sync to sync now, or .* mirror off to stop\.$/);
+  const found = tree(shared);
+  const off = cli(where, 'mirror', 'off');
+  assert.deepEqual([off.code, said(off)], [0, [`The mirror is off, and the folder ${shared} stays as found.`]]);
+  await server(where, 'cursor', [['checkpoint', { folder: KILN, goal: 'Sharpen the lathe chisels', changed: ['tools.md'] }]]);
+  assert.deepEqual([cli(where, 'sync').code, stop(where).code], [1, 0]);
+  await pause(500);
+  assert.deepEqual([tree(shared), meta<Lock>(where, 'mirror:lock')?.done !== undefined, said(cli(where, 'mirror')).length], [found, true, 5]);
+  assert.deepEqual(said(cli(where, 'mirror', 'on', shared)).slice(-1), [counts('1 item', '0 items')]);
+  for (const r of [none, on, off, cli(where, 'mirror', 'on', where.root), cli(where, 'mirror', 'on', shared), cli(where, 'sync'), cli(where, 'mirror', 'up')]) {
+    assert.ok(said(r).length <= 10, r.out);
+    for (const text of said(r)) assert.equal(BANNED.exec(proper(text, where)), null, text);
+  }
+});
+
+test('mirror on icloud uses the folder agent-ctx in iCloud Drive, and says so in one plain line when iCloud Drive is missing', async () => {
+  const where = place(TMP);
+  await server(where, 'cursor', [['checkpoint', CARD]]);
+  const none = cli(where, 'mirror', 'on', 'icloud');
+  assert.deepEqual([none.code, said(none), meta<State>(where, 'mirror')], [1, ['iCloud Drive was not found in the home folder, so no mirror was turned on.'], null]);
+  const drive = join(where.HOME, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+  mkdirSync(drive, { recursive: true });
+  const on = cli(where, 'mirror', 'on', 'icloud');
+  assert.deepEqual([on.code, said(on)], [0, [`The mirror is turned on for the folder ${join(drive, 'agent-ctx')} in iCloud Drive.`, WRITTEN, `The mirror is on in ${join(drive, 'agent-ctx')}.`, counts('1 item', '0 items')]]);
+  assert.deepEqual([meta<State>(where, 'mirror')?.folder, readdirSync(join(drive, 'agent-ctx')).sort()], [join(drive, 'agent-ctx'), ['README.md', 'log', 'pages']]);
+  for (const text of [...said(none), ...said(on)]) assert.equal(BANNED.exec(proper(text, where)), null, text);
+});
+
+function gh(where: Place, bare: string): string {
+  const log = join(where.root, 'gh.log');
+  writeFileSync(
+    join(where.bin, 'gh'),
+    ['#!/bin/sh', `echo "$*" >> "${log}"`, 'case "$1 $2" in', `  "auth status") [ ! -f "${where.root}/signed-out" ] ;;`, `  "repo view") [ -d "${bare}" ] && { [ -f "${bare}.public" ] && echo false || echo true; } ;;`, `  "repo create") ${GIT} init --bare -q "${bare}" ;;`, `  "repo clone") ${GIT} clone -q "${bare}" "$4" 2>/dev/null ;;`, 'esac', ''].join('\n'),
+  );
+  chmodSync(join(where.bin, 'gh'), 0o755);
+  return log;
+}
+
+test(
+  'mirror on github makes or reuses a private repository through gh and clones the repository into the agent-ctx home, and prints three steps without gh',
+  async () => {
+    const [a, b, bareHome] = [place(TMP), place(TMP), place(TMP)];
+    const bare = join(TMP, `github-${++folders}.git`);
+    const [logA, logB] = [gh(a, bare), gh(b, bare)];
+    const calls = (log: string): string[] => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []);
+    const dir = (where: Place): string => join(where.AGENT_CTX_HOME, 'mirror');
+    await server(a, 'cursor', [['checkpoint', CARD]]);
+    const child = typing(['mirror', 'on', 'github'], ENTER, a);
+    let out = '';
+    child.stdout.on('data', (d) => (out += String(d)));
+    await until(() => existsSync(join(a.root, 'seen')));
+    await pause(300);
+    assert.ok(out.includes('A private repository named agent-ctx-memory is made in your GitHub account, or used again when one exists.'), out);
+    assert.ok(out.includes(`The repository is cloned to ${dir(a)}, and each sync is pushed to that repository.`), out);
+    assert.deepEqual([calls(logA), existsSync(bare), existsSync(dir(a)), meta<State>(a, 'mirror')], [['auth status'], false, false, null]);
+    writeFileSync(join(a.root, 'go'), '');
+    assert.equal(await new Promise((done) => child.on('exit', done)), 0, out);
+    assert.deepEqual(calls(logA), ['auth status', 'repo view agent-ctx-memory --json isPrivate --jq .isPrivate', 'repo create agent-ctx-memory --private', `repo clone agent-ctx-memory ${dir(a)}`]);
+    assert.ok(out.includes(`The mirror is on in ${dir(a)}.`) && out.includes(counts('1 item', '0 items')), out);
+    assert.deepEqual([meta<State>(a, 'mirror')?.folder, sh(a, GIT, '-C', bare, 'log', '--format=%s'), sh(a, GIT, '-C', dir(a), 'config', '--get-all', 'credential.https://github.com.helper').split('\n').pop()], [dir(a), 'agent-ctx sync', `!"${join(a.bin, 'gh')}" auth git-credential`]);
+    const second = cli(b, 'mirror', 'on', 'github');
+    assert.deepEqual([second.code, said(second).slice(-2)], [0, [`The mirror is on in ${dir(b)}.`, counts('0 items', '1 item')]]);
+    assert.deepEqual([calls(logB), items(b).map(goal)], [['auth status', 'repo view agent-ctx-memory --json isPrivate --jq .isPrivate', `repo clone agent-ctx-memory ${dir(b)}`], ['Glaze the kiln shelf']]);
+    assert.deepEqual([cli(b, 'mirror', 'on', 'github').code, calls(logB).length], [0, 4]);
+    const open = place(TMP);
+    const shown = join(TMP, `github-${++folders}.git`);
+    sh(open, GIT, 'init', '--bare', '-q', shown);
+    writeFileSync(`${shown}.public`, '');
+    const logOpen = gh(open, shown);
+    const refused = cli(open, 'mirror', 'on', 'github');
+    assert.deepEqual([refused.code, said(refused).slice(-1), calls(logOpen).length, existsSync(dir(open)), meta<State>(open, 'mirror')], [1, ['The repository agent-ctx-memory in your account is public, so no mirror was turned on. Make the repository private first.'], 2, false, null]);
+    writeFileSync(join(open.root, 'signed-out'), '');
+    const lines = [said(cli(bareHome, 'mirror', 'on', 'github')), said(cli(open, 'mirror', 'on', 'github'))];
+    for (const [k, where] of [bareHome, open].entries()) {
+      assert.deepEqual(lines[k].slice(0, 3), ['The gh program is missing or not signed in, so the mirror is made by hand in three steps.', 'First make a private repository named agent-ctx-memory on github.com.', `Then type git clone ADDRESS ${dir(where)} with the address of that repository.`]);
+      assert.match(lines[k][3], new RegExp(`^Then type .* mirror on ${dir(where).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+      assert.deepEqual([lines[k].length, existsSync(dir(where)), meta<State>(where, 'mirror')], [4, false, null]);
+    }
+    for (const text of [...out.split('\n').filter((l) => l.trim() && !l.includes('spawn')), ...said(second), ...said(refused), ...lines[0]]) assert.equal(BANNED.exec(proper(text.replace(/\r/g, ''), a).split(b.root).join('').split(open.root).join('').split(bareHome.root).join('')), null, text);
+  },
+  !PTY,
+);
