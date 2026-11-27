@@ -101,7 +101,6 @@ export function read(host: Host, stdin: string): EventArgs | null {
   } catch {
     return null;
   }
-  if (typeof from !== 'object' || from === null || Array.isArray(from)) return null;
   const rule = own(own(RULES, host) ?? {}, at(from, 'hook_event_name'));
   if (!rule) return null;
   const pick = rule.by ? own(rule.cases ?? {}, at(from, rule.by)) : undefined;
