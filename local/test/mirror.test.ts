@@ -209,7 +209,7 @@ describe('merge of two devices', () => {
     assert.equal(goalOf(desk[0]), goalOf(onLap));
   });
 
-  test('records of the device itself are ignored', () => {
+  test('records written by the same device are ignored', () => {
     assert.deepEqual(merge([], [put(CARD, T0, DESK), drop(uid(2), T0, DESK)], DESK), { put: [], hide: [] });
     assert.deepEqual(merge([HANDOFF], [drop(uid(2), T0 + MIN, DESK)], DESK), { put: [], hide: [] });
   });
@@ -272,6 +272,15 @@ describe('trust in incoming records', () => {
     assert.equal(calm.put[0]?.held, false);
   });
 
+  test('an item released on this device stays released when the same text comes back', () => {
+    const body: CardBody = { goal: 'Tidy the mixer', last: PLANT };
+    const mine = edit(base(35, { body, flags: ['override'] }), T0 + MIN);
+    const back = put(base(35, { body, flags: ['override'], held: true }), T0 + 5 * MIN, LAP);
+    assert.deepEqual(merge([mine], [back], DESK), { put: [], hide: [] });
+    const other = put(base(35, { body: { ...body, goal: 'Tidy the mixer today' } }), T0 + 5 * MIN, LAP);
+    assert.equal(merge([mine], [other], DESK).put[0]?.held, true);
+  });
+
   test('a secret shaped string in an incoming card arrives redacted', () => {
     const body: CardBody = { goal: `Rotate the key ${KEY} today`, decisions: [{ what: 'Keep the old key', why: `the bench still sends ${KEY}` }], commands: [`deploy --key ${KEY}`] };
     const got = merge([], [put(base(33, { body }), T0, LAP)], DESK);
@@ -298,6 +307,7 @@ describe('drops', () => {
     assert.deepEqual(got, { put: [], hide: [kept.id] });
     assert.deepEqual(Object.keys(got).sort(), ['hide', 'put']);
     assert.deepEqual(local, before);
+    assert.deepEqual(merge([], [drop(kept.id, T0 + MIN, LAP)], DESK), { put: [], hide: [kept.id] });
   });
 
   test('a newer local edit survives an older drop', () => {
@@ -417,7 +427,7 @@ describe('pages', () => {
     assert.equal((pages(many.slice(0, 30), [], NOW)['pages/rocket.md'] ?? '').includes('older'), false);
   });
 
-  test('every project gets a page name of its own', () => {
+  test('every project gets a separate page name', () => {
     const keys = ['git.example.test/acme/rocket', 'git.example.test/other/rocket', 'folder:index', 'folder:Tower Two', 'folder:tower-two'];
     const got = pages([], keys.map((key) => ({ key, names: [] })), NOW);
     const paths = Object.keys(got);
