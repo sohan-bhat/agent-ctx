@@ -267,6 +267,28 @@ const shape = (page) =>
       words += count(node.textContent);
     }
     const items = [...document.querySelectorAll('[data-site=faq] h3')].map((h) => ({ q: h.textContent.trim(), a: h.nextElementSibling?.tagName === 'P' ? h.nextElementSibling.textContent.trim() : '' }));
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--border)';
+    document.body.append(probe);
+    const rule = getComputedStyle(probe).color;
+    probe.remove();
+    const rows = [...document.querySelectorAll('[data-site=faq] > div')].map((d) => {
+      const [q, a] = [d.querySelector('h3'), d.querySelector('p')];
+      const [qs, as, ds] = [q, a, d].map((e) => getComputedStyle(e));
+      const [qr, ar, dr] = [q, a, d].map((e) => e.getBoundingClientRect());
+      return { left: [qr.left, ar.left], top: [qr.top, ar.top], end: qr.bottom, share: (ar.left - qr.left) / dr.width, weight: [Number(qs.fontWeight), Number(as.fontWeight)], same: qs.fontSize === as.fontSize && qs.color === as.color, line: `${ds.borderTopWidth} ${ds.borderTopStyle} ${ds.borderTopColor}` };
+    });
+    const split = [];
+    let named = 0;
+    const faq = document.createTreeWalker(document.querySelector('[data-site=faq]') ?? document.body, NodeFilter.SHOW_TEXT);
+    for (let node = faq.nextNode(); node; node = faq.nextNode())
+      for (const m of node.textContent.matchAll(/agent-ctx/g)) {
+        const range = document.createRange();
+        range.setStart(node, m.index);
+        range.setEnd(node, m.index + m[0].length);
+        named++;
+        if (range.getClientRects().length !== 1) split.push(node.textContent.trim());
+      }
     const nav = document.querySelector('nav');
     const foot = document.querySelector('footer');
     const pills = [...document.querySelectorAll('[data-site=action] a')];
@@ -279,6 +301,10 @@ const shape = (page) =>
       marks,
       words,
       items,
+      rows,
+      rule,
+      named,
+      split,
       bars: document.querySelectorAll('[data-site=day], [data-site=bar], [data-site=faq] svg').length,
       nav: nav ? { text: nav.innerText.trim().split(/\s+/), links: [...nav.querySelectorAll('a')].map((a) => a.href), parts: nav.children.length, toggles: nav.querySelectorAll('[role=switch]').length } : null,
       foot: foot ? { text: foot.innerText, links: [...foot.querySelectorAll('a')].map((a) => a.href), tops: [...foot.children].map((e) => Math.round(e.getBoundingClientRect().top / 8)) } : null,
@@ -605,6 +631,13 @@ async function walk(b, site, w, h, scheme) {
     const sentences = (a) => (a.match(/[.!?](?=\s|$)/g) ?? []).length;
     const weak = s.items.filter((i) => !i.q.endsWith('?') || i.a.length < 20 || sentences(i.a) < 1 || sentences(i.a) > 2);
     check(`${tag} eight questions exist and each has an answer of one or two sentences`, s.items.length === 8 && !weak.length, `${s.items.length} questions${weak.length ? `, weak ${weak.map((i) => i.q).join(' ')}` : ''}`);
+    const rowed = s.rows.length === 8;
+    if (wide) check(`${tag} every question starts left of the answer of the same row and on the same top line`, rowed && s.rows.every((r) => r.share > 0.25 && r.share < 0.42 && Math.abs(r.top[0] - r.top[1]) <= 2), `${s.rows.length} rows, the answer starts after ${s.rows.map((r) => Math.round(r.share * 100)).join(' ')} percent of the row`);
+    else check(`${tag} each answer starts below the question of the same row`, rowed && s.rows.every((r) => r.top[1] >= r.end - 0.5 && Math.abs(r.left[0] - r.left[1]) < 1), `${s.rows.length} rows, ${s.rows.map((r) => Math.round(r.top[1] - r.end)).join(' ')} px under the question`);
+    check(`${tag} every FAQ row has a top line of 1 px in the border colour`, rowed && s.rows.every((r) => r.line === `1px solid ${s.rule}`), `${[...new Set(s.rows.map((r) => r.line))].join(' | ')} with the border colour ${s.rule}`);
+    if (wide) check(`${tag} the question has the weight, the size and the colour of the answer`, rowed && s.rows.every((r) => r.same && r.weight[0] === r.weight[1]), `weights ${s.rows[0]?.weight.join(' and ')}`);
+    else check(`${tag} the stacked question is a little heavier than the answer at the same size and colour`, rowed && s.rows.every((r) => r.same && r.weight[0] > r.weight[1] && r.weight[0] <= 500), `weights ${s.rows[0]?.weight.join(' and ')}`);
+    check(`${tag} the name agent-ctx is never broken across two lines in the FAQ`, s.named === 8 && !s.split.length, `${s.named} times${s.split.length ? `, broken in ${s.split.join(' | ')}` : ''}`);
     check(`${tag} no small label sits above a heading or beside the demo`, !s.marks.length, s.marks.join(' | '));
     check(`${tag} fewer than 60 words stand outside the FAQ and the demo frame`, s.words > 20 && s.words < 60, `${s.words} words`);
     check(`${tag} the top bar holds the GitHub link and the theme switch and nothing else`, !!s.nav && s.nav.parts === 3 && s.nav.toggles === 1 && s.nav.links.length === 1 && s.nav.links[0] === HOME && s.nav.text.join(' ') === 'GitHub Dark', s.nav ? s.nav.text.join(' ') : 'missing');
