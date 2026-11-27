@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -9,6 +9,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PLUGIN = join(ROOT, 'plugins', 'claude-code');
 const MAIN = join(PLUGIN, 'scripts', 'agent-ctx.mjs');
 const HOOK = join(PLUGIN, 'scripts', 'hook.mjs');
+const PROGRAM = process.env.E2E_PROGRAM ? resolve(process.env.E2E_PROGRAM) : '';
 const BIN = process.env.E2E_CLAUDE_BIN ?? join(homedir(), '.local', 'bin', 'claude');
 const REAL = join(homedir(), '.agent-ctx');
 const TMP = mkdtempSync(join(process.env.E2E_TMP ?? tmpdir(), 'agent-ctx-e2e-'));
@@ -66,20 +67,23 @@ function tree(dir) {
   return out;
 }
 
+const main = (...args) => (PROGRAM ? [PROGRAM, args] : [process.execPath, [MAIN, ...args]]);
+const hooked = (agent) => (PROGRAM ? main('hook', '--agent', agent) : [process.execPath, [HOOK, '--agent', agent]]);
+
 function program(args, env, input = '') {
-  const r = spawnSync(process.execPath, [MAIN, ...args], { env, input, encoding: 'utf8' });
+  const r = spawnSync(...main(...args), { env, input, encoding: 'utf8' });
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
 function hook(agent, event, ctx, more = {}) {
   const started = process.hrtime.bigint();
-  const r = spawnSync(process.execPath, [HOOK, '--agent', agent], { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx), ...more }, input: JSON.stringify(event), encoding: 'utf8' });
+  const r = spawnSync(...hooked(agent), { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx), ...more }, input: JSON.stringify(event), encoding: 'utf8' });
   return { code: r.status, out: r.stdout, err: r.stderr, ms: Number(process.hrtime.bigint() - started) / 1e6 };
 }
 
 class Server {
   constructor(agent, ctx) {
-    this.child = spawn(process.execPath, [MAIN, 'mcp', '--agent', agent], { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx) }, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(...main('mcp', '--agent', agent), { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx) }, stdio: ['pipe', 'pipe', 'pipe'] });
     this.err = '';
     this.buffer = '';
     this.id = 0;
@@ -127,11 +131,14 @@ function home(name) {
   for (const dir of [where.bin, ...['.claude', '.cursor', '.codex', '.gemini'].map((d) => join(where.HOME, d))]) mkdirSync(dir, { recursive: true });
   writeFileSync(join(where.HOME, '.gemini', 'settings.json'), '{\n  "theme": "dark"\n}\n');
   const record = '"$HOME/.claude/plugins/installed_plugins.json"';
+  const server = '{"mcpServers":{"agent-ctx":{"type":"stdio","command":"%s","args":["mcp","--agent","claude-code"],"env":{}}}}';
   writeFileSync(
     join(where.bin, 'claude'),
     [
       '#!/bin/sh',
       'echo "$*" >> "$STUB_LOG"',
+      `if [ "$1 $2" = "mcp add" ]; then printf '${server}\\n' "$7" > "$HOME/.claude.json"; fi`,
+      'if [ "$1 $2" = "mcp remove" ]; then rm -f "$HOME/.claude.json"; fi',
       `if [ "$1 $2" = "plugin install" ]; then mkdir -p "$HOME/.claude/plugins"; printf '{"version":2,"plugins":{"agent-ctx@agent-ctx":[{"scope":"user"}]}}\\n' > ${record}; fi`,
       `if [ "$1 $2" = "plugin uninstall" ]; then rm -f ${record}; rmdir "$HOME/.claude/plugins" 2>/dev/null; fi`,
       'exit 0',
@@ -211,7 +218,7 @@ async function claude(name, o) {
 function expectRun(args, ctx) {
   const file = join(TMP, 'terminal.exp');
   writeFileSync(file, ['set timeout 60', 'spawn -noecho {*}$argv', 'expect eof', 'catch wait result', 'exit [lindex $result 3]', ''].join('\n'));
-  const r = spawnSync('expect', [file, process.execPath, MAIN, ...args], { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx) }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('expect', [file, ...main(...args).flat()], { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx) }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   return { code: r.status, out: r.stdout.replaceAll('\r', '') };
 }
 
@@ -227,12 +234,15 @@ async function install() {
   const second = program(['install', '--yes'], where.env);
   const same = JSON.stringify([tree(where.HOME), tree(where.ctx)]) === JSON.stringify(once);
   const app = join(where.ctx, 'app');
-  const written = ['.cursor/mcp.json', '.cursor/hooks.json', '.codex/config.toml', '.codex/hooks.json', '.gemini/settings.json'].map((f) => readFileSync(join(where.HOME, f), 'utf8'));
-  const paths = written.flatMap((text) => [...text.matchAll(/[^\s"']+\.mjs/g)].map((m) => m[0]));
+  const written = [...(PROGRAM ? ['.claude/settings.json'] : []), '.cursor/mcp.json', '.cursor/hooks.json', '.codex/config.toml', '.codex/hooks.json', '.gemini/settings.json'].map((f) => readFileSync(join(where.HOME, f), 'utf8'));
+  const paths = written.flatMap((text) => [...text.matchAll(/[^\s"']+\/app\/(?:agent-ctx(?:\.mjs)?|hook\.mjs)(?![\w.-])/g)].map((m) => m[0]));
   const inApp = paths.length >= 12 && paths.every((p) => dirname(p) === app && existsSync(p));
+  const bare = !PROGRAM || (readdirSync(app).join() === 'agent-ctx' && written.every((text) => !/\bnode\b|\.mjs/.test(text.split(TMP).join(''))));
   const calls = readFileSync(where.log, 'utf8').trim().split('\n');
-  const pass = first.code === 0 && second.code === 0 && same && inApp && calls.length === 1 && calls[0] === 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx' && second.out.includes('already connected, so nothing was changed.');
-  return { pass, evidence: `the stub got "claude ${calls.join(' | ')}", ${written.length} files were written for Cursor, Codex and Gemini CLI, all ${paths.length} program paths lie in ${relative(TMP, app)}, and the second run printed "${second.out.trim().split('\n').pop()}" with every file unchanged ${same}` };
+  const want = PROGRAM ? `mcp add --scope user agent-ctx -- ${join(app, 'agent-ctx')} mcp --agent claude-code` : 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
+  const pass = first.code === 0 && second.code === 0 && same && inApp && bare && calls.length === 1 && calls[0] === want && second.out.includes('already connected, so nothing was changed.');
+  const form = PROGRAM ? `one program of ${statSync(PROGRAM).size.toLocaleString('en-US')} bytes ran with no node on PATH, and no written command names node or a script ${bare}. ` : '';
+  return { pass, evidence: `${form}the stub got "claude ${calls.join(' | ')}", ${written.length} files were written for ${PROGRAM ? 'Claude Code, ' : ''}Cursor, Codex and Gemini CLI, all ${paths.length} program paths lie in ${relative(TMP, app)}, and the second run printed "${second.out.trim().split('\n').pop()}" with every file unchanged ${same}` };
 }
 
 async function removal() {
@@ -357,7 +367,7 @@ async function sharing() {
         before.then(
           (list) =>
             new Promise((done) => {
-              const child = spawn(process.execPath, [HOOK, '--agent', 'claude-code'], { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx) }, stdio: ['pipe', 'pipe', 'pipe'] });
+              const child = spawn(...hooked('claude-code'), { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: guard(ctx) }, stdio: ['pipe', 'pipe', 'pipe'] });
               let noise = '';
               child.stdout.on('data', (d) => (noise += d));
               child.stderr.on('data', (d) => (noise += d));
@@ -398,34 +408,42 @@ async function speed() {
   };
   const viaMain = (i) => {
     const started = process.hrtime.bigint();
-    spawnSync(process.execPath, [MAIN, 'hook', '--agent', 'claude-code'], { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: ctx }, input: JSON.stringify(event({ hook_event_name: 'PostToolUse', session_id: 's-tool', tool_name: 'Edit', tool_input: { file_path: `/work/kiln/src/m${i}.ts` } })) });
+    spawnSync(...main('hook', '--agent', 'claude-code'), { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: ctx }, input: JSON.stringify(event({ hook_event_name: 'PostToolUse', session_id: 's-tool', tool_name: 'Edit', tool_input: { file_path: `/work/kiln/src/m${i}.ts` } })) });
+    return Number(process.hrtime.bigint() - started) / 1e6;
+  };
+  const start = () => {
+    const started = process.hrtime.bigint();
+    spawnSync(...main('--version'), { env: { PATH: '/usr/bin:/bin', HOME: join(TMP, 'home'), AGENT_CTX_HOME: ctx } });
     return Number(process.hrtime.bigint() - started) / 1e6;
   };
   const sets = {
     'bare node': bare,
+    [PROGRAM ? 'start of the program' : 'start of the main file']: start,
     'finished tool': (i) => hook('claude-code', event({ hook_event_name: 'PostToolUse', session_id: 's-tool', tool_name: 'Edit', tool_input: { file_path: `/work/kiln/src/a${i}.ts` } }), ctx).ms,
     'tool outside the kept list': () => hook('claude-code', event({ hook_event_name: 'PostToolUse', session_id: 's-tool', tool_name: 'Read', tool_input: { file_path: '/x' } }), ctx).ms,
     'first prompt with recall': (i) => hook('claude-code', event({ hook_event_name: 'UserPromptSubmit', session_id: `s-first-${i}`, prompt: 'continue' }), ctx).ms,
     'later prompt with a query': (i) => hook('claude-code', event({ hook_event_name: 'UserPromptSubmit', session_id: 's-tool', prompt: `What did we decide about ${pick(i, 6)} and the ${pick(i, 2)} task number ${i}?` }), ctx).ms,
     'end of a turn': (i) => hook('claude-code', event({ hook_event_name: 'Stop', session_id: 's-tool', last_assistant_message: `Done with step ${i}.` }), ctx).ms,
-    'hook command of the main file': viaMain,
+    ...(PROGRAM ? {} : { 'hook command of the main file': viaMain }),
   };
   const times = Object.fromEntries(Object.keys(sets).map((name) => [name, []]));
   for (const run of Object.values(sets)) run(99);
   for (let i = 0; i < RUNS; i++) for (const [name, run] of Object.entries(sets)) times[name].push(run(i));
   const med = Object.fromEntries(Object.entries(times).map(([name, list]) => [name, median(list)]));
-  const over = Object.entries(med).filter(([name, ms]) => !['bare node', 'hook command of the main file'].includes(name) && ms > TARGET_MS).map(([name]) => name);
-  const above = (name) => Math.round(med[name] - med['bare node']);
-  const why = over.length ? ` Over the target of ${TARGET_MS} ms are ${over.join(', ')}. In a fresh process about ${Math.round(med['tool outside the kept list'] - med['bare node'])} ms go to starting the hook file, and the engine with the safety patterns is then loaded and used for the first time. For a prompt with a query the stored cards are read and ranked with no process kept alive, and at the end of a turn one card and one handoff are rebuilt and cleaned.` : '';
-  return { pass: over.length === 0, evidence: `median of ${RUNS} runs with ${cards} cards stored, in ms. ${Object.entries(med).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(', ')}. Above bare node, a finished tool takes ${above('finished tool')} ms and a first prompt ${above('first prompt with recall')} ms.${why}` };
+  const over = Object.entries(med).filter(([name, ms]) => !['bare node', 'start of the program', 'start of the main file', 'hook command of the main file'].includes(name) && ms > TARGET_MS).map(([name]) => name);
+  const beside = (name) => `${Math.abs(Math.round(med[name] - med['bare node']))} ms ${med[name] < med['bare node'] ? 'under' : 'above'} bare node`;
+  const fresh = PROGRAM ? '' : ` In a fresh process about ${Math.round(med['tool outside the kept list'] - med['bare node'])} ms go to starting the hook file, and the engine with the safety patterns is then loaded and used for the first time.`;
+  const why = over.length ? ` Over the target of ${TARGET_MS} ms are ${over.join(', ')}.${fresh} For a prompt with a query the stored cards are read and ranked with no process kept alive, and at the end of a turn one card and one handoff are rebuilt and cleaned.` : '';
+  return { pass: over.length === 0, evidence: `${PROGRAM ? 'every hook ran through one program without Node, ' : ''}median of ${RUNS} runs with ${cards} cards stored, in ms. ${Object.entries(med).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(', ')}. A finished tool takes ${beside('finished tool')} and a first prompt ${beside('first prompt with recall')}.${why}` };
 }
 
 const PROOFS = { 1: ['Install', install], 2: ['Continue', proceed], 3: ['Rules', rules], 4: ['Safety', safety], 5: ['Sharing', sharing], 6: ['Removal', removal], speed: ['Speed', speed] };
 const asked = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(PROOFS);
 const unknown = asked.filter((name) => !Object.hasOwn(PROOFS, name));
+const plugin = PROGRAM ? asked.filter((name) => ['2', '3', '4'].includes(name)) : [];
 
-if (unknown.length) {
-  console.log(`Give any of ${Object.keys(PROOFS).join(', ')}, or nothing for all. The real Claude Code program is run with haiku in proofs 2, 3 and 4, at a cost of a few cents.`);
+if (unknown.length || plugin.length) {
+  console.log(plugin.length ? 'Proofs 2, 3 and 4 run the plugin through Node, so give any of 1, 5, 6 and speed together with E2E_PROGRAM.' : `Give any of ${Object.keys(PROOFS).join(', ')}, or nothing for all. The real Claude Code program is run with haiku in proofs 2, 3 and 4, at a cost of a few cents.`);
   rmSync(TMP, { recursive: true, force: true });
   process.exit(1);
 }
