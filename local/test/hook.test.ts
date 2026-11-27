@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { LIMIT, fits, hears, read, write, type EventArgs, type Host } from '../src/hook.ts';
+import { LIMIT, blank, fits, hears, read, repeats, write, type EventArgs, type Host } from '../src/hook.ts';
 
 type Json = Record<string, unknown>;
 type Sample = [name: string, host: Host, stdin: Json, want: EventArgs];
 
-const HOSTS: Host[] = ['claude-code', 'codex', 'cursor', 'gemini'];
+type Told = Exclude<Host, 'antigravity'>;
+const HOSTS: Told[] = ['claude-code', 'codex', 'cursor', 'gemini'];
+const ALL: Host[] = [...HOSTS, 'antigravity'];
 const DIR = '/work/app';
 const LOG = '/work/log/turns.jsonl';
 const SRC = '/work/app/src/mixer.ts';
@@ -21,11 +23,14 @@ const codex = (name: string, more: Json = {}): Json => ({ session_id: 's-2', tra
 const cursor = (name: string, more: Json = {}): Json => ({ conversation_id: 'c-3', generation_id: 'g-1', model: 'model-c', hook_event_name: name, cursor_version: '3.2.0', workspace_roots: [DIR], user_email: 'dev@example.test', transcript_path: LOG, ...more });
 const gemini = (name: string, more: Json = {}): Json => ({ session_id: 's-4', transcript_path: LOG, cwd: DIR, hook_event_name: name, timestamp: '2026-11-14T08:00:00Z', ...more });
 const made = (name: string, input: Json, more: Json = {}): Json => ({ tool_name: name, tool_input: input, tool_use_id: 'use-1', ...more });
+const agy = (more: Json = {}): Json => ({ conversationId: 'v-5', workspacePaths: [DIR], transcriptPath: LOG, artifactDirectoryPath: '/work/brain/v-5', modelName: 'model-v', ...more });
+const called = (name: string, args: Json, more: Json = {}): Json => ({ toolCall: { name, args }, stepIdx: 5, ...more });
 
 const A = { host: 'claude-code', session: 's-1', cwd: DIR };
 const B = { host: 'codex', session: 's-2', cwd: DIR };
 const C = { host: 'cursor', session: 'c-3', cwd: DIR, model: 'model-c' };
 const G = { host: 'gemini', session: 's-4', cwd: DIR };
+const V = { host: 'antigravity', session: 'v-5', cwd: DIR, model: 'model-v' };
 
 const SAMPLES: Sample[] = [
   ['claude-code UserPromptSubmit', 'claude-code', claude('UserPromptSubmit', { prompt: ASK }), { ...A, event: 'UserPromptSubmit', prompt: ASK }],
@@ -63,6 +68,60 @@ for (const [name, host, stdin, want] of SAMPLES) {
     assert.deepEqual(read(host, JSON.stringify(stdin)), want);
   });
 }
+
+const TURN = { invocationNum: 0, initialNumSteps: 1, lastUserInput: ASK };
+const DONE = { executionNum: 1, terminationReason: 'model_stop', error: '', fullyIdle: true };
+const NAMED: [name: string, event: string, stdin: Json, want: EventArgs][] = [
+  ['antigravity PreInvocation', 'PreInvocation', agy(TURN), { ...V, event: 'UserPromptSubmit', prompt: ASK }],
+  ['antigravity PostToolUse write_to_file', 'PostToolUse', agy(called('write_to_file', { TargetFile: SRC, Overwrite: true, CodeContent: 'let gust = 0;' }, { error: '' })), { ...V, event: 'PostToolUse', tool: 'write_to_file', file: SRC }],
+  ['antigravity PostToolUse replace_file_content', 'PostToolUse', agy(called('replace_file_content', { TargetFile: SRC, TargetContent: 'a', ReplacementContent: 'b' })), { ...V, event: 'PostToolUse', tool: 'replace_file_content', file: SRC }],
+  ['antigravity PostToolUse multi_replace_file_content', 'PostToolUse', agy(called('multi_replace_file_content', { TargetFile: SRC, ReplacementChunks: [] })), { ...V, event: 'PostToolUse', tool: 'multi_replace_file_content', file: SRC }],
+  ['antigravity PostToolUse run_command', 'PostToolUse', agy(called('run_command', { CommandLine: CMD, Cwd: DIR, WaitMsBeforeAsync: 5000 }, { error: '' })), { ...V, event: 'PostToolUse', tool: 'run_command', command: CMD }],
+  ['antigravity PostToolUse run_command with an error', 'PostToolUse', agy(called('run_command', { CommandLine: CMD, Cwd: DIR }, { error: 'exit status 1' })), { ...V, event: 'PostToolUseFailure', tool: 'run_command', command: CMD }],
+  ['antigravity Stop', 'Stop', agy(DONE), { ...V, event: 'Stop' }],
+  ['antigravity Stop with an error', 'Stop', agy({ ...DONE, terminationReason: 'error', error: 'quota' }), { ...V, event: 'StopFailure', reason: 'error' }],
+];
+
+for (const [name, event, stdin, want] of NAMED) {
+  test(`${name} gives the expected event`, () => {
+    assert.deepEqual(read('antigravity', JSON.stringify(stdin), event), want);
+  });
+}
+
+test('antigravity takes the event from the command and the other hosts take the event from stdin', () => {
+  assert.equal(read('antigravity', JSON.stringify(agy(TURN))), null);
+  assert.equal(read('antigravity', JSON.stringify(agy({ ...TURN, hook_event_name: 'PreInvocation' }))), null);
+  assert.deepEqual(read('antigravity', JSON.stringify(agy({ ...DONE, hook_event_name: 'PreInvocation' })), 'Stop'), { ...V, event: 'Stop' });
+  assert.equal(read('claude-code', JSON.stringify({ session_id: 's-1', cwd: DIR, prompt: ASK }), 'UserPromptSubmit'), null);
+  assert.deepEqual(read('claude-code', JSON.stringify(claude('Stop')), 'UserPromptSubmit'), { ...A, event: 'Stop' });
+});
+
+test('antigravity tools outside the kept list give null', () => {
+  for (const tool of ['view_file', 'list_dir', 'find_by_name', 'grep_search', 'search_web', 'read_url_content', 'manage_task', 'Write', 'Bash', 'constructor']) {
+    assert.equal(read('antigravity', JSON.stringify(agy(called(tool, { TargetFile: SRC, CommandLine: CMD, AbsolutePath: SRC }))), 'PostToolUse'), null, tool);
+  }
+  assert.equal(read('antigravity', JSON.stringify(agy({ stepIdx: 5 })), 'PostToolUse'), null);
+  for (const tool of ['write_to_file', 'replace_file_content', 'multi_replace_file_content']) {
+    assert.equal(read('antigravity', JSON.stringify(agy(called(tool, { TargetFile: SRC }, { error: 'permission denied' }))), 'PostToolUse'), null, tool);
+  }
+});
+
+test('antigravity unknown events give null', () => {
+  for (const name of ['SessionStart', 'PreToolUse', 'PostInvocation', 'UserPromptSubmit', 'BeforeAgent', 'stop', 'constructor', 'toString', '']) {
+    assert.equal(read('antigravity', JSON.stringify(agy({ ...TURN, ...DONE, ...called('run_command', { CommandLine: CMD }) })), name), null, name);
+  }
+  for (const stdin of ['', ' ', '{', 'not json', '[]', '[{"conversationId":"v-5"}]', 'null', 'true', '7', '"Stop"']) {
+    for (const name of ['PreInvocation', 'PostToolUse', 'Stop']) assert.equal(read('antigravity', stdin, name), null, stdin);
+  }
+});
+
+test('an antigravity tool response or error text never reaches the result', () => {
+  for (const [name, event, stdin, want] of NAMED) {
+    const got = read('antigravity', JSON.stringify({ ...stdin, tool_response: SECRET, toolResponse: { stdout: SECRET }, error: stdin.error ? SECRET : '' }), event);
+    assert.deepEqual(got, want, name);
+    assert.ok(!JSON.stringify(got).includes(SECRET), name);
+  }
+});
 
 test('a Cursor session with no conversation id falls back to the session id', () => {
   const stdin = { ...cursor('sessionStart'), conversation_id: undefined, session_id: 'c-9' };
@@ -153,8 +212,8 @@ test('every event and matcher of the Codex plugin file gives the fields of that 
   for (const name of ['PostToolUseFailure', 'StopFailure', 'PostCompact', 'SessionStart', 'PreToolUse']) assert.equal(read('codex', JSON.stringify(codex(name, { source: 'clear', ...made('Bash', { command: CMD }) }))), null, name);
 });
 
-const TOOL_EVENT: Record<Host, [string, (name: string, more?: Json) => Json]> = { 'claude-code': ['PostToolUse', claude], codex: ['PostToolUse', codex], cursor: ['postToolUse', cursor], gemini: ['AfterTool', gemini] };
-const DROPPED: Record<Host, string[]> = {
+const TOOL_EVENT: Record<Told, [string, (name: string, more?: Json) => Json]> = { 'claude-code': ['PostToolUse', claude], codex: ['PostToolUse', codex], cursor: ['postToolUse', cursor], gemini: ['AfterTool', gemini] };
+const DROPPED: Record<Told, string[]> = {
   'claude-code': ['Read', 'Grep', 'Glob', 'Task', 'WebFetch', 'Shell', 'write_file', 'bash'],
   codex: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'Shell', 'run_shell_command'],
   cursor: ['Read', 'Grep', 'Delete', 'Task', 'MCP', 'write_file', 'shell'],
@@ -169,7 +228,7 @@ for (const host of HOSTS) {
   });
 }
 
-const UNKNOWN: Record<Host, string[]> = {
+const UNKNOWN: Record<Told, string[]> = {
   'claude-code': ['sessionStart', 'BeforeAgent', 'Elsewhere', ''],
   codex: ['beforeSubmitPrompt', 'AfterAgent', 'Elsewhere', ''],
   cursor: ['UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionStart', 'afterFileEdit', 'preToolUse', 'sessionEnd', 'BeforeAgent'],
@@ -236,6 +295,7 @@ test('a tool response or tool output never reaches the result', () => {
 const TEXT = 'Memory\n- one';
 const CAMEL = '{"hookSpecificOutput":{"hookEventName":"BeforeAgent","additionalContext":"Memory\\n- one"}}';
 const SNAKE = '{"additional_context":"Memory\\n- one"}';
+const STEPS = '{"injectSteps":[{"systemMessage":{"systemMessage":"Memory\\n- one"}}]}';
 const WRITES: [host: Host, event: string, want: string][] = [
   ['claude-code', 'UserPromptSubmit', TEXT],
   ['claude-code', 'SessionStart', TEXT],
@@ -265,6 +325,13 @@ const WRITES: [host: Host, event: string, want: string][] = [
   ['cursor', 'StopFailure', ''],
   ['cursor', 'afterAgentResponse', ''],
   ['cursor', 'stop', ''],
+  ['antigravity', 'UserPromptSubmit', STEPS],
+  ['antigravity', 'PreInvocation', STEPS],
+  ['antigravity', 'PostToolUse', ''],
+  ['antigravity', 'PostToolUseFailure', ''],
+  ['antigravity', 'Stop', ''],
+  ['antigravity', 'StopFailure', ''],
+  ['antigravity', 'SessionStart', ''],
 ];
 
 for (const [host, event, want] of WRITES) {
@@ -288,12 +355,19 @@ test('an empty text always gives an empty string', () => {
 });
 
 test('the limits are the figures taken from the research', () => {
-  assert.deepEqual(LIMIT, { 'claude-code': 10000, codex: 7500, cursor: 7500, gemini: 7500 });
+  assert.deepEqual(LIMIT, { 'claude-code': 10000, codex: 7500, cursor: 7500, gemini: 7500, antigravity: 7500 });
 });
 
-const HEARD: Record<Host, string> = { 'claude-code': 'UserPromptSubmit', codex: 'UserPromptSubmit', cursor: 'PostToolUse', gemini: 'UserPromptSubmit' };
+test('antigravity gets an empty object where no text is added and every other host gets nothing', () => {
+  assert.equal(blank('antigravity'), '{}');
+  for (const host of [...HOSTS, 'elsewhere', 'constructor', undefined]) assert.equal(blank(host), '', String(host));
+  assert.deepEqual(ALL.map(repeats), [false, false, false, false, true]);
+});
+
+const HEARD: Record<Host, string> = { 'claude-code': 'UserPromptSubmit', codex: 'UserPromptSubmit', cursor: 'PostToolUse', gemini: 'UserPromptSubmit', antigravity: 'PreInvocation' };
 const inner = (host: Host, out: string): string => {
   if (host === 'cursor') return (JSON.parse(out) as { additional_context: string }).additional_context;
+  if (host === 'antigravity') return (JSON.parse(out) as { injectSteps: { systemMessage: { systemMessage: string } }[] }).injectSteps[0].systemMessage.systemMessage;
   if (host === 'gemini') return (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
   return out;
 };
@@ -308,7 +382,7 @@ function whole(text: string, max: number): string {
   return out;
 }
 
-for (const host of HOSTS) {
+for (const host of ALL) {
   test(`${host} cuts a long text at the last line break under the limit`, () => {
     const max = LIMIT[host];
     const long = Array.from({ length: 400 }, (_, i) => `- memory line ${String(i).padStart(4, '0')} about the gust filter`).join('\n');
@@ -346,9 +420,10 @@ test('a text shaped like a JSON object is framed for the hosts that take plain t
 });
 
 const CLAUDE_ENV = { CLAUDE_PROJECT_DIR: DIR, PATH: '/usr/bin' };
-const FOREIGN: Record<string, string> = { CURSOR_VERSION: '3.2.0', CURSOR_PROJECT_DIR: DIR, CURSOR_USER_EMAIL: 'dev@example.test', DEVIN_PROJECT_DIR: DIR };
+const NEWER: Record<string, string> = { GROK_HOOK_EVENT: 'Stop', GROK_HOOK_NAME: 'memory', GROK_SESSION_ID: 'g-1', GROK_WORKSPACE_ROOT: DIR, MUSE_SESSION_ID: 'm-1', MUSE_THREAD_ID: 'm-2' };
+const FOREIGN: Record<string, string> = { CURSOR_VERSION: '3.2.0', CURSOR_PROJECT_DIR: DIR, CURSOR_USER_EMAIL: 'dev@example.test', DEVIN_PROJECT_DIR: DIR, ...NEWER };
 
-for (const host of HOSTS.filter((h) => h !== 'cursor')) {
+for (const host of ALL.filter((h) => h !== 'cursor')) {
   test(`${host} fits a plain environment`, () => {
     assert.equal(fits(host, {}), true);
     assert.equal(fits(host, CLAUDE_ENV), true);
@@ -372,4 +447,8 @@ test('cursor fits only with CURSOR_VERSION', () => {
 
 test('cursor does not fit with DEVIN_PROJECT_DIR', () => {
   assert.equal(fits('cursor', { CURSOR_VERSION: '3.2.0', DEVIN_PROJECT_DIR: DIR }), false);
+});
+
+test('cursor does not fit with a variable of Grok Build or Muse Code', () => {
+  for (const [name, value] of Object.entries(NEWER)) assert.equal(fits('cursor', { CURSOR_VERSION: '3.2.0', [name]: value }), false, name);
 });

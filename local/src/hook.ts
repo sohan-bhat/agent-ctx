@@ -1,4 +1,4 @@
-export type Host = 'claude-code' | 'codex' | 'cursor' | 'gemini';
+export type Host = 'claude-code' | 'codex' | 'cursor' | 'gemini' | 'antigravity';
 
 export interface EventArgs { host?: string; event?: string; session?: string; cwd?: string; prompt?: string; tool?: string; file?: string; command?: string; message?: string; summary?: string; reason?: string; source?: string; model?: string }
 
@@ -11,10 +11,13 @@ const BOOK: Case = { take: { file: 'tool_input.notebook_path' } };
 const RUN: Case = { take: { command: 'tool_input.command' } };
 const SOURCE: Case = { take: { source: 'source' } };
 const BROKE: Case = { as: 'StopFailure', take: { reason: 'status' } };
+const PLACED: Case = { take: { file: 'toolCall.args.TargetFile' } };
+const TYPED: Case = { take: { command: 'toolCall.args.CommandLine' } };
+const NAMED = 'toolCall.name';
 const KEPT: Record<string, Case> = { Write: FILE, Edit: FILE, MultiEdit: FILE, NotebookEdit: BOOK, Bash: RUN };
 const PROMPT: Rule = { as: 'UserPromptSubmit', take: { prompt: 'prompt' } };
 const STOP: Rule = { as: 'Stop', take: { message: 'last_assistant_message' } };
-const tools = (cases: Record<string, Case>, as = 'PostToolUse'): Rule => ({ as, by: 'tool_name', take: { tool: 'tool_name' }, cases });
+const tools = (cases: Record<string, Case>, as = 'PostToolUse', name = 'tool_name'): Rule => ({ as, by: name, take: { tool: name }, cases });
 
 const SESSION: Take = { session: 'session_id', cwd: 'cwd' };
 const BASE: Record<Host, Take> = {
@@ -22,6 +25,7 @@ const BASE: Record<Host, Take> = {
   codex: SESSION,
   cursor: { session: 'conversation_id|session_id', cwd: 'cwd|workspace_roots.0', model: 'model' },
   gemini: SESSION,
+  antigravity: { session: 'conversationId', cwd: 'workspacePaths.0', model: 'modelName' },
 };
 
 const RULES: Record<Host, Record<string, Rule>> = {
@@ -51,6 +55,13 @@ const RULES: Record<Host, Record<string, Rule>> = {
     AfterTool: tools({ write_file: FILE, replace: FILE, run_shell_command: RUN }),
     AfterAgent: { as: 'Stop', take: { message: 'prompt_response' } },
   },
+  antigravity: {
+    PreInvocation: { as: 'UserPromptSubmit', take: { prompt: 'lastUserInput' } },
+    PostToolUse: tools({ write_to_file: PLACED, replace_file_content: PLACED, multi_replace_file_content: PLACED, run_command: TYPED }, 'PostToolUse', NAMED),
+    PostToolUseFailure: tools({ run_command: TYPED }, 'PostToolUseFailure', NAMED),
+    Stop: { as: 'Stop' },
+    StopFailure: { as: 'StopFailure', take: { reason: 'terminationReason' } },
+  },
 };
 
 const HEARD: Record<Host, readonly string[]> = {
@@ -58,14 +69,17 @@ const HEARD: Record<Host, readonly string[]> = {
   codex: ['UserPromptSubmit'],
   cursor: ['SessionStart', 'PostToolUse'],
   gemini: ['UserPromptSubmit'],
+  antigravity: ['UserPromptSubmit'],
 };
 
 const SIGNS: Record<string, readonly string[]> = {
   cursor: ['CURSOR_VERSION', 'CURSOR_PROJECT_DIR', 'CURSOR_USER_EMAIL'],
   devin: ['DEVIN_PROJECT_DIR'],
+  grok: ['GROK_HOOK_EVENT', 'GROK_HOOK_NAME', 'GROK_SESSION_ID', 'GROK_WORKSPACE_ROOT'],
+  muse: ['MUSE_SESSION_ID', 'MUSE_THREAD_ID'],
 };
 
-export const LIMIT: Record<Host, number> = { 'claude-code': 10000, codex: 7500, cursor: 7500, gemini: 7500 };
+export const LIMIT: Record<Host, number> = { 'claude-code': 10000, codex: 7500, cursor: 7500, gemini: 7500, antigravity: 7500 };
 
 function own<T>(table: Record<string, T>, key: string | undefined): T | undefined {
   return key !== undefined && Object.hasOwn(table, key) ? table[key] : undefined;
@@ -94,14 +108,28 @@ export function fits(host: Host, env: Record<string, string | undefined>): boole
   return !Object.entries(SIGNS).some(([product, names]) => product !== host && names.some(set));
 }
 
-export function read(host: Host, stdin: string): EventArgs | null {
+export function repeats(host: Host): boolean {
+  return host === 'antigravity';
+}
+
+export function blank(host: string | undefined): string {
+  return host === 'antigravity' ? '{}' : '';
+}
+
+function called(host: Host, from: unknown, event: string | undefined): string | undefined {
+  if (host !== 'antigravity') return at(from, 'hook_event_name');
+  if (typeof from !== 'object' || from === null || Array.isArray(from)) return undefined;
+  return event && at(from, 'error') ? `${event}Failure` : event;
+}
+
+export function read(host: Host, stdin: string, event?: string): EventArgs | null {
   let from: unknown;
   try {
     from = JSON.parse(stdin);
   } catch {
     return null;
   }
-  const rule = own(own(RULES, host) ?? {}, at(from, 'hook_event_name'));
+  const rule = own(own(RULES, host) ?? {}, called(host, from, event));
   if (!rule) return null;
   const pick = rule.by ? own(rule.cases ?? {}, at(from, rule.by)) : undefined;
   if (rule.by && !pick && !rule.open) return null;
@@ -132,6 +160,7 @@ export function write(host: Host, event: string, text: string): string {
   const bare = body.trim();
   if (!bare) return '';
   if (host === 'cursor') return JSON.stringify({ additional_context: body });
+  if (host === 'antigravity') return JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: body } }] });
   const native = Object.keys(rules).find((key) => rules[key]?.as === name) ?? name;
   const framed = JSON.stringify({ hookSpecificOutput: { hookEventName: native, additionalContext: body } });
   if (host === 'gemini') return framed;
