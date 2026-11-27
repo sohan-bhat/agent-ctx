@@ -618,6 +618,19 @@ async function walk(b, site, w, h, scheme) {
     if (wide) check(`${tag} the typed line keeps one height, "Work started in" never moves and the words after the first name move sideways`, steady(typed) && typed.lead[1].length > 1, placed(typed));
     else check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names ${typed.place.map((v) => v.join(' or ')).join(' and ')} px from the left, sentence at ${typed.under.join(' ')}`);
     check(`${tag} the cursor that types stays lit`, typed.typing > 0 && typed.unlit === 0, `${typed.unlit} of ${typed.typing} moments with a dark cursor in a word`);
+    const lined = await page.evaluate(() => {
+      const p = document.querySelector('[data-site=typed]');
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--agent-1)';
+      p.append(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      const read = (e) => { const c = getComputedStyle(e); return { on: c.textDecorationLine === 'underline', color: c.textDecorationColor, thick: parseFloat(c.textDecorationThickness) }; };
+      const names = [...p.querySelectorAll('[data-site=agent]')].map(read);
+      const others = [...p.querySelectorAll('*')].filter((e) => !e.matches('[data-site=agent]') && !e.closest('.sr-only')).filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.nodeValue.trim())).map(read);
+      return { accent, names, plain: others.filter((o) => o.on).length, link: getComputedStyle(document.querySelector('.site-top a')).textDecorationColor };
+    });
+    check(`${tag} each of the two names has a thin underline in the accent of the page and no other word of the sentence has one`, lined.names.length === 2 && lined.names.every((n) => n.on && n.color === lined.accent && n.thick > 0 && n.thick <= 2) && lined.plain === 0 && lined.link === lined.accent, `${lined.names.map((n) => `${n.on ? n.color : 'none'} ${n.thick}px`).join(' and ')}, accent ${lined.accent}, ${lined.plain} other underlined words`);
     check(`${tag} screen readers get one still sentence and no live updates while names change`, s.spoken === SPOKEN && typed.said.length === 1 && !s.live, typed.said.join(' | '));
 
     const axe = await new AxeBuilder({ page }).analyze();

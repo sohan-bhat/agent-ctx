@@ -29,6 +29,13 @@
   text-underline-offset: 4px;
 }
 
+.site-typed [data-site='agent'] {
+  text-decoration: underline;
+  text-decoration-color: var(--agent-1);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 5px;
+}
+
 .site a:not([data-slot]):hover {
   text-decoration-color: currentColor;
 }
