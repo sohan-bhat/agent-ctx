@@ -34,7 +34,9 @@ for (const [l, safe] of Object.entries(STOP_LISTS)) for (const w of safe) SAFE_B
 
 const ALL_STOP = new Set([...STOP, ...Object.values(STOP_LISTS).flat()]);
 
-function languageStops(words: string[]): Set<string> {
+export type Lang = keyof typeof STOP_LISTS;
+
+function held(words: string[]): Lang[] {
   const seen = new Map<string, Set<string>>();
   for (const w of words) {
     for (const l of SAFE_BY_WORD.get(w) ?? []) {
@@ -43,9 +45,16 @@ function languageStops(words: string[]): Set<string> {
       seen.set(l, s);
     }
   }
-  const out = new Set<string>();
-  for (const [l, s] of seen) if (s.size >= 2) for (const w of FULL_LISTS[l as keyof typeof STOP_LISTS]) out.add(w);
-  return out;
+  return [...seen].filter(([, s]) => s.size >= 2).map(([l]) => l as Lang);
+}
+
+export const LANG_CARDS = 2;
+export const LANG_SHARE = [3, 10] as const;
+
+export function projectLanguages(cards: readonly (readonly Lang[])[]): Lang[] {
+  const count = new Map<Lang, number>();
+  for (const langs of cards) for (const l of new Set(langs)) count.set(l, (count.get(l) ?? 0) + 1);
+  return [...count].filter(([, c]) => c >= LANG_CARDS && c * LANG_SHARE[1] >= LANG_SHARE[0] * cards.length).map(([l]) => l);
 }
 
 export function isStop(w: string): boolean {
@@ -127,12 +136,24 @@ function split(run: string, out: Part[]): void {
   flush();
 }
 
-export function tokens(text: string): string[] {
-  if (!text) return [];
+function partsOf(text: string): Part[] {
   const spaced = text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
   const parts: Part[] = [];
   for (const m of fold(spaced).matchAll(WORD)) split(m[0], parts);
-  const extra = languageStops(parts.filter((p) => p[1]).map((p) => p[0]));
+  return parts;
+}
+
+const wordsIn = (parts: Part[]): string[] => parts.filter((p) => p[1]).map((p) => p[0]);
+
+export function languagesOf(text: string): Lang[] {
+  return text ? held(wordsIn(partsOf(text))) : [];
+}
+
+export function tokens(text: string, langs: readonly Lang[] = []): string[] {
+  if (!text) return [];
+  const parts = partsOf(text);
+  const extra = new Set<string>();
+  for (const l of new Set([...held(wordsIn(parts)), ...langs])) for (const w of FULL_LISTS[l]) extra.add(w);
   const out: string[] = [];
   for (const [p, isWord] of parts) {
     if (isWord) word(p, out, extra);

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DAY, namedProjects, oneEdit, rankItems, recency, recent, typoOf } from '../src/rank.ts';
+import { DAY, isChat, namedProjects, oneEdit, rankItems, recency, recent, typoOf } from '../src/rank.ts';
+import { tokens } from '../src/text.ts';
 import type { Body, CardBody, Item, Kind } from '../src/model.ts';
 
 const NOW = Date.parse('2026-11-20T12:00:00Z');
@@ -264,4 +265,48 @@ test('a pool of 8 keeps the common term skip while a pool of 7 does not', () => 
   const all = Array.from({ length: 8 }, (_, k) => card(`c${k}`, `Waitlist note number ${k}`, k + 1));
   assert.deepEqual(rankItems(all, 'waitlist', NOW), []);
   assert.equal(rankItems(all.slice(0, 7), 'waitlist', NOW).length, 7);
+});
+
+const SHARED: [string, string[]][] = [
+  ['the car is on the plus plan', ['car', 'plus', 'plan']],
+  ['war room notes, man page for die()', ['war', 'room', 'not', 'man', 'pag', 'die']],
+  ['sin and come are math and shell words', ['sin', 'com', 'math', 'shell', 'word']],
+  ['his son has a hat and also a van', ['son', 'hat', 'van']],
+  ['press del to drop the con port, para mode stays on', ['press', 'del', 'drop', 'con', 'port', 'para', 'mod', 'stay']],
+  ['a fast gut check before the bald eagle demo', ['fast', 'gut', 'check', 'bald', 'eagl', 'demo']],
+  ['set the font size, vite build and the pendant light', ['set', 'font', 'siz', 'vit', 'build', 'pendant', 'light']],
+  ['the sea level data shows a tan line at the mal port', ['sea', 'level', 'data', 'show', 'tan', 'lin', 'mal', 'port']],
+  ['legal show of the sim card at the boa pro meetup', ['legal', 'show', 'sim', 'card', 'boa', 'pro', 'meetup']],
+  ['quasi male presto chi test in the solo dove mode', ['quasi', 'mal', 'presto', 'chi', 'test', 'solo', 'dov', 'mod']],
+  ['the todo list says nada about the algo bug', ['todo', 'list', 'say', 'nada', 'algo', 'bug']],
+  ['an ensemble encore with super bravo pardon notes', ['ensembl', 'encor', 'super', 'bravo', 'pardon', 'not']],
+  ['doit runs the comment task and the parfait job', ['doit', 'run', 'comment', 'task', 'parfait', 'job']],
+  ['the falls and the seine are the halt points on the map', ['fall', 'sein', 'halt', 'point', 'map']],
+  ['the dir path and the mag reader in the ins file', ['dir', 'path', 'mag', 'reader', 'ins', 'fil']],
+  ['a pure poi export with verso pages and a col grid', ['pur', 'poi', 'export', 'verso', 'pag', 'col', 'grid']],
+];
+
+const panaderia = [
+  card('c1', 'Pedido de pan para el sábado', 3, { decisions: [{ what: 'guardar los pedidos en una cola', why: 'los clientes pedían por teléfono desde temprano' }] }),
+  card('c2', 'Factura en PDF para la panadería', 4, { decisions: [{ what: 'generar la factura en el servidor', why: 'el navegador era muy lento' }] }),
+  card('c3', 'Precio de la barra de pan', 5, { decisions: [{ what: 'leer el precio desde la tabla de productos', why: 'los precios cambiaban cada semana' }] }),
+  card('c4', 'Horario de reparto en el barrio', 6, { decisions: [{ what: 'mostrar la hora de llegada', why: 'los vecinos querían saber cuando llega el pan' }] }),
+  card('c5', 'Login con código por correo', 7, { decisions: [{ what: 'enviar un código de seis cifras', why: 'la contraseña se olvidaba' }] }),
+  card('c6', 'Foto del pan en la tienda', 8, { decisions: [{ what: 'subir la foto comprimida', why: 'las fotos grandes tardaban en cargar' }] }),
+];
+
+test('a short query to a project of spanish cards drops spanish function words', () => {
+  assert.deepEqual(rankItems(panaderia, 'la foto de la tienda', NOW).map((h) => h.item.id), ['c6']);
+  assert.deepEqual(rankItems(panaderia, 'factura de la panaderia', NOW).map((h) => h.item.id), ['c2']);
+  assert.deepEqual(rankItems(panaderia, 'lo de la barra', NOW).map((h) => h.item.id), ['c3']);
+});
+
+test('english and code sentences keep every word, alone and as a query to a project of english cards', () => {
+  const quote = card('quote', 'The client error said no se puede guardar porque falta el archivo', 1);
+  const pool = [quote, ...SHARED.map(([s], k) => card(`s${k}`, s, k + 2))];
+  SHARED.forEach(([s, want], k) => {
+    assert.deepEqual(tokens(s), want, s);
+    const hit = rankItems(pool, s, NOW).find((h) => h.item.id === `s${k}`);
+    assert.equal(hit?.matched, new Set(want.filter((t) => !isChat(t))).size, s);
+  });
 });

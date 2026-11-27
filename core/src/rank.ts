@@ -1,4 +1,4 @@
-import { B, K1, idf, joinPhrases, stem, synonymsOf, tokens } from './text.ts';
+import { B, K1, idf, joinPhrases, languagesOf, projectLanguages, stem, synonymsOf, tokens, type Lang } from './text.ts';
 import { itemText, projectName, type CardBody, type Item } from './model.ts';
 
 export const DAY = 86400000;
@@ -39,7 +39,7 @@ export function recency(at: number, now: number): number {
   return 0.4 + 0.6 * Math.exp(-age / 21);
 }
 
-interface Pool { items: Item[]; bodies: unknown[]; postings: Map<string, number[]>; lens: number[]; avg: number; vocab: Map<number, string[]> | null }
+interface Pool { items: Item[]; bodies: unknown[]; postings: Map<string, number[]>; lens: number[]; avg: number; vocab: Map<number, string[]> | null; langs: Lang[] }
 
 const pools: Pool[] = [];
 const KEEP_POOLS = 8;
@@ -56,8 +56,10 @@ function poolOf(items: Item[]): Pool {
   const postings = new Map<string, number[]>();
   const lens: number[] = [];
   let sum = 0;
-  items.forEach((item, doc) => {
-    const toks = tokens(joinPhrases(itemText(item)));
+  const texts = items.map((item) => joinPhrases(itemText(item)));
+  const langs = projectLanguages(texts.map(languagesOf));
+  texts.forEach((text, doc) => {
+    const toks = tokens(text, langs);
     const tf = new Map<string, number>();
     for (const t of toks) tf.set(t, (tf.get(t) ?? 0) + 1);
     for (const [t, c] of tf) {
@@ -68,7 +70,7 @@ function poolOf(items: Item[]): Pool {
     lens.push(toks.length);
     sum += toks.length;
   });
-  const p: Pool = { items, bodies: items.map((i) => i.body), postings, lens, avg: items.length ? sum / items.length : 0, vocab: null };
+  const p: Pool = { items, bodies: items.map((i) => i.body), postings, lens, avg: items.length ? sum / items.length : 0, vocab: null, langs };
   pools.unshift(p);
   if (pools.length > KEEP_POOLS) pools.length = KEEP_POOLS;
   return p;
@@ -128,7 +130,7 @@ function queryTerms(query: string, p: Pool, n: number, small: boolean): Term[] {
   const common = (df: number) => !small && n >= 4 && df / n > COMMON;
   const out: Term[] = [];
   const seen = new Set<string>();
-  for (const raw of new Set(tokens(joinPhrases(query)))) {
+  for (const raw of new Set(tokens(joinPhrases(query), p.langs))) {
     if (CHAT.has(raw)) continue;
     let t = raw;
     let df = dfOf(t);

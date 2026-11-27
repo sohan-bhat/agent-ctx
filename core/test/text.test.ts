@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FULL_LISTS, GROUPS, STOP_LISTS, bucketOf, buildBm25, fileTokens, idf, isStop, joinPhrases, search, stem, synonymsOf, tokens, view, vocabulary } from '../src/text.ts';
+import { FULL_LISTS, GROUPS, STOP_LISTS, bucketOf, languagesOf, projectLanguages, buildBm25, fileTokens, idf, isStop, joinPhrases, search, stem, synonymsOf, tokens, view, vocabulary } from '../src/text.ts';
 import { itemText } from '../src/model.ts';
 import * as one from './corpus.ts';
 import * as two from './corpus2.ts';
@@ -278,4 +278,20 @@ test('no text of sets 1, 2 and 2b holds two safe words of one language', () => {
     const words = new Set(raw(t));
     for (const l of LANGS) assert.ok(STOP_LISTS[l].filter((w) => words.has(w)).length < 2, `${l} ${t}`);
   }
+});
+
+test('a project takes a language when at least two cards and three in ten hold it', () => {
+  const es = ['es'] as const;
+  const of = (held: number, all: number) => projectLanguages(Array.from({ length: all }, (_, k) => (k < held ? [...es] : [])));
+  assert.deepEqual([of(0, 0), of(1, 1), of(2, 2), of(1, 3), of(2, 6), of(2, 10), of(3, 10), of(9, 40), of(12, 40)], [[], [], ['es'], [], ['es'], [], ['es'], [], ['es']]);
+  assert.deepEqual(projectLanguages([['es', 'pt'], ['pt'], ['es'], []]), ['es', 'pt']);
+  assert.deepEqual(languagesOf('los pagos por tarjeta desde que vence'), ['es']);
+  assert.deepEqual(languagesOf('the car is on the plus plan'), []);
+});
+
+test('the language of a project drops its full list from a text that holds no safe word', () => {
+  assert.deepEqual(tokens('el pago de la tarjeta'), ['el', 'pago', 'de', 'la', 'tarjeta']);
+  assert.deepEqual(tokens('el pago de la tarjeta', ['es']), ['pago', 'tarjeta']);
+  assert.deepEqual(tokens('der Kunde und die Rechnung', ['de']), ['kund', 'rechnung']);
+  assert.deepEqual(tokens('the car is on the plus plan', ['es']), ['car', 'plus', 'plan']);
 });
