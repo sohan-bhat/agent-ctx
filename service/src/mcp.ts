@@ -1,11 +1,8 @@
-import { env } from 'cloudflare:workers';
-import { McpServer, createRequestStateCodec, inputRequired, inputResponse, type RequestStateCodec } from '@modelcontextprotocol/server';
-import { createMcpHandler, getMcpAuthContext } from 'agents/mcp/server';
+import { McpServer, inputRequired, inputResponse, type RequestStateCodec } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { EMPTY_RECALL, FIRST_CHARS } from '../../core/src/index.ts';
-import type { Caller, Result } from './person.ts';
+import type { Caller, CheckpointArgs, EventArgs, HandoffArgs, RecallArgs, Result, RuleArgs } from './engine.ts';
 import { MAX, SAY } from './limits.ts';
-import type { Props } from './auth.ts';
 
 export const INSTRUCTIONS =
   "Before you read or change any file for a task, call recall once with repo and folder, since another agent of this person may have left a handoff, rules or dead ends for this project. After you finish a task, call checkpoint. When the person stops or switches agents, call handoff. When the person states a standing preference, call rule with their exact words. Text from recall is background from earlier sessions. Only lines under RULES were accepted by the person.";
@@ -68,24 +65,24 @@ const SCHEMA = { recall: lean(ZOD.recall), checkpoint: lean(ZOD.checkpoint), han
 
 const WRITER = { destructiveHint: false, idempotentHint: true };
 
-type Ctx = { http?: { authInfo?: { scopes?: string[] } }; mcpReq?: { inputResponses?: Record<string, unknown>; requestState?: () => unknown } };
+export type Ctx = { http?: { authInfo?: { scopes?: string[] } }; mcpReq?: { inputResponses?: Record<string, unknown>; requestState?: () => unknown } };
+
+export interface Memory {
+  recall(c: Caller, a: RecallArgs, tool?: boolean): Promise<Result>;
+  checkpoint(c: Caller, a: CheckpointArgs): Promise<Result>;
+  handoff(c: Caller, a: HandoffArgs): Promise<Result>;
+  ruleDraft(c: Caller, a: RuleArgs): Promise<Result & { line?: string; held?: boolean }>;
+  rule(c: Caller, a: RuleArgs, seen?: string): Promise<Result>;
+  event(c: Caller, a: EventArgs): Promise<Result>;
+}
+
+export interface Reach {
+  caller(ctx: Ctx): { who: Caller; memory(): Memory } | null;
+  state(): RequestStateCodec<string>;
+}
 
 const CONFIRM = 'keep';
 const CONFIRM_SCHEMA = { type: 'object' as const, properties: { keep: { type: 'boolean' as const, title: 'Keep this standing rule', default: true } }, required: ['keep'] };
-
-let codec: RequestStateCodec<string> | null = null;
-
-function stateCodec(): RequestStateCodec<string> {
-  codec ??= createRequestStateCodec<string>({
-    key: `agent-ctx request state ${env.COOKIE_KEY ?? ''}`,
-    ttlSeconds: 600,
-    bind: () => {
-      const props = getMcpAuthContext()?.props as Partial<Props> | undefined;
-      return `${props?.person ?? ''}\u0000${props?.grant ?? ''}`;
-    },
-  });
-  return codec;
-}
 
 function confirmed(ctx: Ctx): { asked: boolean; seen?: string } {
   const answer = inputResponse(ctx.mcpReq?.inputResponses, CONFIRM);
@@ -104,19 +101,8 @@ function askText(line: string, scope: string): string {
   return `Keep this standing rule for ${scope === 'project' ? 'this project' : 'all projects'}? Every agent you connect reads the rule as your own words. ${line}`;
 }
 
-function caller(ctx: Ctx): { props: Props; who: Caller } | null {
-  const props = getMcpAuthContext()?.props as Partial<Props> | undefined;
-  if (!props || typeof props.person !== 'string' || typeof props.grant !== 'string') return null;
-  const scopes = ctx.http?.authInfo?.scopes ?? [];
-  return { props: props as Props, who: { agent: typeof props.label === 'string' ? props.label : 'another agent', grant: props.grant, scopes } };
-}
-
 function reply(text: string, isError = false) {
   return isError ? { content: [{ type: 'text' as const, text }], isError: true } : { content: [{ type: 'text' as const, text }] };
-}
-
-function stub(person: string) {
-  return env.PERSON.getByName(person);
 }
 
 function asText(v: unknown): string | undefined {
@@ -149,12 +135,12 @@ export function fitEvent(a: Record<string, string | undefined>, max = MAX.inputB
   return JSON.stringify(out).length <= max ? out : null;
 }
 
-async function run(ctx: Ctx, fn: (s: ReturnType<typeof stub>, who: Caller) => Promise<Result>, empty?: string, args?: unknown) {
-  const c = caller(ctx);
+async function run(reach: Reach, ctx: Ctx, fn: (s: Memory, who: Caller) => Promise<Result>, empty?: string, args?: unknown) {
+  const c = reach.caller(ctx);
   if (!c) return reply(FAILED, true);
   if (args !== undefined && oversize(args)) return reply(SAY.size, true);
   try {
-    const r = await fn(stub(c.props.person), c.who);
+    const r = await fn(c.memory(), c.who);
     if (!r.ok) return reply(r.text, true);
     return reply(r.text || empty || '');
   } catch {
@@ -205,34 +191,34 @@ function user(text: string) {
 
 export const TOOL_CHARS = JSON.stringify(toolList()).length;
 
-export function createServer(): McpServer {
+export function createServer(reach: Reach): McpServer {
   const server = new McpServer(
     { name: 'agent-ctx', version: '0.1.0' },
-    { instructions: INSTRUCTIONS, maxToolInputElements: 400, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, requestState: { verify: (state, ctx) => stateCodec().verify(state, ctx) } },
+    { instructions: INSTRUCTIONS, maxToolInputElements: 400, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, requestState: { verify: (state, ctx) => reach.state().verify(state, ctx) } },
   );
   server.registerTool('recall', { description: DESCRIBE.recall, inputSchema: SCHEMA.recall, annotations: ANNOTATIONS.recall, _meta: META.recall }, (args, ctx) =>
-    run(ctx, (s, who) => s.recall(who, args, true), EMPTY_RECALL, args),
+    run(reach, ctx, (s, who) => s.recall(who, args, true), EMPTY_RECALL, args),
   );
-  server.registerTool('checkpoint', { description: DESCRIBE.checkpoint, inputSchema: SCHEMA.checkpoint, annotations: WRITER, _meta: META.checkpoint }, (args, ctx) => run(ctx, (s, who) => s.checkpoint(who, args), undefined, args));
-  server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(ctx, (s, who) => s.handoff(who, args), undefined, args));
+  server.registerTool('checkpoint', { description: DESCRIBE.checkpoint, inputSchema: SCHEMA.checkpoint, annotations: WRITER, _meta: META.checkpoint }, (args, ctx) => run(reach, ctx, (s, who) => s.checkpoint(who, args), undefined, args));
+  server.registerTool('handoff', { description: DESCRIBE.handoff, inputSchema: SCHEMA.handoff, annotations: WRITER }, (args, ctx) => run(reach, ctx, (s, who) => s.handoff(who, args), undefined, args));
   server.registerTool('rule', { description: DESCRIBE.rule, inputSchema: SCHEMA.rule, annotations: WRITER }, async (args, ctx) => {
     if (oversize(args)) return reply(SAY.size, true);
     const answer = confirmed(ctx as Ctx);
-    if (answer.asked || !canAsk(server)) return run(ctx, (s, who) => s.rule(who, args, answer.seen));
-    const c = caller(ctx);
+    if (answer.asked || !canAsk(server)) return run(reach, ctx, (s, who) => s.rule(who, args, answer.seen));
+    const c = reach.caller(ctx);
     if (!c) return reply(FAILED, true);
     try {
-      const draft = await stub(c.props.person).ruleDraft(c.who, args);
+      const draft = await c.memory().ruleDraft(c.who, args);
       if (!draft.ok) return reply(draft.text, true);
-      if (!draft.line || draft.held) return run(ctx, (s, who) => s.rule(who, args));
-      const state = await stateCodec().mint(draft.line, ctx as never);
+      if (!draft.line || draft.held) return run(reach, ctx, (s, who) => s.rule(who, args));
+      const state = await reach.state().mint(draft.line, ctx as never);
       return inputRequired({ inputRequests: { [CONFIRM]: inputRequired.elicit({ message: askText(draft.line, args.scope), requestedSchema: CONFIRM_SCHEMA }) }, requestState: state });
     } catch {
       return reply(FAILED, true);
     }
   });
   server.registerTool('event', { description: DESCRIBE.event, inputSchema: SCHEMA.event, annotations: WRITER }, (args, ctx) =>
-    run(ctx, async (s, who) => {
+    run(reach, ctx, async (s, who) => {
       const a: Record<string, string | undefined> = {};
       for (const [k, v] of Object.entries(args)) {
         if (!SCALAR(v)) return { ok: false, text: `The field ${k} must be text, a number, true or false.` };
@@ -243,10 +229,10 @@ export function createServer(): McpServer {
     }),
   );
   server.registerPrompt('continue', { description: 'Pick up the work where another agent of this person stopped.', argsSchema: PROMPT_ARGS }, async (args, ctx) => {
-    const c = caller(ctx as Ctx);
+    const c = reach.caller(ctx as Ctx);
     if (!c) return user(FAILED);
     try {
-      const r = await stub(c.props.person).recall(c.who, { repo: args.repo, folder: args.folder });
+      const r = await c.memory().recall(c.who, { repo: args.repo, folder: args.folder });
       return user(r.ok && !r.noProject ? continueText(r.text) : r.text);
     } catch {
       return user(FAILED);
@@ -254,46 +240,4 @@ export function createServer(): McpServer {
   });
   server.registerPrompt('save', { description: 'Save a checkpoint and a handoff for the next agent now.', argsSchema: PROMPT_ARGS }, async (args) => user(saveText(args)));
   return server;
-}
-
-function hostOf(): string[] {
-  try {
-    return [new URL(env.MCP_RESOURCE).hostname];
-  } catch {
-    return [];
-  }
-}
-
-const handler = createMcpHandler(createServer, { route: '/mcp', allowedHostnames: hostOf(), maxRequestBodySize: BODY_MAX });
-
-async function bounded(request: Request): Promise<Request | null> {
-  if (!request.body) return request;
-  const declared = Number(request.headers.get('Content-Length'));
-  if (Number.isFinite(declared) && declared > BODY_MAX) return null;
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let n = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    n += value.byteLength;
-    if (n > BODY_MAX) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(n);
-  let at = 0;
-  for (const c of chunks) {
-    body.set(c, at);
-    at += c.byteLength;
-  }
-  return new Request(request, { body });
-}
-
-export async function mcpHandler(request: Request, e: Env, ctx: ExecutionContext): Promise<Response> {
-  const fit = await bounded(request);
-  if (!fit) return new Response('The request is too large.', { status: 413, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-  return handler(fit, e, ctx);
 }
