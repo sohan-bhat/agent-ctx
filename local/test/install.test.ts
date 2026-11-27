@@ -462,3 +462,209 @@ describe('gemini', () => {
     assert.deepEqual(look(join(p.home, SETTINGS)), { hooks: { enabled: true, AfterTool: [LINT] } });
   });
 });
+
+const TOML = 'model = "o5"\n\n[mcp_servers.files]\ncommand = "npx"\nargs = ["-y", "files-server"]\n';
+const CONFIG = '.codex/config.toml';
+const table = (p: Paths): string => `[mcp_servers.agent-ctx]\ncommand = "${p.node}"\nargs = ["${p.app}", "mcp", "--agent", "codex"]\n`;
+const codexHook = (p: Paths, shown = p.app): unknown => ({ hooks: [{ type: 'command', command: `${p.node} ${shown} hook --agent codex` }] });
+const NOTIFY = { hooks: [{ type: 'command', command: './notify.sh' }] };
+const GUARD = { matcher: 'Bash', hooks: [{ type: 'command', command: './guard.sh' }] };
+const codexKit: Kit = {
+  agent: 'codex',
+  seed: { [CONFIG]: TOML, '.codex/hooks.json': { hooks: { Stop: [NOTIFY], PreToolUse: [GUARD] } } },
+  broken: { [CONFIG]: '[mcp_servers]\nagent-ctx = { command = "node" }\n', '.codex/hooks.json': '{ "hooks": ' },
+  ours: (p, shown) => {
+    const hook = codexHook(p, shown);
+    return { [CONFIG]: table(p), '.codex/hooks.json': { hooks: { UserPromptSubmit: [hook], PostToolUse: [hook], Stop: [hook] } } };
+  },
+  both: (p) => {
+    const hook = codexHook(p);
+    return { [CONFIG]: `${TOML}\n${table(p)}`, '.codex/hooks.json': { hooks: { Stop: [NOTIFY, hook], PreToolUse: [GUARD], UserPromptSubmit: [hook], PostToolUse: [hook] } } };
+  },
+};
+
+describe('codex', () => {
+  suite(codexKit);
+
+  test('codex keeps other keys of the table and removes the whole table with every sub table', (t) => {
+    const p = make(t);
+    const rest = 'startup_timeout_sec = 20\n\n[mcp_servers."agent-ctx".env]\nLEVEL = "debug"\n\n[profiles.fast]\nmodel = "o5"\n';
+    put(join(p.home, CONFIG), `[mcp_servers."agent-ctx"]\ncommand = 'node'\nargs = ['/old/agent-ctx.js', "mcp", "--agent", "codex"]\n${rest}`);
+    put(join(p.home, '.codex/hooks.json'), { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node /old/agent-ctx.js hook --agent codex' }] }] } });
+    connect('codex', p);
+    assert.equal(text(join(p.home, CONFIG)), `[mcp_servers."agent-ctx"]\ncommand = "${NODE}"\nargs = ["${APP}", "mcp", "--agent", "codex"]\n${rest}`);
+    check(p, { '.codex/hooks.json': codexKit.ours(p)['.codex/hooks.json'] });
+    assert.deepEqual(plan('codex', p), []);
+    disconnect('codex', p);
+    assert.equal(text(join(p.home, CONFIG)), '\n[profiles.fast]\nmodel = "o5"\n');
+  });
+
+  test('codex replaces a table of another kind and keeps the line ends of the file', (t) => {
+    const p = make(t);
+    const head = 'model = "o5"\r\n';
+    put(join(p.home, CONFIG), `${head}\r\n[mcp_servers.agent-ctx]\r\nurl = "https://agent-ctx.invalid/mcp"\r\n\r\n[mcp_servers.agent-ctx.http_headers]\r\nKind = "plain"\r\n`);
+    connect('codex', p);
+    assert.equal(text(join(p.home, CONFIG)), `${head}\r\n${table(p).replaceAll('\n', '\r\n')}`);
+    disconnect('codex', p);
+    assert.equal(text(join(p.home, CONFIG)), head);
+  });
+
+  test('codex leaves a table with values over several lines alone', (t) => {
+    const p = make(t);
+    const body = '[mcp_servers.agent-ctx]\ncommand = "node"\nargs = [\n  "/old/agent-ctx.js",\n]\n';
+    put(join(p.home, CONFIG), body);
+    const [change] = plan('codex', p);
+    assert.equal(change.after, body);
+    assert.match(change.what, / has agent-ctx in a form unsafe for a text edit and was left alone\. To connect by hand, add the table \[mcp_servers\.agent-ctx\] with command = /);
+  });
+});
+
+describe('files', () => {
+  test('apply stops before any write when a file changed after the plan', (t) => {
+    const p = make(t);
+    seed(cursorKit, p);
+    const changes = plan('cursor', p);
+    put(join(p.home, '.cursor/hooks.json'), { version: 1, hooks: {} });
+    const before = tree(p.home);
+    assert.throws(() => apply(changes), /hooks\.json changed after the plan was made, so nothing was written\.$/);
+    assert.deepEqual(tree(p.home), before);
+    assert.deepEqual(tree(p.home, true), {});
+  });
+
+  test('a link to a file inside the home is followed and stays a link', (t) => {
+    const p = make(t);
+    const real = join(fs.realpathSync(p.home), 'dotfiles', 'mcp.json');
+    const link = join(p.home, '.cursor', 'mcp.json');
+    put(real, cursorKit.seed['.cursor/mcp.json']);
+    fs.mkdirSync(dirname(link));
+    fs.symlinkSync(real, link);
+    const changes = connect('cursor', p);
+    assert.equal(changes[0].file, real);
+    assert.equal(linked(link), true);
+    assert.deepEqual(look(real), cursorKit.both(p)['.cursor/mcp.json']);
+    assert.deepEqual(plan('cursor', p), []);
+    disconnect('cursor', p);
+    assert.equal(linked(link), true);
+    assert.deepEqual(look(real), cursorKit.seed['.cursor/mcp.json']);
+  });
+
+  test('a link to a file outside the home is left alone', (t) => {
+    const p = make(t);
+    const away = join(make(t).home, 'mcp.json');
+    const link = join(p.home, '.cursor', 'mcp.json');
+    put(away, cursorKit.seed['.cursor/mcp.json']);
+    fs.mkdirSync(dirname(link));
+    fs.symlinkSync(away, link);
+    const changes = connect('cursor', p);
+    assert.deepEqual(changes[0], {
+      file: link,
+      what: `${link} is a link to a place outside the home folder and was left alone. To connect by hand, add "agent-ctx": ${JSON.stringify(cursorServer(p))} under mcpServers.`,
+      before: null,
+      after: null,
+    });
+    assert.equal(linked(link), true);
+    assert.deepEqual(look(away), cursorKit.seed['.cursor/mcp.json']);
+    check(p, { '.cursor/hooks.json': cursorKit.ours(p)['.cursor/hooks.json'] });
+  });
+
+  test('empty parts of a file that were there before stay after unplan', (t) => {
+    const rows: [Agent, string, unknown][] = [
+      ['claude-desktop', DESKTOP, { mcpServers: {} }],
+      ['cursor', '.cursor/hooks.json', { version: 1, hooks: { stop: [] } }],
+      ['cursor', '.cursor/hooks.json', { hooks: { stop: [AUDIT] } }],
+      ['gemini', SETTINGS, { hooks: {}, mcpServers: {} }],
+      ['codex', '.codex/hooks.json', {}],
+    ];
+    for (const [agent, file, value] of rows) {
+      const p = make(t);
+      put(join(p.home, file), value);
+      connect(agent, p);
+      assert.notDeepEqual(look(join(p.home, file)), value);
+      disconnect(agent, p);
+      assert.deepEqual(look(join(p.home, file)), value, file);
+    }
+  });
+
+  test('the indent and the line ends of a file are kept', (t) => {
+    const p = make(t);
+    const body = '{\r\n\t"mcpServers": {\r\n\t\t"files": {}\r\n\t}\r\n}\r\n';
+    put(join(p.home, DESKTOP), body);
+    connect('claude-desktop', p);
+    assert.equal(text(join(p.home, DESKTOP)).startsWith('{\r\n\t"mcpServers": {\r\n\t\t"files": {},\r\n\t\t"agent-ctx": {\r\n\t\t\t"command": '), true);
+    disconnect('claude-desktop', p);
+    assert.equal(text(join(p.home, DESKTOP)), body);
+  });
+
+  test('a file of another layout is left alone', (t) => {
+    const rows: [Agent, string, unknown][] = [
+      ['claude-desktop', DESKTOP, { mcpServers: [] }],
+      ['claude-desktop', DESKTOP, []],
+      ['gemini', SETTINGS, { hooks: { AfterTool: 'lint' } }],
+      ['cursor', '.cursor/hooks.json', { version: 1, hooks: null }],
+    ];
+    for (const [agent, file, value] of rows) {
+      const p = make(t);
+      put(join(p.home, file), value);
+      const change = plan(agent, p).find((one) => one.file === join(p.home, file));
+      assert.equal(change?.after, change?.before);
+      assert.match(change?.what ?? '', / has an unexpected layout and was left alone\. To connect by hand, add /);
+    }
+  });
+
+  test('every line for a person is one line without the banned words and marks', (t) => {
+    const lines: string[] = [];
+    for (const kit of [desktopKit, cursorKit, geminiKit, codexKit]) {
+      const p = make(t);
+      for (const [file, value] of Object.entries(kit.broken)) put(join(p.home, file), value);
+      lines.push(...plan(kit.agent, p).map((change) => change.what), ...unplan(kit.agent, p).map((change) => change.what));
+      const q = make(t);
+      seed(kit, q);
+      lines.push(...connect(kit.agent, q).map((change) => change.what), ...connect(kit.agent, { ...q, app: MOVED }).map((change) => change.what));
+      lines.push(...disconnect(kit.agent, q).map((change) => change.what), ...connect(kit.agent, make(t)).map((change) => change.what));
+    }
+    lines.push(...plan('claude-code', make(t)).map((change) => change.what), ...unplan('claude-code', make(t)).map((change) => change.what));
+    assert.equal(lines.length > 30, true);
+    for (const line of lines) {
+      assert.doesNotMatch(line, /\n|\b(it|its|itself|them|they|this|that|those)\b|[\u2013\u2014;()]| - /i, line);
+      assert.match(line, /\.$/, line);
+    }
+  });
+});
+
+describe('guard', () => {
+  test('no read and no write lands outside the temp home', (t) => {
+    const p = make(t);
+    const seen: { name: string; path: string }[] = [];
+    const two = new Set(['renameSync', 'copyFileSync', 'linkSync', 'symlinkSync']);
+    const names = ['readFileSync', 'existsSync', 'statSync', 'lstatSync', 'realpathSync', 'readdirSync', 'openSync', 'writeFileSync', 'appendFileSync', 'renameSync', 'copyFileSync', 'mkdirSync', 'chmodSync', 'unlinkSync', 'rmSync', 'rmdirSync', 'linkSync', 'symlinkSync', 'truncateSync', 'cpSync'];
+    const real = fs as unknown as Record<string, (...args: unknown[]) => unknown>;
+    for (const name of names) {
+      const original = real[name];
+      t.mock.method(real, name, (...args: unknown[]) => {
+        for (const arg of args.slice(0, two.has(name) ? 2 : 1)) seen.push({ name, path: String(arg) });
+        return original.apply(fs, args);
+      });
+    }
+    env('APPDATA', undefined, () => {
+      for (const seeded of [false, true]) {
+        for (const platform of ['darwin', 'linux', 'win32'] as const) {
+          for (const kit of [desktopKit, cursorKit, geminiKit, codexKit]) {
+            const q = { ...p, platform };
+            if (seeded) seed(kit, q);
+            detect(q);
+            connect(kit.agent, q);
+            connect(kit.agent, { ...q, app: MOVED });
+            disconnect(kit.agent, q);
+          }
+          connect('claude-code', { ...p, platform });
+          disconnect('claude-code', { ...p, platform });
+        }
+      }
+    });
+    t.mock.restoreAll();
+    const inside = ({ path }: { path: string }): boolean => path === p.home || path.startsWith(p.home + sep);
+    assert.deepEqual(seen.filter((one) => !inside(one)), []);
+    for (const name of ['readFileSync', 'writeFileSync', 'renameSync', 'copyFileSync', 'mkdirSync', 'unlinkSync']) assert.equal(seen.some((one) => one.name === name), true, name);
+    assert.equal(fs.existsSync(join(p.home, 'AppData', 'Roaming', 'Claude')), true);
+  });
+});
