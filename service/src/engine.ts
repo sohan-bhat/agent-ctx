@@ -1148,8 +1148,23 @@ export class Engine {
     this.putItem(item, at, taken);
     this.limits.setBytes(total - prev + size);
     this.store.unmark(item.id);
+    this.listed(item.project, now);
     this.push({ type: 'item', item });
     return true;
+  }
+
+  private listed(key: string, now: number): void {
+    if (!key || this.projectKeys.has(key)) return;
+    const name = projectName(key);
+    const n = rowBytes(key, name);
+    if (!this.store.q('SELECT key FROM projects WHERE key = ?', key).length) {
+      if (!this.makeRoomForProject() || !this.room(n)) return;
+      this.store.q('INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING', key, name, now);
+      this.addExtra(n);
+      this.resolved.clear();
+      this.nameCache = null;
+    }
+    this.projectKeys.add(key);
   }
 
   private guarded(item: Item): Item {

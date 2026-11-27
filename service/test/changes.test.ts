@@ -114,6 +114,9 @@ describe('the result of a merge', () => {
     expect((await inside(p, (e) => e.changes(0))).items.map((i) => i.id)).toContain('f-1');
     const sum = await inside(p, (_, x) => [x.limits.bytes(), x.store.sumBytes()]);
     expect(sum[0]).toBe(sum[1]);
+    await inside(p, (e) => e.merged({ put: [foreign('f-2', T, { project: 'github.com/acme/loom', body: { goal: 'Thread the loom heddles for the twill sample' } })], hide: [] }));
+    expect(await sql(p, 'SELECT key, name FROM projects WHERE key = ?', 'github.com/acme/loom')).toEqual([{ key: 'github.com/acme/loom', name: 'loom' }]);
+    expect((await p.recall(A, { ...KILN, query: 'what was done with the heddles in loom' })).text).toContain('Thread the loom heddles');
   });
 
   test('a hidden item leaves recall, comes back by the hand of the person, and an older record never brings the item back', async () => {

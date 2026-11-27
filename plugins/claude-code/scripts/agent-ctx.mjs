@@ -39503,8 +39503,22 @@ ${SAY.placeRead}` : SAY.placeRead, noProject: true };
         this.putItem(item, at, taken);
         this.limits.setBytes(total - prev + size3);
         this.store.unmark(item.id);
+        this.listed(item.project, now);
         this.push({ type: "item", item });
         return true;
+      }
+      listed(key2, now) {
+        if (!key2 || this.projectKeys.has(key2)) return;
+        const name = projectName(key2);
+        const n = rowBytes(key2, name);
+        if (!this.store.q("SELECT key FROM projects WHERE key = ?", key2).length) {
+          if (!this.makeRoomForProject() || !this.room(n)) return;
+          this.store.q("INSERT INTO projects(key, name, created) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING", key2, name, now);
+          this.addExtra(n);
+          this.resolved.clear();
+          this.nameCache = null;
+        }
+        this.projectKeys.add(key2);
       }
       guarded(item) {
         const b = item.body;
