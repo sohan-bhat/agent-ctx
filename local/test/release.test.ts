@@ -141,7 +141,7 @@ test('the release workflow builds four programs on native runners with one pinne
   assert.match(text, /tags:\n\s+- 'v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+'\n\s+workflow_dispatch:/);
   assert.match(text, /echo "PROGRAM=\$RUNNER_TEMP\/out\/agent-ctx-\$TARGET" >> "\$GITHUB_ENV"/);
   assert.match(text, /working-directory: \$\{\{ runner\.temp \}\}\/compile\n\s+run: bun build /);
-  for (const part of ['npm run build', 'git status --porcelain -- plugins/claude-code/scripts', 'codesign --force --sign - "$PROGRAM"', '"$PROGRAM" --version', '"$PROGRAM" status', '"$PROGRAM" hook --agent claude-code', '"$PROGRAM" mcp --agent release', 'out/agent-ctx.mcpb', 'out/agent-ctx-page.tgz', 'out/install.sh', 'sha256sum -- agent-ctx* install.sh', 'SHA256SUMS', '--verify-tag']) {
+  for (const part of ['npm run build', 'git status --porcelain -- plugins/claude-code/scripts', 'codesign --force --sign - "$PROGRAM"', '"$PROGRAM" --version', '"$PROGRAM" status', '"$PROGRAM" hook --agent claude-code', '"$PROGRAM" mcp --agent release', 'out/agent-ctx.mcpb', 'npm run pack', 'cp web/dist-local/agent-ctx-page.tgz out/agent-ctx-page.tgz', 'out/install.sh', 'sha256sum -- agent-ctx* install.sh', 'SHA256SUMS', '--verify-tag']) {
     assert.equal(text.includes(part), true, part);
   }
   assert.equal(/windows|macos-latest|ubuntu-latest|larger|self-hosted/i.test(text), false);

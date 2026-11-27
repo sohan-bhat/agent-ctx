@@ -140,14 +140,15 @@ jobs:
         with:
           path: out
           merge-multiple: true
+      - name: Build the page files
+        working-directory: web
+        run: |
+          npm ci
+          npm run pack
       - name: Add the bundle, the page files and the install script
         run: |
           node local/pack.mjs plugins/claude-code/scripts/agent-ctx.mjs out/agent-ctx.mcpb
-          if [ -d web/dist-local ]; then
-            cp web/dist-local/agent-ctx-page.tgz out/agent-ctx-page.tgz
-          else
-            echo "The folder web/dist-local is absent, so agent-ctx-page.tgz is left out of this run."
-          fi
+          cp web/dist-local/agent-ctx-page.tgz out/agent-ctx-page.tgz
           cp local/install.sh out/install.sh
       - name: Write the SHA-256 list
         working-directory: out
