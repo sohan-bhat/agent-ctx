@@ -331,13 +331,17 @@ void plain('the plugin commands store an event and open the memory when run the 
   const r = spawnSync('/bin/sh', ['-c', groups(PLUGIN)[0][1].hooks[0].command as string], { env, input, encoding: 'utf8' });
   assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', '']);
   assert.deepEqual(rows<{ t: string; text: string }>(where, 'SELECT t, text FROM events'), [{ t: 'prompt', text: 'Glaze the kiln shelf with the cone 6 mix' }]);
-  const child = spawn(SERVER.command, SERVER.args.map((a) => a.replace('${CLAUDE_PLUGIN_ROOT}', PLUGIN)), { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const entry = json<{ mcpServers: Record<string, typeof SERVER> }>(PLUGIN, '.claude-plugin', 'plugin.json').mcpServers['agent-ctx'];
+  const child = spawn(entry.command, entry.args.map((a) => a.replace('${CLAUDE_PLUGIN_ROOT}', PLUGIN)), { env, stdio: ['pipe', 'pipe', 'pipe'] });
   started.push(child);
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'local-test', version: '1.0.0' } } })}\n`);
-  const first = await new Promise<string>((done) => child.stdout.once('data', (d) => done(String(d))));
-  assert.equal((JSON.parse(first.split('\n')[0]) as { result: { instructions: string } }).result.instructions, INSTRUCTIONS);
+  const first = await new Promise<string>((done) => {
+    child.stdout.once('data', (d) => done(String(d)));
+    child.once('exit', () => done('{}'));
+  });
+  assert.equal((JSON.parse(first.split('\n')[0]) as { result?: { instructions: string } }).result?.instructions, INSTRUCTIONS);
   child.stdin.end();
-  assert.equal(await new Promise((done) => child.on('exit', done)), 0);
+  assert.equal(await new Promise((done) => (child.exitCode === null ? child.on('exit', done) : done(child.exitCode))), 0);
   assert.deepEqual(rows<{ id: string }>(where, 'SELECT id FROM agents'), [{ id: 'claude-code' }]);
 });
 
