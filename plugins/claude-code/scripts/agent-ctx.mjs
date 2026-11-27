@@ -41249,7 +41249,8 @@ function push(root, name) {
   const before = head();
   const back = () => void (head() !== before && (before ? git(root, "reset", "--quiet", "--mixed", before) : git(root, "update-ref", "-d", "HEAD")));
   const signed = ["-c", "commit.gpgsign=false", ...git(root, "config", "user.email").out ? [] : ["-c", "user.name=agent-ctx", "-c", "user.email=agent-ctx@localhost"]];
-  if (!git(root, "add", "-A").ok || !git(root, "diff", "--cached", "--quiet").ok && !git(root, ...signed, "commit", "--quiet", "-m", MESSAGE).ok) {
+  const own3 = WRITTEN.filter((name2) => fs2.existsSync(join3(root, name2)) || git(root, "ls-files", "--", name2).out);
+  if (own3.length && (!git(root, "add", "-A", "--", ...own3).ok || !git(root, "diff", "--cached", "--quiet", "--", ...own3).ok && !git(root, ...signed, "commit", "--quiet", "-m", MESSAGE, "--", ...own3).ok)) {
     back();
     throw new Failed(`The changes could not be committed in the mirror folder ${root}, so nothing was sent.`);
   }
@@ -41517,8 +41518,9 @@ function place(target, io) {
 function refused(dir) {
   const mine = real(folder());
   const there = real(dir);
-  if (there === join3(mine, "mirror") || !(there === mine || mine.startsWith(there + sep) || there.startsWith(mine + sep))) return null;
-  return `The folder ${dir} contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.`;
+  if (there !== join3(mine, "mirror") && (there === mine || mine.startsWith(there + sep) || there.startsWith(mine + sep))) return `The folder ${dir} contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.`;
+  const other = (isFolder(there) ? fs2.readdirSync(there) : []).sort().find((name) => !KNOWN.has(name) && !CLOUD.test(name));
+  return other === void 0 ? null : `The folder ${dir} holds other files such as ${other.replace(/[^\w.-]+/g, "").slice(0, 40)}, so no mirror was turned on there. A mirror needs an empty folder or a folder that already holds a mirror.`;
 }
 async function turn(target, io, renew, lines) {
   const where2 = place(target, io);
@@ -41613,7 +41615,7 @@ async function command(name, args2, io) {
   io.say(`The mirror is on in ${dir}.`, (await sync2()).line);
   return 0;
 }
-var STATE2, LOCK, READ, INBOX, LOCK_MS, GIT_MS, GH_MS, DAY4, NOTE_BYTES2, DEVICE2, MONTH, REPO, MESSAGE, INDEX3, README2, BROWSER, WAITS, OFF, BUSY, BROKE2, Failed, count2, isDir, isFile, isFolder, fresh;
+var STATE2, LOCK, READ, INBOX, LOCK_MS, GIT_MS, GH_MS, DAY4, NOTE_BYTES2, DEVICE2, MONTH, REPO, MESSAGE, INDEX3, README2, WRITTEN, KNOWN, CLOUD, BROWSER, WAITS, OFF, BUSY, BROKE2, Failed, count2, isDir, isFile, isFolder, fresh;
 var init_sync = __esm({
   "local/src/sync.ts"() {
     "use strict";
@@ -41635,6 +41637,9 @@ var init_sync = __esm({
     MESSAGE = "agent-ctx sync";
     INDEX3 = "pages/index.md";
     README2 = "README.md";
+    WRITTEN = ["log", "pages", README2];
+    KNOWN = /* @__PURE__ */ new Set([...WRITTEN, "inbox", ".git", ".gitignore", ".gitattributes", ".DS_Store", "LICENSE"]);
+    CLOUD = /^\..+\.icloud$/;
     BROWSER = who("browser");
     WAITS = /* @__PURE__ */ new Set([SAY.minute, SAY.day, SAY.stored, SAY.full, SAY.agents, SAY.projects]);
     OFF = "No mirror is on, so nothing was synced.";

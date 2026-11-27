@@ -547,3 +547,21 @@ test(
   },
   !PTY,
 );
+
+test('mirror on is refused for a folder with other files, and a sync never sends a file that the mirror did not write', async () => {
+  const where = place(TMP);
+  await server(where, 'cursor', [['checkpoint', CARD]]);
+  const busy = folder();
+  writeFileSync(join(busy, 'notes.txt'), 'mine\n');
+  const no = cli(where, 'mirror', 'on', busy);
+  assert.deepEqual([no.code, said(no), meta<State>(where, 'mirror'), readdirSync(busy)], [1, [`The folder ${busy} holds other files such as notes.txt, so no mirror was turned on there. A mirror needs an empty folder or a folder that already holds a mirror.`], null, ['notes.txt']]);
+  for (const text of said(no)) assert.equal(BANNED.exec(proper(text, where)), null, text);
+  const bare = remote(where);
+  const copy = clone(where, bare);
+  assert.equal(cli(where, 'mirror', 'on', copy).code, 0);
+  writeFileSync(join(copy, 'secret.env'), `${KEY}\n`);
+  await server(where, 'cursor', [['checkpoint', { folder: KILN, goal: 'Sharpen the lathe chisels', changed: ['tools.md'] }]]);
+  assert.deepEqual(said(cli(where, 'sync')).slice(-1), [counts('1 item', '0 items')]);
+  const sent = sh(where, GIT, '-C', bare, 'ls-tree', '-r', '--name-only', 'HEAD').split('\n');
+  assert.deepEqual([sent.includes('secret.env'), sent.some((name) => name.startsWith('log/')), sent.includes('README.md'), sh(where, GIT, '-C', copy, 'status', '--porcelain')], [false, true, true, '?? secret.env']);
+});

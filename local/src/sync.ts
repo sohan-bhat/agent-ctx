@@ -32,6 +32,9 @@ const REPO = 'agent-ctx-memory';
 const MESSAGE = 'agent-ctx sync';
 const INDEX = 'pages/index.md';
 const README = 'README.md';
+const WRITTEN = ['log', 'pages', README];
+const KNOWN = new Set([...WRITTEN, 'inbox', '.git', '.gitignore', '.gitattributes', '.DS_Store', 'LICENSE']);
+const CLOUD = /^\..+\.icloud$/;
 const BROWSER = who('browser');
 const WAITS = new Set([SAY.minute, SAY.day, SAY.stored, SAY.full, SAY.agents, SAY.projects]);
 const OFF = 'No mirror is on, so nothing was synced.';
@@ -71,7 +74,8 @@ function push(root: string, name: string): void {
   const before = head();
   const back = (): void => void (head() !== before && (before ? git(root, 'reset', '--quiet', '--mixed', before) : git(root, 'update-ref', '-d', 'HEAD')));
   const signed = ['-c', 'commit.gpgsign=false', ...(git(root, 'config', 'user.email').out ? [] : ['-c', 'user.name=agent-ctx', '-c', 'user.email=agent-ctx@localhost'])];
-  if (!git(root, 'add', '-A').ok || (!git(root, 'diff', '--cached', '--quiet').ok && !git(root, ...signed, 'commit', '--quiet', '-m', MESSAGE).ok)) {
+  const own = WRITTEN.filter((name) => fs.existsSync(join(root, name)) || git(root, 'ls-files', '--', name).out);
+  if (own.length && (!git(root, 'add', '-A', '--', ...own).ok || (!git(root, 'diff', '--cached', '--quiet', '--', ...own).ok && !git(root, ...signed, 'commit', '--quiet', '-m', MESSAGE, '--', ...own).ok))) {
     back();
     throw new Failed(`The changes could not be committed in the mirror folder ${root}, so nothing was sent.`);
   }
@@ -354,8 +358,9 @@ function place(target: string, io: Io): Place | null {
 function refused(dir: string): string | null {
   const mine = real(home());
   const there = real(dir);
-  if (there === join(mine, 'mirror') || !(there === mine || mine.startsWith(there + sep) || there.startsWith(mine + sep))) return null;
-  return `The folder ${dir} contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.`;
+  if (there !== join(mine, 'mirror') && (there === mine || mine.startsWith(there + sep) || there.startsWith(mine + sep))) return `The folder ${dir} contains the agent-ctx folder of this computer or lies inside that folder, so no mirror was turned on there.`;
+  const other = (isFolder(there) ? fs.readdirSync(there) : []).sort().find((name) => !KNOWN.has(name) && !CLOUD.test(name));
+  return other === undefined ? null : `The folder ${dir} holds other files such as ${other.replace(/[^\w.-]+/g, '').slice(0, 40)}, so no mirror was turned on there. A mirror needs an empty folder or a folder that already holds a mirror.`;
 }
 
 async function turn(target: string, io: Io, renew: boolean, lines: (dir: string) => string[]): Promise<string | null> {
