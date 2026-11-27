@@ -195,6 +195,11 @@ const span = (r) => (r ? `${Math.round(r.y)} to ${Math.round(r.y + r.height)}` :
 const top = (page) => page.evaluate(() => Math.round(scrollY));
 const panel = (page) => page.evaluate(() => document.querySelector('[data-panel]')?.getAttribute('data-panel') ?? null);
 const ground = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+const across = async (page, w) => {
+  const o = await overflow(page);
+  const [inner, full] = await page.evaluate(() => [innerWidth, document.documentElement.scrollWidth]);
+  return { ok: o.scroll <= 0 && !o.wide.length && inner === w && full <= w, text: JSON.stringify({ ...o, inner, full }) };
+};
 const settle = async (page) => {
   let last = -1;
   for (let i = 0; i < 40; i++) {
@@ -421,8 +426,8 @@ async function walk(b, site, w, h, scheme) {
     const turned = before.length && after.length ? Math.max(...before.map((a, i) => Math.hypot(a.x - (after[i]?.x ?? a.x), a.y - (after[i]?.y ?? a.y)))) : 0;
     check(`${tag} a drag turns the scene`, turned > 8 && (await top(page)) === held, `label moved ${turned.toFixed(1)} px`);
 
-    const o = await overflow(page);
-    check(`${tag} nothing is wider than the screen`, o.scroll <= 0 && !o.wide.length, JSON.stringify(o));
+    const o = await across(page, w);
+    check(`${tag} nothing is wider than the screen`, o.ok, o.text);
 
     const s = await shape(page);
     check(`${tag} the page has exactly one h1 and exactly one h2 and the h2 says FAQ`, s.h1.length === 1 && s.h1[0] === 'agent-ctx' && s.h2.length === 1 && s.h2[0] === 'FAQ', `h1 ${s.h1.join(' and ')}, h2 ${s.h2.join(' and ')}`);
@@ -484,10 +489,10 @@ async function released(b, site, w, h) {
     const done = await waitFor(() => page.locator('[data-site=action]').getByRole('button', { name: 'Copied' }).count(), 2000);
     const held = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
     check(`${tag} Copy puts the install line on the clipboard`, !!done && held === LINE, held);
-    const o = await overflow(page);
+    const o = await across(page, w);
     const t = await texts(page);
     const bad = faults(t.out);
-    check(`${tag} the testing line is gone, the rules hold and the word count stays under 60`, !s.status && o.scroll <= 0 && !o.wide.length && !bad.length && !t.asked.length && s.words < 60 && !errors.length, [`${s.words} words`, ...bad, ...errors].slice(0, 3).join(' | '));
+    check(`${tag} the testing line is gone, the rules hold and the word count stays under 60`, !s.status && o.ok && !bad.length && !t.asked.length && s.words < 60 && !errors.length, [`${s.words} words`, ...bad, ...errors].slice(0, 3).join(' | '));
   } finally {
     await ctx.close();
   }
