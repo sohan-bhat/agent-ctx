@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { measure, reachable, run, SETS, SET2B, SET_LANG } from './precision.ts';
+import { measure, reachable, run, SETS, SET2B, SET_LANG, SET_LANG2 } from './precision.ts';
 import { ITEMS, PROJECTS, QUERIES } from './corpus.ts';
 import * as two from './corpus2.ts';
+import * as lang from './corpus-lang.ts';
 
 test('the test set has four projects, 50 labelled queries and the planned mix', () => {
   assert.equal(PROJECTS.length, 4);
@@ -61,6 +62,23 @@ test('on the tool path the right card stays reachable on the tuning sets', () =>
 });
 
 test('recall finds cards written in six languages and stays quiet on their chat lines', () => {
-  const s = measure(run(SET_LANG));
-  assert.ok(s.found >= 0.98 && s.empty_correct >= 0.98 && s.precision_at_3 >= 0.62, JSON.stringify(s));
+  const rows = run(SET_LANG);
+  const s = measure(rows);
+  assert.ok(s.found >= 1 && s.empty_correct >= 1 && s.precision_at_3 >= 0.85, JSON.stringify(s));
+  const floors: Record<lang.Lang, number> = { es: 1, de: 1, hi: 0.66, ar: 1, ja: 0.8, zh: 0.8 };
+  for (const code of lang.LANGS) {
+    const own = measure(rows.filter((r) => (r.query as lang.LangQuery).lang === code));
+    assert.ok(own.found >= 1 && own.precision_at_3 >= floors[code], `${code} ${JSON.stringify(own)}`);
+  }
+});
+
+test('recall over the second language set keeps wrong cards out in five languages', () => {
+  const rows = run(SET_LANG2);
+  const s = measure(rows);
+  assert.ok(s.found >= 0.93 && s.empty_correct >= 1 && s.precision_at_3 >= 0.75, JSON.stringify(s));
+  const floors = [0.66, 1, 0.66, 0.66, 1];
+  lang.SECOND.langs.forEach((code, k) => {
+    const own = measure(rows.filter((r) => r.query.project === lang.SECOND.projects[k].key));
+    assert.ok(own.precision_at_3 >= floors[k], `${code} ${JSON.stringify(own)}`);
+  });
 });
