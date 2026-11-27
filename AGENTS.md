@@ -27,7 +27,7 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 - Redaction is applied to the whole text before any cut, and every call over 8 KB is refused before any pattern is run.
 - A plugin under service/plugins contains JSON only. The local plugin contains the built files of plugins/claude-code/scripts and no other script.
 - The program has two forms. The script form is the built files run by Node, and the self contained form is one compiled program with no Node, in which `PROGRAM` of local/src/db.ts is the path of the running file.
-- No printed text names a bare `agent-ctx` command. Every such text takes the command from `typed` in local/src/db.ts.
+- A bare `agent-ctx` command is never printed. The command in every printed text is built by `typed` in local/src/db.ts.
 - A release is made from a tag of the form v1.2.3 that equals the version in package.json.
 - A hook is one short run of hook.mjs with no MCP library, or one run of the program with the word hook in the self contained form. Every run ends with exit 0 and an empty stderr, and the wait for the memory file ends after one second.
 - HOME and AGENT_CTX_HOME are set to a temp folder in every test and proof, and no `claude` command found on PATH is started by a test.
