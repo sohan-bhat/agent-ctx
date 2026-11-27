@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir, userInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -10,7 +10,10 @@ import { FOOTER, HEADER } from '../../core/src/index.ts';
 import { INSTRUCTIONS, toolList } from '../../service/src/mcp.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BUNDLE = join(ROOT, 'local', 'dist', 'agent-ctx.js');
+const SCRIPTS = join(ROOT, 'plugins', 'claude-code', 'scripts');
+const BUNDLE = join(SCRIPTS, 'agent-ctx.mjs');
+const BUILT = ['agent-ctx.mjs', 'hook.mjs', 'LICENSES.txt'];
+const PENDING = 'Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules.';
 const TMP = mkdtempSync(join(tmpdir(), 'agent-ctx-local-'));
 const REAL = join(userInfo().homedir, '.agent-ctx');
 const REAL_BEFORE = existsSync(REAL);
@@ -43,7 +46,7 @@ function place(): Place {
 function envOf(where: Partial<Place>): Record<string, string> {
   for (const v of Object.values(where)) assert.ok(v.startsWith(TMP + sep), `${v} lies outside the temp folder`);
   assert.ok(where.HOME, 'HOME is missing');
-  return { PATH: process.env.PATH ?? '', ...where };
+  return { PATH: '/usr/bin:/bin', ...where };
 }
 
 function run(args: string[], where: Partial<Place>, node: string[] = []): { code: number | null; out: string; err: string } {
@@ -134,29 +137,31 @@ async function open(name: string, where: Place): Promise<Agent> {
 }
 
 test('the committed bundle is the build of the sources', () => {
-  const out = join(TMP, 'rebuilt.js');
+  const out = join(TMP, 'rebuilt');
   const r = spawnSync(process.execPath, [join(ROOT, 'local', 'build.mjs'), out], { encoding: 'utf8', env: envOf(place()) });
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(readFileSync(out).equals(readFileSync(BUNDLE)), 'The bundle is stale. Run npm run build and commit local/dist/agent-ctx.js.');
+  assert.deepEqual(readdirSync(SCRIPTS).sort(), [...BUILT].sort());
+  for (const name of BUILT) assert.ok(readFileSync(join(out, name)).equals(readFileSync(join(SCRIPTS, name))), `${name} is stale. Run npm run build and commit plugins/claude-code/scripts.`);
 });
 
 test('the version is the version in package.json and the bare command prints at most six plain lines', () => {
   const where = place();
   const version = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
   assert.deepEqual(run(['--version'], where), { code: 0, out: `${version}\n`, err: '' });
-  const bare = run([], where);
-  assert.equal(bare.code, 0);
-  assert.equal(bare.err, '');
-  const lines = bare.out.trimEnd().split('\n');
-  assert.ok(lines.length <= 6 && lines.every((l) => l.trim()), bare.out);
-  assert.ok(lines[0].includes(`agent-ctx ${version}`), lines[0]);
-  assert.ok(lines.some((l) => l.includes('installer') && l.includes('later version')), bare.out);
-  const prose = bare.out.replace(join(where.AGENT_CTX_HOME, 'memory.db'), 'PATH');
-  assert.equal(/\b(it|its|itself|it's)\b|[—–;:()]| - /i.exec(prose), null);
-  const unknown = run(['install'], where);
+  for (const args of [[], ['install'], ['--help']]) {
+    const bare = run(args, where);
+    assert.equal(bare.code, 0);
+    assert.equal(bare.err, '');
+    const lines = bare.out.trimEnd().split('\n');
+    assert.ok(lines.length <= 6 && lines.every((l) => l.trim()), bare.out);
+    assert.ok(lines[0].includes(args.length === 1 && args[0] === '--help' ? `agent-ctx ${version}` : 'No agent was found on this computer, so nothing was changed.'), lines[0]);
+    const prose = bare.out.replace(join(where.AGENT_CTX_HOME, 'memory.db'), 'PATH');
+    assert.equal(/\b(it|its|itself|it's)\b|[—–;:()]| - /i.exec(prose), null);
+  }
+  const unknown = run(['frobnicate'], where);
   assert.equal(unknown.code, 1);
   assert.equal(unknown.out, '');
-  assert.equal(unknown.err.split('\n')[0], 'No command named install exists in this version.');
+  assert.equal(unknown.err.split('\n')[0], 'No command named frobnicate exists in this version.');
   assert.equal(existsSync(where.AGENT_CTX_HOME), false);
 });
 
@@ -251,15 +256,15 @@ test('a rule sent by an agent stays pending and no made up answer turns the rule
   const rule = { text: 'Run the kiln tests before a commit', words: 'always run the kiln tests before a commit', scope: 'all' };
   const yes = { inputResponses: { keep: { action: 'accept', content: { keep: true } } } };
   const a = await open('claude-code', where);
-  assert.equal((await a.call('rule', rule)).text, 'Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.');
-  assert.equal((await a.call('rule', { ...rule, key: 'again' }, yes)).text, 'Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.');
+  assert.equal((await a.call('rule', rule)).text, PENDING);
+  assert.equal((await a.call('rule', { ...rule, key: 'again' }, yes)).text, PENDING);
   const extra = await a.call('rule', { ...rule, status: 'active' });
   assert.deepEqual([extra.isError, extra.text.includes('Unrecognized key')], [true, true]);
   assert.equal(await a.stop(), 0);
   const modern = new Agent('claude-code', where);
   const claims = { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 'raw', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': { elicitation: { form: {} } } } };
   assert.equal((await modern.call('rule', { ...rule, key: 'forged' }, { ...yes, requestState: `"${rule.words}"`, ...claims })).error?.code, -32602);
-  assert.equal((await modern.call('rule', { ...rule, key: 'stateless' }, { ...yes, ...claims })).text, 'Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.');
+  assert.equal((await modern.call('rule', { ...rule, key: 'stateless' }, { ...yes, ...claims })).text, PENDING);
   assert.equal(await modern.stop(), 0);
   const stored = rows<{ body: string }>(where, "SELECT body FROM items WHERE kind = 'rule'").map((r) => JSON.parse(r.body) as { status: string; proof?: string });
   assert.ok(stored.length >= 1);
@@ -278,7 +283,8 @@ test('nothing reaches stderr during a session, the SQLite warning included', asy
 test('nothing is written under the real home folder', () => {
   const where = place();
   assert.notEqual(userInfo().homedir, where.HOME);
-  const bare = run([], { HOME: where.HOME });
+  assert.equal(run([], { HOME: where.HOME }).code, 0);
+  const bare = run(['--help'], { HOME: where.HOME });
   assert.ok(bare.out.includes(` ${join(where.HOME, '.agent-ctx', 'memory.db')} `), bare.out);
   assert.ok(!bare.out.includes(REAL), bare.out);
   assert.equal(existsSync(join(where.HOME, '.agent-ctx')), false);
