@@ -14,7 +14,7 @@ export interface Plan {
 
 export const GONE = 'This page is no longer connected. Open the memory page again from a terminal.';
 
-export const LABELS: Record<string, string> = { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', gemini: 'Gemini CLI', 'claude-desktop': 'Claude Desktop' };
+export const LABELS: Record<string, string> = { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', gemini: 'Gemini CLI', antigravity: 'Antigravity', grok: 'Grok Build', muse: 'Muse Code', 'claude-desktop': 'Claude Desktop' };
 
 export const labelOf = (name: string): string => (Object.hasOwn(LABELS, name) ? LABELS[name] : name);
 

@@ -33,14 +33,25 @@ function fits(host, env) {
   if (host === "cursor" && !set2("CURSOR_VERSION")) return false;
   return !Object.entries(SIGNS).some(([product, names]) => product !== host && names.some(set2));
 }
-function read(host, stdin) {
+function repeats(host) {
+  return host === "antigravity";
+}
+function blank(host) {
+  return host === "antigravity" ? "{}" : "";
+}
+function called(host, from, event) {
+  if (host !== "antigravity") return at(from, "hook_event_name");
+  if (typeof from !== "object" || from === null || Array.isArray(from)) return void 0;
+  return event && at(from, "error") ? `${event}Failure` : event;
+}
+function read(host, stdin, event) {
   let from;
   try {
     from = JSON.parse(stdin);
   } catch {
     return null;
   }
-  const rule = own(own(RULES, host) ?? {}, at(from, "hook_event_name"));
+  const rule = own(own(RULES, host) ?? {}, called(host, from, event));
   if (!rule) return null;
   const pick2 = rule.by ? own(rule.cases ?? {}, at(from, rule.by)) : void 0;
   if (rule.by && !pick2 && !rule.open) return null;
@@ -68,12 +79,13 @@ function write(host, event, text3) {
   const bare2 = body2.trim();
   if (!bare2) return "";
   if (host === "cursor") return JSON.stringify({ additional_context: body2 });
+  if (host === "antigravity") return JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: body2 } }] });
   const native = Object.keys(rules2).find((key2) => rules2[key2]?.as === name) ?? name;
   const framed = JSON.stringify({ hookSpecificOutput: { hookEventName: native, additionalContext: body2 } });
   if (host === "gemini") return framed;
   return bare2.startsWith("{") && bare2.endsWith("}") ? framed : body2;
 }
-var FILE, BOOK, RUN, SOURCE, BROKE, KEPT, PROMPT, STOP, tools, SESSION, BASE, RULES, HEARD, SIGNS, LIMIT;
+var FILE, BOOK, RUN, SOURCE, BROKE, PLACED, TYPED, NAMED, KEPT, PROMPT, STOP, tools, SESSION, BASE, RULES, HEARD, SIGNS, LIMIT;
 var init_hook = __esm({
   "local/src/hook.ts"() {
     "use strict";
@@ -82,16 +94,20 @@ var init_hook = __esm({
     RUN = { take: { command: "tool_input.command" } };
     SOURCE = { take: { source: "source" } };
     BROKE = { as: "StopFailure", take: { reason: "status" } };
+    PLACED = { take: { file: "toolCall.args.TargetFile" } };
+    TYPED = { take: { command: "toolCall.args.CommandLine" } };
+    NAMED = "toolCall.name";
     KEPT = { Write: FILE, Edit: FILE, MultiEdit: FILE, NotebookEdit: BOOK, Bash: RUN };
     PROMPT = { as: "UserPromptSubmit", take: { prompt: "prompt" } };
     STOP = { as: "Stop", take: { message: "last_assistant_message" } };
-    tools = (cases, as = "PostToolUse") => ({ as, by: "tool_name", take: { tool: "tool_name" }, cases });
+    tools = (cases, as = "PostToolUse", name = "tool_name") => ({ as, by: name, take: { tool: name }, cases });
     SESSION = { session: "session_id", cwd: "cwd" };
     BASE = {
       "claude-code": SESSION,
       codex: SESSION,
       cursor: { session: "conversation_id|session_id", cwd: "cwd|workspace_roots.0", model: "model" },
-      gemini: SESSION
+      gemini: SESSION,
+      antigravity: { session: "conversationId", cwd: "workspacePaths.0", model: "modelName" }
     };
     RULES = {
       "claude-code": {
@@ -119,19 +135,29 @@ var init_hook = __esm({
         BeforeAgent: PROMPT,
         AfterTool: tools({ write_file: FILE, replace: FILE, run_shell_command: RUN }),
         AfterAgent: { as: "Stop", take: { message: "prompt_response" } }
+      },
+      antigravity: {
+        PreInvocation: { as: "UserPromptSubmit", take: { prompt: "lastUserInput" } },
+        PostToolUse: tools({ write_to_file: PLACED, replace_file_content: PLACED, multi_replace_file_content: PLACED, run_command: TYPED }, "PostToolUse", NAMED),
+        PostToolUseFailure: tools({ run_command: TYPED }, "PostToolUseFailure", NAMED),
+        Stop: { as: "Stop" },
+        StopFailure: { as: "StopFailure", take: { reason: "terminationReason" } }
       }
     };
     HEARD = {
       "claude-code": ["UserPromptSubmit", "SessionStart"],
       codex: ["UserPromptSubmit"],
       cursor: ["SessionStart", "PostToolUse"],
-      gemini: ["UserPromptSubmit"]
+      gemini: ["UserPromptSubmit"],
+      antigravity: ["UserPromptSubmit"]
     };
     SIGNS = {
       cursor: ["CURSOR_VERSION", "CURSOR_PROJECT_DIR", "CURSOR_USER_EMAIL"],
-      devin: ["DEVIN_PROJECT_DIR"]
+      devin: ["DEVIN_PROJECT_DIR"],
+      grok: ["GROK_HOOK_EVENT", "GROK_HOOK_NAME", "GROK_SESSION_ID", "GROK_WORKSPACE_ROOT"],
+      muse: ["MUSE_SESSION_ID", "MUSE_THREAD_ID"]
     };
-    LIMIT = { "claude-code": 1e4, codex: 7500, cursor: 7500, gemini: 7500 };
+    LIMIT = { "claude-code": 1e4, codex: 7500, cursor: 7500, gemini: 7500, antigravity: 7500 };
   }
 });
 
@@ -179,7 +205,7 @@ function redact(text3) {
   let out = text3;
   for (const re of PATTERNS) out = out.replace(re, DROPPED);
   out = out.replace(AUTH, (m, key2, sep2, scheme, ws, val2) => dropped(val2) ? m : `${key2}${sep2}${scheme}${ws}${DROPPED}`);
-  out = out.replace(NAMED, (m, name, sep2, val2) => {
+  out = out.replace(NAMED2, (m, name, sep2, val2) => {
     if (dropped(val2) || PLAIN.test(val2) || SCHEME.test(val2) || !secretName(name)) return m;
     return `${name}${sep2}${DROPPED}`;
   });
@@ -199,7 +225,7 @@ function redact(text3) {
 function hasSecret(text3) {
   return redact(text3) !== text3;
 }
-var PATTERNS, DROPPED, AUTH, NAMED, SPACED, OPAQUE, SECRET_WORDS, KEY_KINDS, PLAIN, SCHEME;
+var PATTERNS, DROPPED, AUTH, NAMED2, SPACED, OPAQUE, SECRET_WORDS, KEY_KINDS, PLAIN, SCHEME;
 var init_redact = __esm({
   "core/src/redact.ts"() {
     "use strict";
@@ -227,7 +253,7 @@ var init_redact = __esm({
     ];
     DROPPED = "[secret dropped]";
     AUTH = /(?<![A-Za-z0-9_-])((?:proxy-)?authorization)(["'`]?\s*(?:[:=]\s*)?["'`]?)(bearer|basic|token|digest|negotiate)(\s+)([^\s"'`,;]+)/gi;
-    NAMED = /(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})(["'`]?[ \t]*[:=][ \t]*["'`]?)([^\s"'`,;]{6,})/g;
+    NAMED2 = /(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})(["'`]?[ \t]*[:=][ \t]*["'`]?)([^\s"'`,;]{6,})/g;
     SPACED = /\b(bearer|token|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey|secret|client[_-]?secret|password|passwd|pwd|private[_-]?key)\b(\s+)([^\s"'`,;]{6,})/gi;
     OPAQUE = /(?<![A-Za-z0-9+/=_.-])[A-Za-z0-9+/=_.-]{32,}(?![A-Za-z0-9+/=_.-])/g;
     SECRET_WORDS = ["password", "passwd", "pwd", "pass", "secret", "token", "apikey", "credential", "credentials", "bearer", "authorization"];
@@ -1834,8 +1860,8 @@ function oneLine(s) {
 }
 function foldCard(item) {
   const b = item.body;
-  const { agent: agent2, via, source: source2, at: at2 } = item.origin;
-  return { ...item, body: { goal: cut2(oneLine(b.goal), 120) }, origin: { agent: agent2, via, source: source2, at: at2 }, folded: true };
+  const { agent, via, source: source2, at: at2 } = item.origin;
+  return { ...item, body: { goal: cut2(oneLine(b.goal), 120) }, origin: { agent, via, source: source2, at: at2 }, folded: true };
 }
 function month(ms) {
   const d = new Date(ms);
@@ -2209,7 +2235,7 @@ function fitEvent(a, max = MAX.inputBytes) {
 function dayOf(now) {
   return new Date(now).toISOString().slice(0, 10);
 }
-function blank() {
+function blank2() {
   return { minute: 0, minuteN: 0, day: "", dayN: 0, storedDay: "", storedN: 0, bytes: 0, extra: 0, folded: -1, maintained: 0, paused: null, live: [], marks: [], savedAt: 0 };
 }
 function limiterFor(e, path) {
@@ -2284,11 +2310,11 @@ var init_limits = __esm({
         this.store = store;
       }
       state() {
-        if (!this.hot) this.hot = { ...blank(), ...this.store.meta("hot", {}) };
+        if (!this.hot) this.hot = { ...blank2(), ...this.store.meta("hot", {}) };
         return this.hot;
       }
       reset() {
-        this.hot = blank();
+        this.hot = blank2();
         this.dirty = false;
         this.paid = null;
       }
@@ -2823,10 +2849,10 @@ var init_engine = __esm({
         }
         const n = this.store.q("SELECT COUNT(*) AS n FROM agents WHERE last >= ?", now - AGENT_LIVE)[0]?.n ?? 0;
         if (n >= this.limits.max.agents) return { ok: false, text: SAY.agents };
-        const agent2 = { id: label3, label: label3, first: now, last: now };
-        this.store.q("INSERT INTO agents(id, label, first, last) VALUES(?, ?, ?, ?)", agent2.id, agent2.label, agent2.first, agent2.last);
+        const agent = { id: label3, label: label3, first: now, last: now };
+        this.store.q("INSERT INTO agents(id, label, first, last) VALUES(?, ?, ?, ?)", agent.id, agent.label, agent.first, agent.last);
         this.agentLast.set(label3, now);
-        this.push({ type: "agent", agent: agent2 });
+        this.push({ type: "agent", agent });
         return null;
       }
       project(w, now) {
@@ -3188,8 +3214,8 @@ var init_engine = __esm({
 
 ${SAY.placeRead}` : SAY.placeRead, noProject: true };
       }
-      lastGoal(project, agent2) {
-        const hit = this.pool(project).find((i) => (i.kind === "card" || i.kind === "handoff") && i.origin?.agent === agent2 && !i.folded && typeof i.body.goal === "string" && i.body.goal.trim());
+      lastGoal(project, agent) {
+        const hit = this.pool(project).find((i) => (i.kind === "card" || i.kind === "handoff") && i.origin?.agent === agent && !i.folded && typeof i.body.goal === "string" && i.body.goal.trim());
         return hit ? hit.body.goal : null;
       }
       promptGoal(grant, project, folder2, now) {
@@ -3997,11 +4023,11 @@ var init_db = __esm({
 // local/src/event.ts
 var event_exports = {};
 import { read as readFd } from "node:fs";
-function agent(args2) {
-  const joined = args2.find((a) => a.startsWith("--agent="));
-  if (joined) return joined.slice(8);
-  const at2 = args2.indexOf("--agent");
-  return at2 >= 0 ? args2[at2 + 1] : void 0;
+function option(name) {
+  const joined = ARGS.find((a) => a.startsWith(`${name}=`));
+  if (joined) return joined.slice(name.length + 1);
+  const at2 = ARGS.indexOf(name);
+  return at2 >= 0 ? ARGS[at2 + 1] : void 0;
 }
 function stream() {
   return new Promise((done) => {
@@ -4040,9 +4066,9 @@ async function sync() {
 }
 async function run() {
   const started = Date.now();
-  const host = agent(process.argv.slice(2));
+  const host = option("--agent");
   if (!host || !fits(host, process.env)) return "";
-  const a = read(host, await input());
+  const a = read(host, await input(), option("--event"));
   if (!a?.event) return "";
   const event = a.event;
   const [{ clean: clean2, stripOwn: stripOwn2, stripPrivate: stripPrivate2 }, { fitEvent: fitEvent2 }, { caller: caller2, local: local2, open: open3, who: who2 }] = await Promise.all([Promise.resolve().then(() => (init_src(), src_exports)), Promise.resolve().then(() => (init_limits(), limits_exports)), Promise.resolve().then(() => (init_db(), db_exports))]);
@@ -4056,15 +4082,24 @@ async function run() {
         const fit2 = fitEvent2({ ...args2, host: FRAME });
         return fit2 ? local2(plain((await engine.event(c, fit2, part)).text)) : "";
       };
-      const late = !hears(host, "UserPromptSubmit") && !!a.session && a.session.length <= ID_MAX2;
+      const known2 = !!a.session && a.session.length <= ID_MAX2;
+      const late = !hears(host, "UserPromptSubmit") && known2;
       const key2 = `asked:${a.session}`;
       const now = Date.now();
+      const words2 = () => clean2(stripOwn2(stripPrivate2(a.prompt ?? "")), ASKED_CHARS);
+      const note2 = (prefix, age) => {
+        for (const row of engine.store.q("SELECT k, v FROM meta WHERE k >= ? AND k < ?", `${prefix}:`, `${prefix};`)) {
+          if (now - JSON.parse(row.v).at > age) engine.store.dropMeta(row.k);
+        }
+        if (a.prompt) engine.store.setMeta(`${prefix}:${a.session}`, { at: now, prompt: words2() });
+      };
+      if (event === "UserPromptSubmit" && repeats(host) && known2 && a.prompt) {
+        if (engine.store.meta(`said:${a.session}`, null)?.prompt === words2()) return "";
+        note2("said", SAID);
+      }
       if (event === "UserPromptSubmit" && late) {
         await send(a, "store");
-        for (const row of engine.store.q("SELECT k, v FROM meta WHERE k >= 'asked:' AND k < 'asked;'")) {
-          if (now - JSON.parse(row.v).at > ASKED) engine.store.dropMeta(row.k);
-        }
-        if (a.prompt) engine.store.setMeta(key2, { at: now, prompt: clean2(stripOwn2(stripPrivate2(a.prompt)), ASKED_CHARS) });
+        note2("asked", ASKED);
         return "";
       }
       let text3 = "";
@@ -4087,7 +4122,13 @@ async function run() {
     if (due) await sync().catch(() => void 0);
   }
 }
-var WAIT, GIVE_UP, ASKED, ASKED_CHARS, ID_MAX2, CHUNK, FRAME, MAIN, KICK, MIRROR, KICKED;
+function end(out = "") {
+  const text3 = printed ? "" : out || blank(option("--agent"));
+  printed = true;
+  if (text3) process.stdout.write(text3, () => process.exit(0));
+  else process.exit(0);
+}
+var WAIT, GIVE_UP, ASKED, ASKED_CHARS, SAID, ID_MAX2, CHUNK, FRAME, MAIN, KICK, MIRROR, KICKED, ARGS, printed;
 var init_event = __esm({
   "local/src/event.ts"() {
     "use strict";
@@ -4096,6 +4137,7 @@ var init_event = __esm({
     GIVE_UP = 3e3;
     ASKED = 30 * 6e4;
     ASKED_CHARS = 800;
+    SAID = 7 * 864e5;
     ID_MAX2 = 200;
     CHUNK = 65536;
     FRAME = "claude-code";
@@ -4103,17 +4145,13 @@ var init_event = __esm({
     KICK = 6e4;
     MIRROR = "mirror";
     KICKED = "mirror:kick";
+    ARGS = process.argv.slice(2);
+    printed = false;
     process.emitWarning = () => void 0;
-    process.on("uncaughtException", () => process.exit(0));
-    process.on("unhandledRejection", () => process.exit(0));
-    setTimeout(() => process.exit(0), GIVE_UP).unref();
-    run().then(
-      (out) => {
-        if (out) process.stdout.write(out, () => process.exit(0));
-        else process.exit(0);
-      },
-      () => process.exit(0)
-    );
+    process.on("uncaughtException", () => end());
+    process.on("unhandledRejection", () => end());
+    setTimeout(end, GIVE_UP).unref();
+    run().then(end, () => end());
   }
 });
 
@@ -4301,8 +4339,8 @@ function nullish(input3) {
 }
 function cleanRegex(source2) {
   const start = source2.startsWith("^") ? 1 : 0;
-  const end = source2.endsWith("$") ? source2.length - 1 : source2.length;
-  return source2.slice(start, end);
+  const end2 = source2.endsWith("$") ? source2.length - 1 : source2.length;
+  return source2.slice(start, end2);
 }
 function floatSafeRemainder(val2, step) {
   const ratio = val2 / step;
@@ -6600,24 +6638,24 @@ function getDiscriminatedOption(union2, value) {
     map2 = discriminatorMap(internals.def);
     internals.bag.optionsMap = map2;
   }
-  const option2 = map2.get(value);
-  if (option2 === null)
+  const option3 = map2.get(value);
+  if (option3 === null)
     throw new Error(`Ambiguous discriminator value "${String(value)}"`);
-  return option2;
+  return option3;
 }
 function discriminatorMap(def) {
   const map2 = /* @__PURE__ */ new Map();
-  for (const option2 of def.options) {
-    const values = option2._zod.propValues?.[def.discriminator];
+  for (const option3 of def.options) {
+    const values = option3._zod.propValues?.[def.discriminator];
     if (!values || values.size === 0)
-      throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option2)}"`);
+      throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option3)}"`);
     for (const value of values) {
       if (map2.has(value)) {
         if (value !== void 0)
           throw new Error(`Duplicate discriminator value "${String(value)}"`);
         map2.set(value, null);
       } else {
-        map2.set(value, option2);
+        map2.set(value, option3);
       }
     }
   }
@@ -7799,7 +7837,7 @@ var init_schemas = __esm({
       defineLazyInternal(inst, "optout", (zod) => zod.def.options.some((o) => o._zod.optout === "optional") ? "optional" : void 0);
       defineLazyInternal(inst, "values", (zod) => {
         if (zod.def.options.every((o) => o._zod.values)) {
-          return new Set(zod.def.options.flatMap((option2) => Array.from(option2._zod.values)));
+          return new Set(zod.def.options.flatMap((option3) => Array.from(option3._zod.values)));
         }
         return void 0;
       });
@@ -7817,8 +7855,8 @@ var init_schemas = __esm({
         }
         let async = false;
         const results = [];
-        for (const option2 of def.options) {
-          const result = option2._zod.run({
+        for (const option3 of def.options) {
+          const result = option3._zod.run({
             value: payload.value,
             issues: []
           }, ctx);
@@ -7848,8 +7886,8 @@ var init_schemas = __esm({
         }
         let async = false;
         const results = [];
-        for (const option2 of def.options) {
-          const result = option2._zod.run({
+        for (const option3 of def.options) {
+          const result = option3._zod.run({
             value: payload.value,
             issues: []
           }, ctx);
@@ -7874,10 +7912,10 @@ var init_schemas = __esm({
       defineLazyInternal(inst, "propValues", (zod) => {
         const propValues = {};
         let undefinedCount = 0;
-        for (const option2 of zod.def.options) {
-          const pv = option2._zod.propValues;
+        for (const option3 of zod.def.options) {
+          const pv = option3._zod.propValues;
           if (!pv || Object.keys(pv).length === 0)
-            throw new Error(`Invalid discriminated union option at index "${zod.def.options.indexOf(option2)}"`);
+            throw new Error(`Invalid discriminated union option at index "${zod.def.options.indexOf(option3)}"`);
           if (pv[zod.def.discriminator]?.has(void 0))
             undefinedCount++;
           for (const [k, v] of Object.entries(pv)) {
@@ -7893,8 +7931,8 @@ var init_schemas = __esm({
           propValues[zod.def.discriminator]?.delete(void 0);
         return propValues;
       });
-      def.options.forEach((option2, i) => {
-        const propShape = rawShape(option2._zod.def);
+      def.options.forEach((option3, i) => {
+        const propShape = rawShape(option3._zod.def);
         if (propShape && !Object.prototype.hasOwnProperty.call(propShape, def.discriminator)) {
           throw new Error(`Invalid discriminated union option at index "${i}"`);
         }
@@ -18295,8 +18333,8 @@ function generateDiscriminatedUnionCheck(doc, ctx, def, accessor) {
   doc.write(`let ${outputVar};`);
   let firstBranch = true;
   const claimed = /* @__PURE__ */ new Set();
-  for (const option2 of def.options) {
-    const values = option2._zod.propValues?.[def.discriminator];
+  for (const option3 of def.options) {
+    const values = option3._zod.propValues?.[def.discriminator];
     if (!values || values.size === 0) {
       throw new ZodCompileUnsupportedError("discriminated union option without static discriminator values");
     }
@@ -18310,7 +18348,7 @@ function generateDiscriminatedUnionCheck(doc, ctx, def, accessor) {
     const prefix = firstBranch ? "if" : "else if";
     doc.write(`${prefix} (${conditions.join(" || ")}) {`);
     doc.indented((d) => {
-      const branchOutput = generateCheck(d, ctx, option2, accessor);
+      const branchOutput = generateCheck(d, ctx, option3, accessor);
       d.write(`${outputVar} = ${branchOutput};`);
     });
     doc.write(`}`);
@@ -19951,14 +19989,14 @@ function compactTypeUnion(schema) {
   if (!Array.isArray(options) || options.length === 0 || schema.type !== void 0)
     return;
   const types = [];
-  for (const option2 of options) {
-    if (!option2 || typeof option2 !== "object")
+  for (const option3 of options) {
+    if (!option3 || typeof option3 !== "object")
       return;
-    compactTypeUnion(option2);
-    const keys = Object.keys(option2);
+    compactTypeUnion(option3);
+    const keys = Object.keys(option3);
     if (keys.length !== 1 || keys[0] !== "type")
       return;
-    const type = option2.type;
+    const type = option3.type;
     for (const member of Array.isArray(type) ? type : [type]) {
       if (typeof member !== "string")
         return;
@@ -20246,8 +20284,8 @@ function isTransforming(_schema, _ctx) {
     return false;
   }
   if (def.type === "union") {
-    for (const option2 of def.options) {
-      if (isTransforming(option2, ctx))
+    for (const option3 of def.options) {
+      if (isTransforming(option3, ctx))
         return true;
     }
     return false;
@@ -40495,12 +40533,12 @@ function beside(app, p, name = HOOK) {
   const path = p.platform === "win32" ? win32 : posix;
   return path.join(path.dirname(app), name);
 }
-function launch(p, agent2) {
-  const args2 = ["mcp", "--agent", agent2];
+function launch(p, agent) {
+  const args2 = ["mcp", "--agent", agent];
   return p.node ? [p.node, [p.app, ...args2]] : [p.app, args2];
 }
-function line(p, agent2) {
-  return p.node ? `${word2(p.node, p)} ${word2(beside(p.app, p), p)} --agent ${agent2}` : `${word2(p.app, p)} hook --agent ${agent2}`;
+function line(p, agent) {
+  return p.node ? `${word2(p.node, p)} ${word2(beside(p.app, p), p)} --agent ${agent}` : `${word2(p.app, p)} hook --agent ${agent}`;
 }
 function former(server) {
   const [command2, args2] = [dig(server, "command"), dig(server, "args")];
@@ -40567,15 +40605,29 @@ function wire(doc, target, on, mine, file3) {
   const parts = [];
   let next = doc;
   let old = false;
+  const stamped = (mark2, body2) => {
+    if (on && !Object.hasOwn(next, mark2)) next = { [mark2]: 1, ...next };
+    if (!on && next[mark2] === 1 && !had(mark2) && (backed || !Object.hasOwn(next, body2))) next = drop2(next, mark2);
+  };
   if (target.server) {
-    const servers = doc.mcpServers === void 0 ? {} : doc.mcpServers;
-    if (!isObj(servers)) throw new Odd(LAYOUT);
+    const under = target.under ?? SERVERS;
+    const servers = doc[under] === void 0 ? {} : doc[under];
+    if (!isObj(servers) || target.stamp && Object.hasOwn(doc, target.stamp) && doc[target.stamp] !== 1) throw new Odd(LAYOUT);
     const now = Object.hasOwn(servers, NAME) ? servers[NAME] : void 0;
     const want = !on ? void 0 : isObj(now) && typeof now.command === "string" ? { ...now, ...target.server } : target.server;
     if (!same2(now, want)) {
       const rest = on ? { ...servers, [NAME]: want } : drop2(servers, NAME);
-      next = Object.keys(rest).length || had("mcpServers") ? { ...next, mcpServers: rest } : drop2(next, "mcpServers");
+      next = Object.keys(rest).length || had(under) ? { ...next, [under]: rest } : drop2(next, under);
+      if (target.stamp) stamped(target.stamp, under);
       parts.push(`the server ${NAME}`);
+      old = now !== void 0;
+    }
+  }
+  if (target.block) {
+    const now = Object.hasOwn(doc, NAME) ? doc[NAME] : void 0;
+    if (!same2(now, on ? target.block : void 0)) {
+      next = on ? { ...next, [NAME]: target.block } : drop2(next, NAME);
+      parts.push(`the ${NAME} hooks for ${list2(Object.keys(target.block))}`);
       old = now !== void 0;
     }
   }
@@ -40602,8 +40654,7 @@ function wire(doc, target, on, mine, file3) {
     const rest = Object.fromEntries(out);
     if ((on || hit) && !same2(hooks, rest)) {
       next = out.length || had("hooks") ? { ...next, hooks: rest } : drop2(next, "hooks");
-      if (on && version2 && !Object.hasOwn(next, "version")) next = { version: 1, ...next };
-      if (!on && version2 && next.version === 1 && !had("version") && (backed || !Object.hasOwn(next, "hooks"))) next = drop2(next, "version");
+      if (version2) stamped("version", "hooks");
       parts.push(`the ${NAME} hooks for ${list2(events)}`);
       old ||= hit;
     }
@@ -40612,7 +40663,8 @@ function wire(doc, target, on, mine, file3) {
 }
 function json2(target, p, on, apps) {
   const hand = [
-    target.server ? `add "${NAME}": ${JSON.stringify(target.server)} under mcpServers` : "",
+    target.server ? `add "${NAME}": ${JSON.stringify(target.server)} under ${target.under ?? SERVERS}` : "",
+    target.block ? `add "${NAME}": ${JSON.stringify(target.block)} at the top level` : "",
     target.hooks ? `add ${JSON.stringify(target.hooks.entry)} under hooks for ${list2(target.hooks.events)}` : ""
   ].filter(Boolean).join(" and ");
   const file3 = locate(target.file, p);
@@ -40691,12 +40743,12 @@ function survey(text3) {
     all[all.length - 1].to = at2;
     all.push({ ...head, from: at2, to: lines2.length });
   });
-  const end = (part) => {
+  const end2 = (part) => {
     let to = part.to;
     while (to > part.from + 1 && idle(lines2[to - 1])) to -= 1;
     return to;
   };
-  const pairs2 = (part) => lines2.slice(part.from + 1, end(part)).map((line3, at2) => {
+  const pairs2 = (part) => lines2.slice(part.from + 1, end2(part)).map((line3, at2) => {
     const found = hush[part.from + 1 + at2] ? null : key(line3);
     return found?.rest.startsWith("=") ? { name: found.path.join("."), full: [...part.path, ...found.path], value: found.rest.slice(1) } : null;
   });
@@ -40707,12 +40759,12 @@ function survey(text3) {
   const cut3 = () => {
     const gone = /* @__PURE__ */ new Set();
     for (const part of mine) {
-      for (let at2 = part.from; at2 < end(part); at2 += 1) gone.add(at2);
+      for (let at2 = part.from; at2 < end2(part); at2 += 1) gone.add(at2);
       if (part.from > 0 && lines2[part.from - 1].trim() === "") gone.add(part.from - 1);
     }
     return lines2.filter((_line, at2) => !gone.has(at2)).join("\n");
   };
-  return { lines: lines2, end, pairs: pairs2, mine, main: main.at(0), clash, cut: cut3 };
+  return { lines: lines2, end: end2, pairs: pairs2, mine, main: main.at(0), clash, cut: cut3 };
 }
 function toml(target, p, on, command2, args2) {
   const rows = [`[mcp_servers.${NAME}]`, `command = ${quote3(command2)}`, `args = [${args2.map(quote3).join(", ")}]`];
@@ -40723,7 +40775,7 @@ function toml(target, p, on, command2, args2) {
   const before = read2(file3);
   if (before === null) return on ? [{ file: file3, what: say(file3, things, "created", p.app), before, after: `${rows.join("\n")}
 ` }] : [];
-  const { lines: lines2, end, pairs: pairs2, mine, main, clash, cut: cut3 } = survey(before);
+  const { lines: lines2, end: end2, pairs: pairs2, mine, main, clash, cut: cut3 } = survey(before);
   if (clash) return [alone(file3, before, UNSAFE, on, hand)];
   if (!on) {
     if (!mine.length) return [];
@@ -40739,10 +40791,10 @@ function toml(target, p, on, command2, args2) {
   const what = say(file3, things, mine.length ? "updated" : "added", p.app);
   if (main && values("command").length) {
     const from = main.from + 1;
-    const old = lines2.slice(from, end(main));
+    const old = lines2.slice(from, end2(main));
     if (!old.every((line3, at2) => body2[at2] || idle(line3))) return [alone(file3, before, UNSAFE, on, hand)];
     const rest = old.filter((_line, at2) => !["command", "args"].includes(body2[at2]?.name ?? ""));
-    return [{ file: file3, what, before, after: [...lines2.slice(0, from), ...fresh2.slice(1), ...rest, ...lines2.slice(end(main))].join("\n") }];
+    return [{ file: file3, what, before, after: [...lines2.slice(0, from), ...fresh2.slice(1), ...rest, ...lines2.slice(end2(main))].join("\n") }];
   }
   const text3 = cut3();
   const gap = text3 === "" || text3.endsWith("\n") ? "" : `${cr}
@@ -40750,6 +40802,11 @@ function toml(target, p, on, command2, args2) {
   return [{ file: file3, what, before, after: `${text3}${gap}${text3.trim() === "" ? "" : `${cr}
 `}${fresh2.join("\n")}
 ` }];
+}
+function tidy(folder2, edits) {
+  const gone = edits.filter((change) => change.before !== null && change.after === null).map((change) => change.file);
+  if (!gone.length || !fs.existsSync(folder2) || fs.readdirSync(folder2).some((name) => !gone.includes(join2(folder2, name)))) return [];
+  return [{ file: folder2, what: `The folder ${folder2} is removed, because no file is left in the folder.`, before: "", after: null, folder: true }];
 }
 function plugin(p, on) {
   const record2 = dig(loose(load(join2(p.home, ".claude", "plugins", "installed_plugins.json"), p)), "plugins");
@@ -40780,20 +40837,28 @@ function claude(p, on) {
   if (plugin(p, true).length) return direct(p, true);
   return [{ file: "", what: `The plugin ${NAME} is already installed in Claude Code and stays the one connection.`, before: null, after: null }, ...direct(p, false)];
 }
-function changes(agent2, p, on) {
-  if (agent2 === "claude-code") return claude(p, on);
-  const [command2, args2] = launch(p, agent2);
+function changes(agent, p, on) {
+  if (agent === "claude-code") return claude(p, on);
+  const [command2, args2] = launch(p, agent);
   const server = { command: command2, args: args2 };
-  if (agent2 === "claude-desktop") return json2({ file: desktop(p), server }, p, on, [p.app]);
-  const folder2 = join2(p.home, `.${agent2}`);
-  const run4 = { type: "command", command: line(p, agent2) };
-  if (agent2 === "cursor") {
+  if (agent === "claude-desktop") return json2({ file: desktop(p), server }, p, on, [p.app]);
+  if (agent === "grok") return toml(join2(p.home, ".grok", "config.toml"), p, on, command2, args2);
+  if (agent === "muse") return json2({ file: join2(p.home, ".config", "muse", "settings.json"), server: { transport: "stdio", ...server, mode: "optional" }, under: "mcp_servers", stamp: "schema_version" }, p, on, [p.app]);
+  const folder2 = agent === "antigravity" ? join2(p.home, ".gemini", "config") : join2(p.home, `.${agent}`);
+  const run4 = { type: "command", command: line(p, agent) };
+  if (agent === "antigravity") {
+    const at2 = (event) => ({ ...run4, command: `${run4.command} --event ${event}` });
+    const block3 = { PreInvocation: [at2("PreInvocation")], PostToolUse: [{ matcher: KEPT2, hooks: [at2("PostToolUse")] }], Stop: [at2("Stop")] };
+    const edits = [...json2({ file: join2(folder2, "mcp_config.json"), server }, p, on, [p.app]), ...json2({ file: join2(folder2, "hooks.json"), block: block3 }, p, on, [p.app])];
+    return on ? edits : [...edits, ...tidy(folder2, edits)];
+  }
+  if (agent === "cursor") {
     const file4 = join2(folder2, "mcp.json");
     const apps2 = [p.app, ...former(dig(loose(load(file4, p)), "mcpServers", NAME))];
     const hooks2 = { events: ["sessionStart", "beforeSubmitPrompt", "postToolUse", "afterAgentResponse", "stop"], nested: false, version: true, entry: { command: run4.command } };
     return [...json2({ file: file4, server: { type: "stdio", ...server } }, p, on, apps2), ...json2({ file: join2(folder2, "hooks.json"), hooks: hooks2 }, p, on, apps2)];
   }
-  if (agent2 === "codex") {
+  if (agent === "codex") {
     const file4 = join2(folder2, "config.toml");
     const table = survey(load(file4, p) ?? "");
     const value = (name) => (table.main ? table.pairs(table.main) : []).flatMap((pair) => pair?.name === name ? strings3(pair.value) ?? [] : []);
@@ -40812,21 +40877,24 @@ function detect(p) {
     ["cursor", [join2(p.home, ".cursor")]],
     ["codex", [join2(p.home, ".codex")]],
     ["gemini", [join2(p.home, ".gemini", "settings.json")]],
+    ["antigravity", ["antigravity-cli", "antigravity", "config"].map((name) => join2(p.home, ".gemini", name))],
+    ["grok", [join2(p.home, ".grok")]],
+    ["muse", [join2(p.home, ".config", "muse")]],
     ["claude-desktop", [dirname(desktop(p))]]
   ];
-  return marks.filter(([, files2]) => files2.some((file3) => fs.existsSync(file3))).map(([agent2]) => agent2);
+  return marks.filter(([, files2]) => files2.some((file3) => fs.existsSync(file3))).map(([agent]) => agent);
 }
-function plan(agent2, p) {
-  return changes(agent2, p, true);
+function plan(agent, p) {
+  return changes(agent, p, true);
 }
-function unplan(agent2, p) {
-  return changes(agent2, p, false);
+function unplan(agent, p) {
+  return changes(agent, p, false);
 }
-function connected(agent2, p) {
-  return plan(agent2, p).every((change) => !change.file && !change.run);
+function connected(agent, p) {
+  return plan(agent, p).every((change) => !change.file && !change.run);
 }
 function apply(changes2) {
-  const edits = changes2.filter((change) => !change.run && change.after !== change.before);
+  const edits = changes2.filter((change) => !change.run && !change.folder && change.after !== change.before);
   for (const { file: file3, before } of edits) {
     if (read2(file3) !== before) throw new Error(`${file3} changed after the plan was made, so nothing was written.`);
   }
@@ -40850,8 +40918,9 @@ function apply(changes2) {
       fs.rmSync(temp, { force: true });
     }
   }
+  for (const { file: file3, folder: folder2 } of changes2) if (folder2 && fs.existsSync(file3) && !fs.readdirSync(file3).length) fs.rmdirSync(file3);
 }
-var NAME, BACKUP, HOOK, MARK2, LAYOUT, LINK, UNSAFE, NUMBERS, Odd, isObj, risky, same2, read2, drop2, list2, idle, ours, quote3;
+var NAME, BACKUP, HOOK, SERVERS, KEPT2, MARK2, LAYOUT, LINK, UNSAFE, NUMBERS, Odd, isObj, risky, same2, read2, drop2, list2, idle, ours, quote3;
 var init_install = __esm({
   "local/src/install.ts"() {
     "use strict";
@@ -40859,6 +40928,8 @@ var init_install = __esm({
     NAME = "agent-ctx";
     BACKUP = `.${NAME}-backup`;
     HOOK = "hook.mjs";
+    SERVERS = "mcpServers";
+    KEPT2 = "write_to_file|replace_file_content|multi_replace_file_content|run_command";
     MARK2 = /"agent-ctx"\s*:|hook\.mjs\\?"? --agent |agent-ctx\\?"? hook --agent |^\s*\[\s*mcp_servers\s*\.\s*["']?agent-ctx/m;
     LAYOUT = "has an unexpected layout";
     LINK = "is a link to a place outside the home folder";
@@ -41285,15 +41356,15 @@ function foreign(root, device, read3) {
       const from = (next[key2] ?? 0) <= size3 ? next[key2] ?? 0 : 0;
       if (size3 === from) continue;
       const part = slice(path, from, size3);
-      const end = part.lastIndexOf(10) + 1;
-      if (end < part.length) open3 = key2;
-      const got = parse3(part.subarray(0, end).toString("utf8"));
+      const end2 = part.lastIndexOf(10) + 1;
+      if (end2 < part.length) open3 = key2;
+      const got = parse3(part.subarray(0, end2).toString("utf8"));
       for (const rec of got.recs) {
         if (rec.device === dir) recs.push(rec);
         else bad++;
       }
       bad += got.bad;
-      next[key2] = from + end;
+      next[key2] = from + end2;
     }
   }
   return { recs, bad, open: open3, read: next };
@@ -41425,17 +41496,17 @@ async function sync2() {
         return state;
       });
       if (typeof first === "string") return { ok: false, line: first, taken: 0 };
-      const end = (more) => call(async (engine) => {
+      const end2 = (more) => call(async (engine) => {
         engine.store.setMeta(STATE2, { ...first, ...engine.store.meta(STATE2, {}), synced: Date.now(), ...more });
         engine.store.setMeta(LOCK, { pid: process.pid, at: started, done: Date.now() });
       });
       try {
         const plan2 = await steps(call, first);
-        await end({ exported: plan2.at, said: plan2.said });
+        await end2({ exported: plan2.at, said: plan2.said });
         return { ok: true, taken: plan2.taken, line: `The sync is done with ${count2(plan2.sent, "item")} sent, ${count2(plan2.taken, "item")} taken, ${count2(plan2.hidden, "item")} hidden and ${count2(plan2.notes, "note")} read.` };
       } catch (e) {
         const said2 = e instanceof Failed ? e.message : BROKE2;
-        await end({ said: said2 });
+        await end2({ said: said2 });
         return { ok: false, line: said2, taken: 0 };
       }
     } finally {
@@ -41868,8 +41939,8 @@ var init_url = __esm({
         if (charCode === 37) {
           const queryIndex = url2.indexOf("?", i);
           const hashIndex = url2.indexOf("#", i);
-          const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
-          const path = url2.slice(start, end);
+          const end2 = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
+          const path = url2.slice(start, end2);
           const decoded = tryDecode(path, decodeURIWithPreservedPercent);
           if (/%(?![0-9A-Fa-f]{2})/.test(path)) {
             const rewritten = new URL("http://localhost");
@@ -42773,8 +42844,8 @@ var init_mount = __esm({
           const value = matchResult.length === 2 ? matchResult[1][matchResult[0][c.req.routeIndex][1][pattern[1]]] : matchResult[0][c.req.routeIndex][1][pattern[1]];
           length += value.length + 1;
         } else if (pattern || part.endsWith("*")) {
-          const end = path.indexOf("/", length + 1);
-          length = end === -1 ? path.length : end;
+          const end2 = path.indexOf("/", length + 1);
+          length = end2 === -1 ? path.length : end2;
         } else length += part.length + 1;
       }
       return length;
@@ -44583,8 +44654,8 @@ function unpack(packed) {
   const out = [];
   const field3 = (head, from, size3) => {
     const part = head.subarray(from, from + size3);
-    const end = part.indexOf(0);
-    return part.toString("utf8", 0, end < 0 ? size3 : end);
+    const end2 = part.indexOf(0);
+    return part.toString("utf8", 0, end2 < 0 ? size3 : end2);
   };
   for (let at2 = 0; at2 + BLOCK <= tar.length; ) {
     const head = tar.subarray(at2, at2 + BLOCK);
@@ -44658,9 +44729,9 @@ function shield(dir) {
   }
   return out;
 }
-function steps2(kit, agent2, p) {
-  const connected2 = !plan(agent2, p).length;
-  const changes2 = connected2 ? unplan(agent2, p) : plan(agent2, p);
+function steps2(kit, agent, p) {
+  const connected2 = !plan(agent, p).length;
+  const changes2 = connected2 ? unplan(agent, p) : plan(agent, p);
   const run4 = changes2.find((change) => change.run)?.run;
   if (run4) return { connected: connected2, command: run4.join(" "), lines: [], write: null };
   const edits = changes2.filter(real2);
@@ -44751,7 +44822,7 @@ async function page(kit) {
       await scrub(db);
     }
   });
-  const found = (name) => AGENTS.find((agent2) => agent2 === name && detect(p).includes(agent2)) ?? null;
+  const found = (name) => AGENTS.find((agent) => agent === name && detect(p).includes(agent)) ?? null;
   api.get("/live", async (c) => {
     const seen = Number(c.req.query("v"));
     const until = Date.now() + HELD;
@@ -44762,19 +44833,19 @@ async function page(kit) {
     }
     return c.json({ v });
   });
-  api.get("/agents", (c) => c.json({ agents: detect(p).map((agent2) => ({ id: agent2, connected: !plan(agent2, p).length })) }));
+  api.get("/agents", (c) => c.json({ agents: detect(p).map((agent) => ({ id: agent, connected: !plan(agent, p).length })) }));
   api.get("/agents/:id/plan", (c) => {
-    const agent2 = found(c.req.param("id"));
-    if (!agent2) return err2(404, "No such agent.");
-    const { connected: connected2, command: command2, lines: lines2, write: write4 } = steps2(kit, agent2, p);
+    const agent = found(c.req.param("id"));
+    if (!agent) return err2(404, "No such agent.");
+    const { connected: connected2, command: command2, lines: lines2, write: write4 } = steps2(kit, agent, p);
     return c.json({ connected: connected2, command: command2, lines: lines2, ready: !!write4 });
   });
   api.post("/agents/:id", async (c) => {
-    const agent2 = found(c.req.param("id"));
+    const agent = found(c.req.param("id"));
     const b = await body(c.req.raw);
-    if (!agent2) return err2(404, "No such agent.");
+    if (!agent) return err2(404, "No such agent.");
     if (!b || typeof b.on !== "boolean" || !Array.isArray(b.lines)) return err2(400, "Send on as true or false, and the lines you saw.");
-    const now = steps2(kit, agent2, p);
+    const now = steps2(kit, agent, p);
     if (now.command) return err2(400, "Type the command in a terminal.");
     if (!now.write || b.on === now.connected || JSON.stringify(b.lines) !== JSON.stringify(now.lines)) return err2(409, STALE);
     try {
@@ -44841,7 +44912,7 @@ async function page(kit) {
         else res.end();
       });
     });
-    const end = () => {
+    const end2 = () => {
       if (over) return;
       over = true;
       clearInterval(clock);
@@ -44852,9 +44923,9 @@ async function page(kit) {
     };
     const clock = setInterval(() => {
       quiet2 = active ? 0 : quiet2 + 1;
-      if (quiet2 >= (loaded ? QUIET : FIRST)) end();
+      if (quiet2 >= (loaded ? QUIET : FIRST)) end2();
     }, 1e3);
-    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, end);
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, end2);
     server.listen(0, "127.0.0.1", () => {
       origin = `http://127.0.0.1:${server.address().port}`;
       const address = `${origin}/${token}/`;
@@ -45018,7 +45089,7 @@ async function install(yes) {
     say3(`${list3(copy.missing)} ${copy.missing.length === 1 ? "is" : "are"} missing beside the program, so nothing was changed.`);
     return 1;
   }
-  const changes2 = found.flatMap((agent2) => plan(agent2, p));
+  const changes2 = found.flatMap((agent) => plan(agent, p));
   const edits = changes2.filter(real3);
   const notes = changes2.filter((change) => !real3(change)).map((change) => change.what);
   say3(`${lead(named(found))} ${found.length === 1 ? "was" : "were"} found on this computer.`);
@@ -45034,7 +45105,7 @@ async function install(yes) {
   });
   if (!written) return 1;
   commands(edits);
-  const asks = found.some((agent2) => ASKS.includes(agent2));
+  const asks = found.some((agent) => ASKS.includes(agent));
   say3(`Open a new session in ${named(found)} so the memory is loaded.`, ...asks ? ["Approve the agent-ctx server and hooks if an agent asks."] : [], `Type ${typed()} status to see what is connected.`);
   return 0;
 }
@@ -45042,7 +45113,7 @@ async function uninstall(yes) {
   const p = paths();
   const found = detect(p);
   const recorded = fs4.existsSync(join5(p.home, ".claude", "plugins", "installed_plugins.json"));
-  const changes2 = AGENTS2.flatMap((agent2) => unplan(agent2, p)).filter((change) => change.run?.[1] !== "plugin" || recorded && found.includes("claude-code"));
+  const changes2 = AGENTS2.flatMap((agent) => unplan(agent, p)).filter((change) => change.run?.[1] !== "plugin" || recorded && found.includes("claude-code"));
   const edits = changes2.filter(real3);
   const notes = changes2.filter((change) => !real3(change)).map((change) => change.what);
   const app = dirname4(p.app);
@@ -45096,8 +45167,8 @@ function status2() {
     }
   }
   const found = detect(p);
-  const on = found.filter((agent2) => connected(agent2, p));
-  const off = found.filter((agent2) => !on.includes(agent2));
+  const on = found.filter((agent) => connected(agent, p));
+  const off = found.filter((agent) => !on.includes(agent));
   lines2.push(on.length ? `${lead(named(on))} ${on.length === 1 ? "is" : "are"} connected.` : "No agent is connected.");
   if (off.length) lines2.push(`${lead(named(off))} ${off.length === 1 ? "was found and is" : "were found and are"} not connected. Type ${typed()} install to connect.`);
   say3(...lines2);
@@ -45202,22 +45273,22 @@ var init_cli = __esm({
     init_db();
     init_install();
     init_sync();
-    NAMES = { "claude-code": "Claude Code", cursor: "Cursor", codex: "Codex", gemini: "Gemini CLI", "claude-desktop": "the Claude desktop app" };
+    NAMES = { "claude-code": "Claude Code", cursor: "Cursor", codex: "Codex", gemini: "Gemini CLI", antigravity: "Antigravity", grok: "Grok Build", muse: "Muse Code", "claude-desktop": "the Claude desktop app" };
     AGENTS2 = Object.keys(NAMES);
     BUILT = ["agent-ctx.mjs", "hook.mjs", "LICENSES.txt"];
     ONE = "agent-ctx";
     FILES = PROGRAM ? [ONE] : BUILT;
     BACKUP3 = ".agent-ctx-backup";
     DONE = { install: "installed", uninstall: "removed", add: "added", remove: "removed" };
-    SIGNS2 = ["CLAUDECODE", "CURSOR_AGENT", "CODEX_SANDBOX", "GEMINI_CLI"];
-    ASKS = ["cursor", "codex", "gemini", "claude-desktop"];
+    SIGNS2 = ["CLAUDECODE", "CURSOR_AGENT", "CODEX_SANDBOX", "GEMINI_CLI", "GROK_SESSION_ID", "MUSE_SESSION_ID"];
+    ASKS = ["cursor", "codex", "gemini", "antigravity", "grok", "muse", "claude-desktop"];
     HELD2 = "because the text has the form of an instruction to an agent";
     say3 = (...lines2) => void process.stdout.write(lines2.map((line3) => `${line3}
 `).join(""));
     list3 = (names) => names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
     lead = (text3) => text3.slice(0, 1).toUpperCase() + text3.slice(1);
     count3 = (n, one, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
-    named = (agents) => list3(agents.map((agent2) => NAMES[agent2]));
+    named = (agents) => list3(agents.map((agent) => NAMES[agent]));
     text2 = (path) => fs4.existsSync(path) ? fs4.readFileSync(path, "utf8") : null;
     real3 = (change) => !!change.run || change.after !== change.before;
     source = (name) => PROGRAM || join5(dirname4(fileURLToPath(import.meta.url)), name);
@@ -45236,7 +45307,7 @@ function stop(line3) {
 `);
   process.exit(1);
 }
-function option(args2, name) {
+function option2(args2, name) {
   const joined = args2.find((a) => a.startsWith(`${name}=`));
   if (joined) return joined.slice(name.length + 1);
   const at2 = args2.indexOf(name);
@@ -45250,7 +45321,7 @@ if (args[0] === "hook") {
   if (args[0] === "mcp") {
     const [{ serve: serve2 }, { Refusal: Refusal2, file: file3 }] = await Promise.all([Promise.resolve().then(() => (init_serve(), serve_exports)), Promise.resolve().then(() => (init_db(), db_exports))]);
     try {
-      serve2(option(args.slice(1), "--agent"));
+      serve2(option2(args.slice(1), "--agent"));
     } catch (e) {
       stop(e instanceof Refusal2 ? e.message : `The memory file at ${file3()} could not be opened.`);
     }
