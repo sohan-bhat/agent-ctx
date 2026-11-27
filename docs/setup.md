@@ -4,7 +4,7 @@ agent-ctx is one memory on a person's computer, shared by the coding agents of t
 
 ## Steps
 
-1. Show the person the install line for this computer before you run that line. On macOS and Linux use the first line below, and no Node is needed. Everywhere else use the second line with Node 22.16 or newer, which has the same result. When your shell is a terminal, add ` install --yes` to the end of the second line, because one press of Enter is asked for there otherwise.
+1. Show the person the install line for this computer before you run that line. On macOS and Linux use the first line below, and no Node is needed. Everywhere else use the second line, which has the same result and depends on Node 22.16 or newer. When your shell is a terminal, add ` install --yes` to the end of the second line, because one press of Enter is asked for there otherwise.
 
        curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh
 
