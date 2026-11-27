@@ -20,7 +20,7 @@ agent-ctx is one memory on a person's computer, shared by the coding agents of t
 
        node ~/.agent-ctx/app/agent-ctx.mjs status
 
-   The first printed line is `agent-ctx 0.3.1`, and every fact in this document is true for that version. The setup is complete when one line ends with `connected.` and contains the name of every agent that was found, and no line contains `not connected`. A line that begins with `No memory file exists yet at` is normal until the first session of a connected agent.
+   The last line of the install output contains the same command with the full path for this computer. The first line of the status output is `agent-ctx 0.3.1`, and every fact in this document is true for that version. The setup is complete when one status line ends with `connected.` and contains the name of every agent that was found, and no line contains `not connected`. A line that begins with `No memory file exists yet at` is normal until the first session of a connected agent.
 
 5. Tell the person to open a new session in each connected agent and to approve the agent-ctx server and the hooks when an agent asks. The memory is loaded only at the start of a session, so your current session has no agent-ctx tools.
 
@@ -30,8 +30,8 @@ In the table, `~` is the home folder, and with the variable `AGENT_CTX_HOME` set
 
 | For | File | Written |
 |---|---|---|
-| The program after the curl line | `~/.agent-ctx/app/agent-ctx` | One program, with no Node needed |
-| The program after the npx line | `~/.agent-ctx/app/agent-ctx.mjs`, `~/.agent-ctx/app/hook.mjs` and `~/.agent-ctx/app/LICENSES.txt` | The program as two files for Node, with the licences of the libraries inside |
+| The program after the curl line | `~/.agent-ctx/app/agent-ctx` | One compiled program |
+| The program after the npx line | `~/.agent-ctx/app/agent-ctx.mjs`, `~/.agent-ctx/app/hook.mjs` and `~/.agent-ctx/app/LICENSES.txt` | The program as two files for Node and the licence texts of the bundled libraries |
 | The memory | `~/.agent-ctx/memory.db` | One SQLite file with the whole memory, created at the first session of a connected agent, with side files that end in `-wal` and `-shm` |
 | Claude Code after the curl line | `~/.claude/settings.json` | The agent-ctx hooks for `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `StopFailure`, `PostCompact` and `SessionStart`. The server is added with the command `claude mcp add --scope user agent-ctx -- ~/.agent-ctx/app/agent-ctx mcp --agent claude-code`, and that entry lies in `~/.claude.json` |
 | Claude Code after the npx line | No file | The plugin agent-ctx, with the server and the hooks inside, is installed with the command `claude plugin install agent-ctx --marketplace sohan-bhat/agent-ctx` |
@@ -42,11 +42,11 @@ In the table, `~` is the home folder, and with the variable `AGENT_CTX_HOME` set
 | Gemini CLI | `~/.gemini/settings.json` | The server `agent-ctx` under `mcpServers` and the agent-ctx hooks for `BeforeAgent`, `AfterTool` and `AfterAgent` |
 | Antigravity | `~/.gemini/config/mcp_config.json` | The server `agent-ctx` under `mcpServers` |
 | Antigravity | `~/.gemini/config/hooks.json` | The entry `agent-ctx` with hooks for `PreInvocation`, `PostToolUse` and `Stop` |
-| Grok Build | `~/.grok/config.toml` | The table `[mcp_servers.agent-ctx]` and no hook |
-| Muse Code | `~/.config/muse/settings.json` | The server `agent-ctx` under `mcp_servers`, `"schema_version": 1` where that key is missing, and no hook |
-| The Claude desktop app on macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` | The server `agent-ctx` under `mcpServers` and no hook |
-| The Claude desktop app on Linux | `~/.config/Claude/claude_desktop_config.json` | The server `agent-ctx` under `mcpServers` and no hook |
-| The Claude desktop app on Windows | `%APPDATA%\Claude\claude_desktop_config.json` | The server `agent-ctx` under `mcpServers` and no hook |
+| Grok Build | `~/.grok/config.toml` | The table `[mcp_servers.agent-ctx]` |
+| Muse Code | `~/.config/muse/settings.json` | The server `agent-ctx` under `mcp_servers` and `"schema_version": 1` where that key is missing |
+| The Claude desktop app on macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` | The server `agent-ctx` under `mcpServers` |
+| The Claude desktop app on Linux | `~/.config/Claude/claude_desktop_config.json` | The server `agent-ctx` under `mcpServers` |
+| The Claude desktop app on Windows | `%APPDATA%\Claude\claude_desktop_config.json` | The server `agent-ctx` under `mcpServers` |
 
 With the agent-ctx plugin already installed in Claude Code, that plugin stays the one connection after the curl line, and nothing is written for Claude Code.
 
