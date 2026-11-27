@@ -349,3 +349,116 @@ describe('claude-desktop', () => {
     check(p, desktopKit.ours(p));
   });
 });
+
+const cursorServer = (p: Paths): unknown => ({ type: 'stdio', command: p.node, args: [p.app, 'mcp', '--agent', 'cursor'] });
+const cursorHook = (p: Paths, shown = p.app): unknown => ({ command: `${p.node} ${shown} hook --agent cursor` });
+const AUDIT = { command: './audit.sh' };
+const SHELL = { command: './check.sh', matcher: 'curl' };
+const cursorHooks = (hook: unknown, stop: unknown[] = [hook], more: Files = {}): unknown => ({
+  version: 1,
+  hooks: { ...more, sessionStart: [hook], beforeSubmitPrompt: [hook], postToolUse: [hook], afterAgentResponse: [hook], stop },
+});
+const cursorKit: Kit = {
+  agent: 'cursor',
+  seed: {
+    '.cursor/mcp.json': { mcpServers: { files: FILES } },
+    '.cursor/hooks.json': { version: 1, hooks: { stop: [AUDIT], beforeShellExecution: [SHELL] } },
+  },
+  broken: { '.cursor/mcp.json': '{ "mcpServers": {', '.cursor/hooks.json': '{ "version": 1, "hooks": {}, }' },
+  ours: (p, shown) => ({
+    '.cursor/mcp.json': { mcpServers: { 'agent-ctx': cursorServer(p) } },
+    '.cursor/hooks.json': cursorHooks(cursorHook(p, shown)),
+  }),
+  both: (p) => ({
+    '.cursor/mcp.json': { mcpServers: { files: FILES, 'agent-ctx': cursorServer(p) } },
+    '.cursor/hooks.json': cursorHooks(cursorHook(p), [AUDIT, cursorHook(p)], { beforeShellExecution: [SHELL] }),
+  }),
+};
+
+describe('cursor', () => {
+  suite(cursorKit);
+
+  test('cursor keeps a hook of another tool with the same words', (t) => {
+    const p = make(t);
+    const other = { command: '/opt/other/tool.js hook --agent cursor' };
+    put(join(p.home, '.cursor/hooks.json'), { version: 1, hooks: { stop: [other] } });
+    connect('cursor', p);
+    assert.deepEqual(look(join(p.home, '.cursor/hooks.json')), cursorHooks(cursorHook(p), [other, cursorHook(p)]));
+    disconnect('cursor', p);
+    assert.deepEqual(look(join(p.home, '.cursor/hooks.json')), { version: 1, hooks: { stop: [other] } });
+  });
+
+  test('cursor loses a hook of ours under an event outside the plan', (t) => {
+    const p = make(t);
+    put(join(p.home, '.cursor/mcp.json'), { mcpServers: { 'agent-ctx': { type: 'stdio', command: NODE, args: ['/old/agent-ctx.js', 'mcp', '--agent', 'cursor'] } } });
+    const stale = { command: `${NODE} /old/agent-ctx.js hook --agent cursor` };
+    put(join(p.home, '.cursor/hooks.json'), { version: 1, hooks: { preToolUse: [stale, AUDIT], afterFileEdit: [stale], stop: [AUDIT, stale, SHELL] } });
+    connect('cursor', p);
+    assert.deepEqual(look(join(p.home, '.cursor/hooks.json')), cursorHooks(cursorHook(p), [AUDIT, cursorHook(p), SHELL], { preToolUse: [AUDIT] }));
+  });
+
+  test('cursor on win32 keeps backslashes and takes double quotes around a spaced path', (t) => {
+    const p: Paths = { ...make(t), platform: 'win32', node: 'C:\\Program Files\\nodejs\\node.exe', app: 'C:\\Tools\\agent-ctx\\app\\agent-ctx.js' };
+    connect('cursor', p);
+    check(p, {
+      '.cursor/mcp.json': { mcpServers: { 'agent-ctx': cursorServer(p) } },
+      '.cursor/hooks.json': cursorHooks({ command: `"${p.node}" ${p.app} hook --agent cursor` }),
+    });
+    assert.deepEqual(plan('cursor', p), []);
+  });
+
+  test('cursor commands with spaces and shell characters run with the right arguments', { skip: process.platform === 'win32' }, (t) => {
+    const p = make(t, 'agent ctx home ');
+    p.node = join(p.home, 'node bin', 'node');
+    p.app = join(p.home, 'a $b `c` "d"', 'agent-ctx.js');
+    fs.mkdirSync(dirname(p.node));
+    fs.symlinkSync(process.execPath, p.node);
+    put(p.app, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+    connect('cursor', p);
+    const hooks = look(join(p.home, '.cursor/hooks.json')) as { hooks: { stop: { command: string }[] } };
+    assert.equal(execFileSync('/bin/sh', ['-c', hooks.hooks.stop[0].command], { encoding: 'utf8' }), '["hook","--agent","cursor"]');
+    const servers = look(join(p.home, '.cursor/mcp.json')) as { mcpServers: Record<string, { command: string; args: string[] }> };
+    const entry = servers.mcpServers['agent-ctx'];
+    assert.equal(execFileSync(entry.command, entry.args, { encoding: 'utf8' }), '["mcp","--agent","cursor"]');
+    assert.deepEqual(plan('cursor', p), []);
+    assert.equal(disconnect('cursor', p).length, 2);
+    assert.equal(fs.existsSync(join(p.home, '.cursor/hooks.json')), false);
+  });
+});
+
+const geminiServer = (p: Paths): unknown => ({ command: p.node, args: [p.app, 'mcp', '--agent', 'gemini'] });
+const geminiHook = (p: Paths, shown = p.app): unknown => ({ hooks: [{ name: 'agent-ctx', type: 'command', command: `${p.node} ${shown} hook --agent gemini` }] });
+const LINT = { matcher: 'write_file', hooks: [{ name: 'lint', type: 'command', command: './lint.sh' }] };
+const SETTINGS = '.gemini/settings.json';
+const geminiKit: Kit = {
+  agent: 'gemini',
+  seed: { [SETTINGS]: { theme: 'plain', mcpServers: { files: FILES }, hooks: { AfterTool: [LINT], BeforeTool: [LINT] } } },
+  broken: { [SETTINGS]: '{\n  "theme": "plain",\n}\n' },
+  ours: (p, shown) => {
+    const hook = geminiHook(p, shown);
+    return { [SETTINGS]: { mcpServers: { 'agent-ctx': geminiServer(p) }, hooks: { BeforeAgent: [hook], AfterTool: [hook], AfterAgent: [hook] } } };
+  },
+  both: (p) => {
+    const hook = geminiHook(p);
+    return {
+      [SETTINGS]: {
+        theme: 'plain',
+        mcpServers: { files: FILES, 'agent-ctx': geminiServer(p) },
+        hooks: { AfterTool: [LINT, hook], BeforeTool: [LINT], BeforeAgent: [hook], AfterAgent: [hook] },
+      },
+    };
+  },
+};
+
+describe('gemini', () => {
+  suite(geminiKit);
+
+  test('gemini keeps other handlers that share a group with ours and keeps settings under hooks', (t) => {
+    const p = make(t);
+    const mine = { name: 'agent-ctx', type: 'command', command: `${NODE} ${APP} hook --agent gemini` };
+    const lint = LINT.hooks[0];
+    put(join(p.home, SETTINGS), { mcpServers: { 'agent-ctx': geminiServer(p) }, hooks: { enabled: true, AfterTool: [{ matcher: 'write_file', hooks: [lint, mine] }] } });
+    disconnect('gemini', p);
+    assert.deepEqual(look(join(p.home, SETTINGS)), { hooks: { enabled: true, AfterTool: [LINT] } });
+  });
+});
