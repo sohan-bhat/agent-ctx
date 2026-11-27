@@ -264,7 +264,6 @@ const shape = (page) =>
       words += count(node.textContent);
     }
     const items = [...document.querySelectorAll('[data-site=faq] h3')].map((h) => ({ q: h.textContent.trim(), a: h.nextElementSibling?.tagName === 'P' ? h.nextElementSibling.textContent.trim() : '' }));
-    const day = document.querySelector('[data-site=day]');
     const nav = document.querySelector('nav');
     const foot = document.querySelector('footer');
     const pills = [...document.querySelectorAll('[data-site=action] a')];
@@ -277,7 +276,7 @@ const shape = (page) =>
       marks,
       words,
       items,
-      day: day ? { text: day.innerText.trim().split(/\s*\n\s*/), under: day.previousElementSibling?.previousElementSibling?.textContent ?? '' } : null,
+      bars: document.querySelectorAll('[data-site=day], [data-site=bar], [data-site=faq] svg').length,
       nav: nav ? { text: nav.innerText.trim().split(/\s+/), links: [...nav.querySelectorAll('a')].map((a) => a.href), parts: nav.children.length, toggles: nav.querySelectorAll('[role=switch]').length } : null,
       foot: foot ? { text: foot.innerText, links: [...foot.querySelectorAll('a')].map((a) => a.href), tops: [...foot.children].map((e) => Math.round(e.getBoundingClientRect().top / 8)) } : null,
       pills: pills.map((a) => [a.textContent.trim(), a.getAttribute('href'), a.dataset.variant]),
@@ -384,13 +383,9 @@ async function walk(b, site, w, h, scheme) {
     const drawn = await paint(page);
     check(`${tag} the scene draws real pixels`, drawn.share > 0.02 && drawn.hues >= 2, `${drawn.coloured} coloured pixels in ${drawn.hues} hues, ${(drawn.share * 100).toFixed(1)} percent of the scene`);
 
-    const look = await page.evaluate(() => {
-      const bars = [...document.querySelectorAll('[data-site=day] [data-site=bar]')];
-      const on = (svg) => [...svg.querySelectorAll('rect')].reduce((a, r) => a + r.getBoundingClientRect().width, 0);
-      return { ground: getComputedStyle(document.body).backgroundColor, fills: bars.map((s) => getComputedStyle(s.querySelector('rect')).fill), share: bars.map((s) => on(s) / s.getBoundingClientRect().width) };
-    });
-    const seen = (site.fills[scheme] ??= look.fills);
-    check(`${tag} the page follows the system theme`, look.ground === GROUND[scheme] && look.fills.length === 2 && seen.join() === look.fills.join() && (!site.fills[other] || look.fills.every((v, i) => v !== site.fills[other][i])), `ground ${look.ground}, bars ${look.fills.join(' and ')}`);
+    const look = await page.evaluate(() => ({ ground: getComputedStyle(document.body).backgroundColor, tones: [getComputedStyle(document.body).color, getComputedStyle(document.querySelector('footer')).borderTopColor] }));
+    const seen = (site.tones[scheme] ??= look.tones);
+    check(`${tag} the page follows the system theme`, look.ground === GROUND[scheme] && seen.join() === look.tones.join() && (!site.tones[other] || look.tones.every((v, i) => v !== site.tones[other][i])), `ground ${look.ground}, text ${look.tones[0]}, footer rule ${look.tones[1]}`);
 
     const toggle = page.locator('nav [role=switch]');
     const was = await toggle.getAttribute('aria-checked').catch(() => null);
@@ -462,7 +457,7 @@ async function walk(b, site, w, h, scheme) {
       s.pills.length === 2 && s.pills[0].join() === ['View on GitHub', HOME, 'default'].join() && s.pills[1].join() === ['Read the FAQ', '#faq', 'outline'].join() && /first release is being tested/.test(s.status),
       s.pills.map((p) => p[0]).join(' and '),
     );
-    check(`${tag} the day bars sit under the answer about the background with the two labels only`, !!s.day && s.day.text.join('|') === 'A background server|agent-ctx' && /background/.test(s.day.under) && look.share.length === 2 && look.share[0] > 0.99 && look.share[1] > 0.1 && look.share[1] < 0.6, s.day ? `${s.day.text.join(' and ')}, ${look.share.map((v) => `${(v * 24).toFixed(1)} hours`).join(' and ')}` : 'missing');
+    check(`${tag} no bar and no drawing stands in the FAQ`, s.items.length === 8 && s.bars === 0, `${s.bars} found`);
     check(`${tag} the footer holds the licence, the repository link and the cookie sentence${wide ? ' in one line' : ''}`, !!s.foot && /\bMIT\b/.test(s.foot.text) && s.foot.links.includes(HOME) && /No cookie is set/.test(s.foot.text) && /another host/.test(s.foot.text) && (!wide || new Set(s.foot.tops).size === 1), s.foot ? `${new Set(s.foot.tops).size} lines` : 'missing');
 
     const t = await texts(page);
@@ -609,7 +604,7 @@ try {
   await build(null, false);
   await build(path.join(temp, 'released'), true);
   built(DIST);
-  plain = { ...(await serve(DIST)), fills: {}, light: {} };
+  plain = { ...(await serve(DIST)), tones: {}, light: {} };
   later = await serve(path.join(temp, 'released'));
   b = await browser();
   for (const scheme of schemes) for (const [w, h] of sizes) await run(`${scheme} ${w}x${h} walk`, () => walk(b, plain, w, h, scheme));
