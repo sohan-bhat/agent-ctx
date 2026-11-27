@@ -1,9 +1,8 @@
 import { DurableObject, env } from 'cloudflare:workers';
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { Hono } from 'hono';
-import { api } from './api.ts';
 import { auth, escape, html, who, type AppEnv } from './auth.ts';
-import { mcpHandler } from './endpoint.ts';
+import { api, mcpHandler } from './endpoint.ts';
 import { CLIENT_TTL, REGISTRATIONS_FULL, SLOW_DOWN, addressKey, limiterFor, registrationCap } from './limits.ts';
 
 export { Person } from './person.ts';

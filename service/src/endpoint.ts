@@ -1,8 +1,11 @@
 import { env } from 'cloudflare:workers';
+import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import { createRequestStateCodec, type RequestStateCodec } from '@modelcontextprotocol/server';
 import { createMcpHandler, getMcpAuthContext } from 'agents/mcp/server';
+import { deleteCookie } from 'hono/cookie';
 import { version } from '../../package.json';
-import type { Props } from './auth.ts';
+import { err, id, pageApi } from './api.ts';
+import { serviceOrigin, who, type AppEnv, type Props } from './auth.ts';
 import { BODY_MAX, createServer, type Reach } from './mcp.ts';
 
 let codec: RequestStateCodec<string> | null = null;
@@ -71,3 +74,43 @@ export async function mcpHandler(request: Request, e: Env, ctx: ExecutionContext
   if (!fit) return new Response('The request is too large.', { status: 413, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   return handler(fit, e, ctx);
 }
+
+async function revoke(oauth: OAuthHelpers, person: string, match: (label: unknown) => boolean): Promise<number> {
+  let n = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await oauth.listUserGrants(person, { cursor });
+    for (const g of page.items) {
+      if (!match((g.metadata as { label?: unknown } | undefined)?.label)) continue;
+      await oauth.revokeGrant(g.id, person);
+      n++;
+    }
+    cursor = page.cursor;
+  } while (cursor);
+  return n;
+}
+
+export const api = pageApi<AppEnv['Bindings']>({
+  origin: (c) => serviceOrigin(c.env),
+  who: (c) => who(c),
+  memory: (c) => c.env.PERSON.getByName(c.get('me').person),
+  erase: async (c) => {
+    const me = c.get('me');
+    await revoke(c.env.OAUTH_PROVIDER, me.person, () => true);
+    await c.env.PERSON.getByName(me.person).wipe();
+    deleteCookie(c, 'session', { path: '/', secure: true, prefix: 'host' });
+  },
+});
+
+api.delete('/agents/:id', async (c) => {
+  const label = id(c.req.param('id'));
+  if (!label) return err(400, 'Send the agent to disconnect.');
+  const revoked = await revoke(c.env.OAUTH_PROVIDER, c.get('me').person, (l) => l === label);
+  const removed = await c.env.PERSON.getByName(c.get('me').person).removeAgent(label);
+  return revoked || removed ? new Response(null, { status: 204 }) : err(404, 'No such agent.');
+});
+
+api.get('/live', async (c) => {
+  if (c.req.header('Upgrade') !== 'websocket') return err(426, 'Open this address as a WebSocket.');
+  return c.env.PERSON.getByName(c.get('me').person).fetch(c.req.raw);
+});
