@@ -1,0 +1,147 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the tag with package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "This run was started by hand without a tag, so the programs are built and tested and no release is made."
+          elif [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "The tag $GITHUB_REF_NAME differs from version $version in package.json, so no release is made."
+            exit 1
+          fi
+
+  build:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: ubuntu-24.04
+            target: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Check that the runner is the target
+        run: |
+          case "$(uname -s) $(uname -m)" in
+            'Darwin arm64') found=darwin-arm64 ;;
+            'Darwin x86_64') found=darwin-x64 ;;
+            'Linux x86_64') found=linux-x64 ;;
+            'Linux aarch64') found=linux-arm64 ;;
+            *) found="$(uname -s) $(uname -m)" ;;
+          esac
+          if [ "$found" != "$TARGET" ]; then
+            echo "This runner is $found and the target is $TARGET, so no program is made."
+            exit 1
+          fi
+          echo "PROGRAM=$RUNNER_TEMP/out/agent-ctx-$TARGET" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm ci
+        working-directory: service
+      - name: Build and compare with the committed files
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- plugins/claude-code/scripts)" ]; then
+            echo "A fresh build differs from the committed files in plugins/claude-code/scripts, so no program is made."
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+      - name: Copy the built file to a temp folder
+        run: |
+          mkdir -p "$RUNNER_TEMP/compile" "$RUNNER_TEMP/out"
+          cp plugins/claude-code/scripts/agent-ctx.mjs "$RUNNER_TEMP/compile/agent-ctx.mjs"
+      - name: Compile outside the repository
+        working-directory: ${{ runner.temp }}/compile
+        run: bun build --compile --bytecode --format=esm agent-ctx.mjs --outfile "$PROGRAM"
+      - name: Sign on macOS
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --sign - "$PROGRAM"
+          codesign --verify --verbose=2 "$PROGRAM"
+      - name: Run the program once
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          export HOME="$RUNNER_TEMP/smoke/home" AGENT_CTX_HOME="$RUNNER_TEMP/smoke/memory"
+          mkdir -p "$HOME"
+          test "$("$PROGRAM" --version)" = "$version"
+          "$PROGRAM" status
+          printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"s-release","cwd":"/work/kiln","prompt":"Glaze the kiln shelf with the cone 6 mix"}' | "$PROGRAM" hook --agent claude-code
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"release","version":"1"}}}' | "$PROGRAM" mcp --agent release > "$RUNNER_TEMP/smoke/answer.json"
+          node --no-warnings -e "
+            const { DatabaseSync } = require('node:sqlite');
+            const stored = new DatabaseSync(process.argv[1]).prepare('SELECT COUNT(*) AS n FROM events').get().n;
+            const server = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8')).result.serverInfo;
+            if (stored === 1 && server.name === 'agent-ctx' && server.version === process.argv[3]) process.exit(0);
+            console.log('The count of stored events is ' + stored + ' and initialize was answered with version ' + server.version + ', so no program is published.');
+            process.exit(1);
+          " "$AGENT_CTX_HOME/memory.db" "$RUNNER_TEMP/smoke/answer.json" "$version"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agent-ctx-${{ matrix.target }}
+          path: ${{ env.PROGRAM }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          path: out
+          merge-multiple: true
+      - name: Add the bundle, the page files and the install script
+        run: |
+          node local/pack.mjs plugins/claude-code/scripts/agent-ctx.mjs out/agent-ctx.mcpb
+          if [ -d web/dist-local ]; then
+            cp web/dist-local/agent-ctx-page.tgz out/agent-ctx-page.tgz
+          else
+            echo "The folder web/dist-local is absent, so agent-ctx-page.tgz is left out of this run."
+          fi
+          cp local/install.sh out/install.sh
+      - name: Write the SHA-256 list
+        working-directory: out
+        run: |
+          sha256sum -- agent-ctx* install.sh > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+      - name: Make the release from the tag
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

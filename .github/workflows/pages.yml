@@ -6,6 +6,7 @@ on:
     paths:
       - web/**
       - core/**
+      - local/install.sh
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -35,6 +36,7 @@ jobs:
         working-directory: web
         env:
           VITE_RELEASED: "1"
+      - run: cp local/install.sh web/dist-site/install.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist-site
