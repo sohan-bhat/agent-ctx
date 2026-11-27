@@ -172,9 +172,13 @@ test('every line of the setup document outside code passes the wording check and
   assert.equal(text.endsWith('\n') && !text.endsWith('\n\n'), true);
 });
 
-test('the pages workflow publishes the setup document and starts on a change to that document', () => {
+test('the pages workflow publishes the setup document and starts on a change to that document, and the README has the prompt with the published address', () => {
   const pages = read('.github/workflows/pages.yml');
   assert.match(pages, /paths:\n(\s+- \S+\n)*\s+- docs\/setup\.md\n/);
   assert.match(pages, /\n\s+- run: cp local\/install\.sh web\/dist-site\/install\.sh\n\s+- run: cp docs\/setup\.md web\/dist-site\/setup\.md\n\s+- uses: actions\/upload-pages-artifact/);
   assert.equal(pages.match(/setup\.md/g)?.length, 3);
+  const readme = read('README.md');
+  const site = /\n {4}curl -fsSL (\S+)\/install\.sh \| sh\n/.exec(readme)?.[1] ?? '';
+  assert.ok(site, 'the README has the curl line');
+  assert.ok(readme.includes(`\n    Set up agent-ctx on this computer. Read ${site}/setup.md and follow the steps.\n`), `${site}/setup.md`);
 });

@@ -4,6 +4,10 @@ agent-ctx is one memory on your computer, shared by the agents you use. Claude C
 
 ## Install
 
+Paste the line below into any coding agent, and the agent does the whole setup alone from the document in that line.
+
+    Set up agent-ctx on this computer. Read https://sohanbhat.me/agent-ctx/setup.md and follow the steps.
+
 On macOS and Linux, paste the line below into a terminal. No Node is needed, and one program is placed at `~/.agent-ctx/app/agent-ctx`.
 
     curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh
