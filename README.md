@@ -1,10 +1,10 @@
 # agent-ctx
 
-agent-ctx is one memory on your computer, shared by the agents you use. Claude Code, Cursor, Codex, Gemini CLI and the Claude desktop app read and write one file, so the next agent carries on where the last agent stopped. No program stays open in the background and the memory stays on the computer.
+agent-ctx is one memory on your computer, shared by the agents you use. Claude Code, Cursor, Codex, Gemini CLI and the Claude desktop app read and write one file, so the next agent carries on where the last agent stopped. No program stays open in the background and the memory stays on the computer. Claude Code is proven with the real program, and the other four are built from the documents of each vendor and are not yet tested with the real programs.
 
 ## Install
 
-You need Node 22.16 or newer. The line below is the install line, to be used once the line is proven from GitHub.
+You need Node 22.16 or newer. Paste the line below into a terminal.
 
     npx -y github:sohan-bhat/agent-ctx
 
