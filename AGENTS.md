@@ -11,7 +11,7 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
     plugins         the Claude Code plugin, with the two built program files in plugins/claude-code/scripts
     .claude-plugin  the marketplace entry for the Claude Code plugin
     service         the optional Cloudflare Worker, with the runtime scripts in service/e2e and the JSON only plugins of the hosted mode in service/plugins
-    web             the page of the hosted mode
+    web             the page, in a hosted form and in a local form for `agent-ctx page`
     docs            format.md, cost.md and vendors.md
 
 ## Rules
@@ -22,7 +22,7 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 - A fake key or webhook address in a test is built by joining string pieces, because a push that contains a lookalike is blocked by GitHub.
 - Export only the handler and the object classes from the entry file service/src/index.ts. Every other export is read as a handler by the runtime and the Worker does not start.
 - No rule is made active by anything a model can send. One sign in is shared by a hook and a model, so text from a hook counts as written by an agent.
-- On one computer a rule is accepted only with `agent-ctx rules accept ID` by a person at a terminal. That command is out of reach for every hook and every tool call.
+- On one computer a rule is accepted only by a person, with `agent-ctx rules accept ID` at a terminal or with Accept on the page of `agent-ctx page`. Both ways are out of reach for every hook and every tool call, and no tool and no hook knows the port or the token of that page.
 - The person id is taken only from the verified token or the signed cookie.
 - Redaction is applied to the whole text before any cut, and every call over 8 KB is refused before any pattern is run.
 - A plugin under service/plugins contains JSON only. The local plugin contains the built files of plugins/claude-code/scripts and no other script.
@@ -51,6 +51,8 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
     node web/e2e/run.mjs
     node web/e2e/consent.mjs
     node web/e2e/real.mjs
+    npm --prefix web run build:local
+    node web/e2e/local.mjs
 
 Run `node local/e2e.mjs` with no argument before a release. In proofs 2, 3 and 4 the real Claude Code program is started with haiku, at a cost of a few cents.
 
