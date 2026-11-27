@@ -36,7 +36,9 @@ const NAMES = [
   "Claude Code",
   "Cursor",
   "Codex",
-  "Gemini CLI",
+  "Antigravity",
+  "Grok Build",
+  "Muse Code",
   "Claude desktop",
 ];
 const START = [0, 1].map((name) => ({
@@ -53,7 +55,7 @@ const FAQ = [
   ],
   [
     "Which agents work with agent-ctx?",
-    "Claude Code is proven with the real program, and Cursor, Codex, Gemini CLI and the Claude desktop app are built from the documents of each vendor and are not yet tested with the real programs. macOS and Linux are supported today.",
+    "Claude Code is proven with the real program, and Cursor, Codex, Antigravity, Grok Build, Muse Code and the Claude desktop app are built from the documents of each vendor and are not yet tested with the real programs. macOS and Linux are supported today.",
   ],
   [
     "Where is the memory kept?",

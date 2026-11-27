@@ -14,7 +14,7 @@ const HOME = `https://github.com/${REPO}`;
 const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
 const END = 18 * 60;
-const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Gemini CLI', 'Claude desktop'];
+const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Antigravity', 'Grok Build', 'Muse Code', 'Claude desktop'];
 const LEADS = ['Work started in', 'is continued in'];
 const SPOKEN = 'Work started in Claude Code is continued in Cursor.';
 const EDGE = [524, 518];
@@ -770,7 +770,7 @@ async function fit(b, site) {
         return out;
       }, NAMES);
       const where = w === EDGE[0] ? ', just above the switch' : w === EDGE[1] ? ', just below the switch' : '';
-      if (w === EDGE[1]) check(`at ${w} px wide${where}, the typed block has two lines`, got.lines === 2 && got.broken === 20, `${got.lines} lines in a column of ${got.room} px`);
+      if (w === EDGE[1]) check(`at ${w} px wide${where}, the typed block has two lines`, got.lines === 2 && got.broken === NAMES.length * (NAMES.length - 1), `${got.lines} lines in a column of ${got.room} px`);
       else check(`at ${w} px wide${where}, every pair of two names fits on one line`, got.lines === 1 && got.wide > 0 && got.broken === 0, `the longest pair ${got.pair} ends at ${got.wide.toFixed(1)} px in a column of ${got.room} px, ${got.broken} pairs do not fit`);
     } finally {
       await ctx.close();
