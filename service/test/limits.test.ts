@@ -118,7 +118,7 @@ import { type Item, newItem } from '../../core/src/index.ts';
   const PROJECT = 'github.com/acme/kiln';
 
   type Inner = { pools: Map<string, Item[]>; pool(project: string): Item[] };
-  const inner = (x: Person) => x as unknown as Inner;
+  const inner = (x: Person) => (x as unknown as { engine: Inner }).engine;
 
   async function poolMatches(stub: DurableObjectStub<Person>): Promise<boolean> {
     return runInDurableObject(stub, (x: Person) => {
@@ -181,8 +181,8 @@ import { type Item, newItem } from '../../core/src/index.ts';
       for (let n = 1; n <= MAX.perMinute && !refused; n++) {
         const stub = env.PERSON.get(id);
         await runInDurableObject(stub, (x: Person) => {
-          const inside = x as unknown as { project: () => never; ctx: DurableObjectState };
-          inside.project = () => {
+          const inside = x as unknown as { engine: { project: () => never }; ctx: DurableObjectState };
+          inside.engine.project = () => {
             inside.ctx.abort('crash in the middle of a call');
             throw new Error('unreachable');
           };

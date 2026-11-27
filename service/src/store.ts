@@ -58,12 +58,19 @@ export function newer(a: Item, b: Item): number {
 
 type Value = string | number | null;
 
+export interface Sql {
+  exec(query: string, ...args: Value[]): { toArray(): unknown[]; rowsRead: number; rowsWritten: number };
+  transactionSync(fn: () => void): void;
+  sync(): Promise<void>;
+  deleteAll(): Promise<void>;
+}
+
 export class Store {
   rowsRead = 0;
   rowsWritten = 0;
-  private sql: SqlStorage;
+  private sql: Sql;
 
-  constructor(sql: SqlStorage) {
+  constructor(sql: Sql) {
     this.sql = sql;
   }
 
