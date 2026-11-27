@@ -58,7 +58,10 @@ const FAQ = [
     "What is active in the background?",
     "Nothing is active while no agent is open. Each agent starts a small helper while that agent is open, and one hook is run at each prompt for a fraction of a second.",
   ],
-  ["What leaves my computer?", "Nothing leaves your computer."],
+  [
+    "What leaves my computer?",
+    "Nothing leaves your computer unless you turn on a mirror. A mirror copies the memory to a folder or a private repository of your own.",
+  ],
   [
     "Can my agents be tricked by a web page or a file through the memory?",
     "Text from a web page or a file is stored as information and is delivered to an agent as quoted memory. Such text never becomes a rule unless you accept the rule yourself.",

@@ -19,15 +19,23 @@ Every agent found on the computer is connected, and each change is printed in on
     ~/.agent-ctx/app/agent-ctx install      connect every agent found on this computer
     ~/.agent-ctx/app/agent-ctx status       the memory file and the connected agents
     ~/.agent-ctx/app/agent-ctx rules        the pending rules, with accept ID and reject ID
+    ~/.agent-ctx/app/agent-ctx page         the memory in your browser, with the rules and the agents
+    ~/.agent-ctx/app/agent-ctx mirror       a copy of the memory in a folder or repository of your own
     ~/.agent-ctx/app/agent-ctx uninstall    take agent-ctx out and keep the memory
 
-After an install through npx, type `node ~/.agent-ctx/app/agent-ctx.mjs` in place of `~/.agent-ctx/app/agent-ctx`. A standing rule that an agent proposes stays pending until you accept the rule at a terminal.
+After an install through npx, type `node ~/.agent-ctx/app/agent-ctx.mjs` in place of `~/.agent-ctx/app/agent-ctx`. A standing rule that an agent proposes stays pending until you accept the rule at a terminal or on the memory page.
 
 ## Remove
 
     ~/.agent-ctx/app/agent-ctx uninstall
 
 Every entry of the install is taken out and the memory is kept. The last printed line is the command for deleting the memory.
+
+## Mirror
+
+    ~/.agent-ctx/app/agent-ctx mirror on github
+
+No mirror exists until you turn one on. The line above keeps a copy of the memory in a private repository named agent-ctx-memory in your own GitHub account, through the `gh` program. `mirror on icloud` and `mirror on FOLDER` use a synced folder. A new computer is filled from the copy with `restore`.
 
 ## Memory
 
