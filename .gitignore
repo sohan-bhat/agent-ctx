@@ -5,3 +5,4 @@ dist/
 *.tmp
 .wrangler/
 out/
+web/dist-site/
