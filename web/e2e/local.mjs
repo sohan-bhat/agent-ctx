@@ -14,7 +14,7 @@ const HOOK = path.join(ROOT, 'plugins', 'claude-code', 'scripts', 'hook.mjs');
 const FILES = path.join(web, 'dist-local');
 const SHOTS = process.env.SHOTS ?? '';
 const OPEN = /^The memory page is open at (http:\/\/127\.0\.0\.1:(\d+)\/([\w-]+)\/) and stays open until 30 seconds after you close the page\.$/m;
-const REFUSED = 'Type npx -y github:sohan-bhat/agent-ctx page in a terminal to open the memory page.';
+const refused = (home) => `Type ${existsSync(path.join(home, 'app', 'agent-ctx.mjs')) ? `node ${path.join(home, 'app', 'agent-ctx.mjs')}` : 'npx -y github:sohan-bhat/agent-ctx'} page in a terminal to open the memory page.`;
 const COMMAND = 'claude plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
 const PRONOUN = /\b(it|its|itself|it's)\b/i;
 const MARKS = /[—–;()]| - /;
@@ -329,7 +329,7 @@ async function run(b, w, h) {
     const foreign = await ask(server.port, `/${server.token}/api/space`, { host: `evil.example:${server.port}` });
     const cross = await ask(server.port, `/${server.token}/api/space`, { origin: 'https://evil.example' });
     const fine = await ask(server.port, `/${server.token}/api/space`);
-    check(`${tag} a call without the token is refused`, bare.status === 403 && wrong.status === 403 && bare.text.trim() === REFUSED && fine.status === 200, `${bare.status} and ${wrong.status}`);
+    check(`${tag} a call without the token is refused`, bare.status === 403 && wrong.status === 403 && bare.text.trim() === refused(where.AGENT_CTX_HOME) && fine.status === 200, `${bare.status} and ${wrong.status}`);
     check(`${tag} a call with a foreign Host or a foreign Origin is refused`, foreign.status === 403 && cross.status === 403 && !foreign.text.includes(GOALS.search), `${foreign.status} and ${cross.status}`);
 
     s = await space(page);
@@ -359,7 +359,7 @@ async function run(b, w, h) {
 
     check(`${tag} no browser was opened by the page command`, !/^(open|xdg-open) /m.test(started(where)), started(where).trim().replace(server.token, 'TOKEN'));
     const again = await page.goto(`${origin}/`);
-    check(`${tag} a load of the address without the token gets the one plain line`, again.status() === 403 && (await page.locator('body').textContent()).trim() === REFUSED);
+    check(`${tag} a load of the address without the token gets the one plain line`, again.status() === 403 && (await page.locator('body').textContent()).trim() === refused(where.AGENT_CTX_HOME));
     await ctx.close();
     ctx = null;
     const closed = Date.now();
