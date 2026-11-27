@@ -5,7 +5,7 @@ import { browser, context, engine, press, ready, server, web } from './lib.mjs';
 if (process.argv[2] === 'icon') {
   const SIZE = 512;
   const svg = fs.readFileSync(path.join(web, 'public', 'favicon.svg'), 'utf8').replace('<svg ', `<svg width="${SIZE}" height="${SIZE}" `);
-  const file = process.env.OUT ?? path.join(web, '..', 'plugins', 'src', 'claude-code', '.claude-plugin', 'icon.png');
+  const file = process.env.OUT ?? path.join(web, '..', 'plugins', 'claude-code', '.claude-plugin', 'icon.png');
   const b = await browser();
   try {
     const ctx = await b.newContext({ viewport: { width: SIZE, height: SIZE }, deviceScaleFactor: 1, colorScheme: 'light' });
