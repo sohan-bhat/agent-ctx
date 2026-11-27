@@ -3,7 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { dirname, extname, join, sep } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { body, buildExport, err, pageApi, type PageMemory } from '../../service/src/api.ts';
 import { Refusal, caller, file, folder, open, type Db } from './db.ts';
@@ -191,7 +191,8 @@ async function scrub(db: Db): Promise<void> {
 }
 
 function same(given: string, token: string): boolean {
-  return given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token));
+  const mark = (text: string): Buffer => createHash('sha256').update(text).digest();
+  return timingSafeEqual(mark(given), mark(token));
 }
 
 async function sent(req: IncomingMessage): Promise<Buffer | null> {
@@ -220,7 +221,6 @@ export async function page(kit: Kit): Promise<number> {
     say(error instanceof Refusal ? error.message : `The memory file at ${file()} could not be opened.`);
     return 1;
   }
-  const root = fs.realpathSync(dir);
   const guard = shield(dir);
   const token = randomBytes(24).toString('base64url');
   const call = caller(db);
@@ -299,9 +299,8 @@ export async function page(kit: Kit): Promise<number> {
       return reply(res, 404, PLAIN, 'Not found.\n');
     }
     const parts = name === '/' ? ['index.html'] : name.slice(1).split('/');
-    const at = parts.every((part) => PART.test(part)) ? join(root, ...parts) : '';
-    const stat = at ? fs.statSync(at, { throwIfNoEntry: false }) : undefined;
-    if (!stat?.isFile() || !fs.realpathSync(at).startsWith(root + sep)) return reply(res, 404, PLAIN, 'Not found.\n');
+    const at = parts.every((part) => PART.test(part)) ? join(dir, ...parts) : '';
+    if (!at || !fs.statSync(at, { throwIfNoEntry: false })?.isFile()) return reply(res, 404, PLAIN, 'Not found.\n');
     reply(res, 200, TYPES[extname(at)] ?? 'application/octet-stream', req.method === 'HEAD' ? '' : fs.readFileSync(at));
   };
 

@@ -88,6 +88,12 @@ async function start(where: Place, more: Record<string, string> = {}, files: str
   return { ...s, base: hit[1], port: Number(hit[2]), token: hit[3], lines: said(s.out()) };
 }
 
+async function ends(s: Started, ms = 8000): Promise<number | null | 'still running'> {
+  const code = await Promise.race([s.ended, sleep(ms).then(() => 'still running' as const)]);
+  if (code === 'still running') s.child.kill('SIGTERM');
+  return code;
+}
+
 async function stop(p: Started): Promise<number | null> {
   if (p.child.exitCode === null) p.child.kill('SIGTERM');
   return p.ended;
@@ -213,6 +219,7 @@ test('the token has at least 128 bits, changes with every start and every call w
     const got = await ask(p.port, path);
     assert.deepEqual([got.status, got.text], [403, `${REFUSED}\n`], path);
   }
+  assert.ok([400, 403].includes((await ask(p.port, `/${'\u00e9'.repeat(p.token.length)}/api/space`)).status));
   const post = await ask(p.port, '/api/rules', { method: 'POST', body: { text: 'Keep notes short', scope: 'all' }, headers: { origin: `http://127.0.0.1:${p.port}` } });
   assert.equal(post.status, 403);
   assert.equal((await call(p, '/space')).status, 200);
@@ -236,6 +243,7 @@ test('a foreign Host and a foreign Origin are refused', async () => {
   }
   for (const origin of ['https://evil.example', `http://localhost:${p.port}`, `http://127.0.0.1:${p.port + 1}`, 'null']) {
     assert.equal((await ask(p.port, path, { headers: { origin } })).status, 403, origin);
+    assert.deepEqual([(await ask(p.port, `/${p.token}/`, { headers: { origin } })).text], [`${REFUSED}\n`], origin);
     assert.equal((await ask(p.port, `/${p.token}/api/rules`, { method: 'POST', body: { text: 'Keep notes short', scope: 'all' }, headers: { origin } })).status, 403, origin);
   }
   assert.equal((await ask(p.port, `/${p.token}/api/rules`, { method: 'POST', body: { text: 'Keep notes short', scope: 'all' } })).status, 403, 'a write with no Origin');
@@ -245,7 +253,7 @@ test('a foreign Host and a foreign Origin are refused', async () => {
   await stop(p);
 });
 
-test('no file, no tool answer and no hook output carries the port or the token, and a start inside an agent session prints no address', async () => {
+test('no file, no tool answer and no hook output carries the port or the token', async () => {
   const where = home();
   const p = await start(where);
   const secrets = [p.token, `127.0.0.1:${p.port}`, `localhost:${p.port}`];
@@ -263,11 +271,16 @@ test('no file, no tool answer and no hook output carries the port or the token, 
   for (const secret of secrets) for (const text of [...answers, prompt.out, prompt.err, ...files]) assert.equal(text.includes(secret), false, secret);
   assert.deepEqual(readdirSync(where.AGENT_CTX_HOME).filter((name) => !name.startsWith('memory.db')), []);
   await stop(p);
+});
+
+test('a start inside an agent session prints no address and starts no server', async () => {
+  const where = home();
   for (const sign of ['CLAUDECODE', 'CURSOR_AGENT', 'CODEX_SANDBOX', 'GEMINI_CLI']) {
     const inside = launch(where, { [sign]: '1' });
-    assert.equal(await inside.ended, 1, sign);
+    assert.equal(await ends(inside), 1, `${sign} ${inside.out()}`);
     assert.deepEqual(said(inside.out()), ['The memory page is opened by a person at a terminal, so type npx -y github:sohan-bhat/agent-ctx page in a terminal of your own.'], sign);
   }
+  assert.equal(existsSync(where.AGENT_CTX_HOME), false);
 });
 
 test('the page calls give the memory in the shape of the hosted calls, and Accept by a call turns a pending rule on', async () => {
@@ -461,7 +474,7 @@ test('a wrong hash, a missing file and an entry that points outside the folder e
     const where = home();
     const site = await releases(files);
     const s = launch(where, { AGENT_CTX_RELEASES: site.base }, null);
-    assert.equal(await s.ended, 1, s.out());
+    assert.equal(await ends(s), 1, s.out());
     assert.equal(said(s.out()).length, 1, s.out());
     assert.match(said(s.out())[0], line);
     assert.equal(BANNED.exec(said(s.out())[0].replace(/http:\S+/, 'ADDRESS')), null, s.out());
@@ -470,10 +483,10 @@ test('a wrong hash, a missing file and an entry that points outside the folder e
   assert.equal(readFileSync(join(TMP, 'outside.txt'), 'utf8'), OUTSIDE);
   const where = home();
   const down = launch(where, { AGENT_CTX_RELEASES: 'http://127.0.0.1:9' }, null);
-  assert.deepEqual([await down.ended, said(down.out())], [1, ['The page files could not be fetched from http://127.0.0.1:9, so nothing was changed.']]);
+  assert.deepEqual([await ends(down), said(down.out())], [1, ['The page files could not be fetched from http://127.0.0.1:9, so nothing was changed.']]);
   assert.equal(existsSync(where.AGENT_CTX_HOME), false);
   const empty = launch(home(), { AGENT_CTX_PAGE_DIR: join(TMP, 'nowhere') });
-  assert.deepEqual([await empty.ended, said(empty.out())], [1, [`No page files were found in ${join(TMP, 'nowhere')}, so nothing was started.`]]);
+  assert.deepEqual([await ends(empty), said(empty.out())], [1, [`No page files were found in ${join(TMP, 'nowhere')}, so nothing was started.`]]);
 });
 
 test('a path that points outside the page folder is never served', async () => {
@@ -490,10 +503,12 @@ test('a path that points outside the page folder is never served', async () => {
 test('every line that page prints passes the wording rules', async () => {
   const where = home();
   const p = await start(where);
+  const refused = said((await ask(p.port, '/')).text);
+  assert.deepEqual(refused, [REFUSED]);
   await stop(p);
   const inside = launch(where, { CODEX_SANDBOX: '1' });
-  await inside.ended;
-  for (const line of [...p.lines, ...said(inside.out()), REFUSED]) {
+  await ends(inside);
+  for (const line of [...p.lines, ...said(inside.out()), ...refused]) {
     assert.equal(BANNED.exec(plain(line.replace(/http:\S+/, 'ADDRESS').replace(/npx -y \S+/, 'COMMAND'), where)), null, line);
   }
   const older = run(MAIN, ['page'], where, '', { AGENT_CTX_NO_OPEN: '1', AGENT_CTX_PAGE_DIR: join(TMP, 'nowhere') });
