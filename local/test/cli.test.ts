@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test as plainTest } from 'node:test';
-import { BANNED, MAIN, PTY, ROOT, SCRIPTS, calls, hook, place, plain, put, rows, run, server, stub, terminal, tree, typing, type Place } from './kit.ts';
+import { BANNED, MAIN, PTY, ROOT, SCRIPTS, calls, hook, one, place, plain, preload, program, put, rows, run, server, stub, terminal, tree, typing, type Place } from './kit.ts';
 
 const TMP = mkdtempSync(join(tmpdir(), 'agent-ctx-cli-'));
 const INSTALL = 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
+const REMOVE = 'mcp remove --scope user agent-ctx';
+const PLUGGED = 'The plugin agent-ctx is already installed in Claude Code and stays the one connection.';
 const DESKTOP = `${process.platform === 'darwin' ? 'Library/Application Support' : '.config'}/Claude/claude_desktop_config.json`;
 const THEME = { theme: 'dark' };
 const FILES_SERVER = { mcpServers: { files: { command: 'npx', args: ['-y', 'files-server'] } } };
@@ -37,6 +39,7 @@ function home(seeded = false): Place {
 const app = (where: Place, name = 'agent-ctx.mjs'): string => join(where.AGENT_CTX_HOME, 'app', name);
 const json = (where: Place, file: string): { mcpServers: Record<string, { command: string; args: string[] }>; hooks: Record<string, unknown[]> } => JSON.parse(readFileSync(join(where.HOME, file), 'utf8'));
 const lines = (out: string): string[] => out.trimEnd().split('\n');
+const add = (where: Place): string => `mcp add --scope user agent-ctx -- ${app(where, 'agent-ctx')} mcp --agent claude-code`;
 
 test('install connects every agent found, copies the program to the app folder and says each change in one plain line', () => {
   const where = home(true);
@@ -203,7 +206,7 @@ test('rules lists each pending rule with a short id and holds back a rule that h
   assert.deepEqual(lines(run(MAIN, ['rules'], where).out), ['No rule is pending.']);
   assert.equal(existsSync(where.AGENT_CTX_HOME), false);
   const saved = await server(where, 'cursor', [['rule', RULE], ['rule', PLANTED], ['rule', { ...RULE, text: 'Write dates as YYYY-MM-DD', words: 'write dates as YYYY-MM-DD in my docs', scope: 'project', folder: KILN }]]);
-  assert.deepEqual(saved, Array(3).fill('Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules.'));
+  assert.deepEqual(saved, Array(3).fill('Rule saved as pending. The person turns the rule on in a terminal with npx -y github:sohan-bhat/agent-ctx rules.'));
   const r = run(MAIN, ['rules'], where);
   assert.deepEqual([r.code, r.err], [0, '']);
   const said = lines(r.out);
@@ -256,3 +259,110 @@ test(
   },
   !PTY,
 );
+
+test('one program copies the running file to the app folder and connects every agent with no node in any command', () => {
+  const where = home(true);
+  const r = one(['install', '--yes'], where);
+  assert.deepEqual([r.code, r.err], [0, '']);
+  const placed = app(where, 'agent-ctx');
+  assert.deepEqual(calls(where), [add(where)]);
+  assert.ok(readFileSync(placed).equals(readFileSync(program(where))));
+  assert.equal(statSync(placed).mode & 0o777, 0o755);
+  assert.deepEqual(readdirSync(join(where.AGENT_CTX_HOME, 'app')), ['agent-ctx']);
+  for (const [file, agent] of [['.cursor/mcp.json', 'cursor'], ['.gemini/settings.json', 'gemini'], [DESKTOP, 'claude-desktop']]) {
+    const entry = json(where, file).mcpServers['agent-ctx'];
+    assert.deepEqual([entry.command, entry.args], [placed, ['mcp', '--agent', agent]], file);
+  }
+  assert.ok(readFileSync(join(where.HOME, '.codex/config.toml'), 'utf8').includes(`command = "${placed}"\nargs = ["mcp", "--agent", "codex"]`));
+  for (const file of ['.claude/settings.json', '.cursor/hooks.json', '.codex/hooks.json', '.gemini/settings.json']) {
+    const body = readFileSync(join(where.HOME, file), 'utf8');
+    const commands = [...body.matchAll(/"command": "([^"]* --agent [a-z-]+)"/g)].map((m) => m[1]);
+    assert.ok(commands.length >= 3, file);
+    for (const command of commands) assert.equal(command.split(' --agent ')[0], `${placed} hook`, command);
+    assert.equal(/\bnode\b|\.mjs/.test(body.split(where.root).join('')), false, file);
+  }
+  const said = lines(r.out);
+  assert.equal(said[1], `The program is copied to ${join(where.AGENT_CTX_HOME, 'app')}.`);
+  assert.equal(said[2], `The server agent-ctx is added to Claude Code with the command claude ${add(where)}.`);
+  assert.equal(said.at(-1), `Type ${placed} status to see what is connected.`);
+  for (const line of said) assert.equal(BANNED.exec(plain(line, where)), null, line);
+  const once = [tree(where.HOME), tree(where.AGENT_CTX_HOME)];
+  const again = one(['install', '--yes'], where);
+  assert.equal(lines(again.out).at(-1), 'Claude Code, Cursor, Codex, Gemini CLI and the Claude desktop app are already connected, so nothing was changed.');
+  assert.deepEqual([tree(where.HOME), tree(where.AGENT_CTX_HOME)], once);
+  assert.deepEqual(calls(where), [add(where)]);
+});
+
+test('one program leaves an installed plugin as the one connection and says so in one plain line', () => {
+  const where = place(TMP);
+  stub(where);
+  put(join(where.HOME, '.claude/plugins/installed_plugins.json'), { version: 2, plugins: { 'agent-ctx@agent-ctx': [{ scope: 'user' }] } });
+  const before = tree(where.HOME);
+  const r = one(['install', '--yes'], where);
+  assert.deepEqual([r.code, r.err], [0, '']);
+  assert.deepEqual(lines(r.out), [
+    'Claude Code was found on this computer.',
+    `The program is copied to ${join(where.AGENT_CTX_HOME, 'app')}.`,
+    PLUGGED,
+    'Open a new session in Claude Code so the memory is loaded.',
+    `Type ${app(where, 'agent-ctx')} status to see what is connected.`,
+  ]);
+  assert.deepEqual(lines(one(['install', '--yes'], where).out), ['Claude Code was found on this computer.', PLUGGED, 'Nothing was changed.']);
+  assert.deepEqual([tree(where.HOME), calls(where)], [before, []]);
+  assert.equal(lines(one(['status'], where).out).at(-1), 'Claude Code is connected.');
+  assert.equal(BANNED.exec(PLUGGED), null);
+});
+
+test('uninstall takes the server and the hooks of one program out again and leaves the home as before', () => {
+  for (const [seeded, script] of [[false, false], [true, false], [true, true]]) {
+    const where = home(seeded);
+    if (seeded) put(join(where.HOME, '.claude/settings.json'), { permissions: { allow: ['Bash(npm test)'] } });
+    const before = tree(where.HOME);
+    assert.equal(one(['install', '--yes'], where).code, 0);
+    assert.notDeepEqual(tree(where.HOME), before);
+    const r = script ? run(MAIN, ['uninstall', '--yes'], where) : one(['uninstall', '--yes'], where);
+    assert.deepEqual([r.code, r.err], [0, '']);
+    assert.deepEqual(tree(where.HOME), before);
+    assert.equal(existsSync(join(where.AGENT_CTX_HOME, 'app')), false);
+    assert.deepEqual(calls(where), [add(where), REMOVE]);
+    const said = lines(r.out);
+    assert.equal(said[0], `The server agent-ctx is removed from Claude Code with the command claude ${REMOVE}.`);
+    assert.ok(said.includes(`The program folder ${join(where.AGENT_CTX_HOME, 'app')} is removed.`), r.out);
+    for (const line of said) assert.equal(BANNED.exec(plain(line, where)), null, line);
+  }
+});
+
+test('a server command that fails gives the line to type and leaves the hooks in place', () => {
+  const where = home();
+  const r = one(['install', '--yes'], where, { STUB_FAIL: '1' });
+  assert.deepEqual([r.code, r.err], [0, '']);
+  const said = lines(r.out);
+  const at = said.indexOf('The server could not be added from here, so type the next line in a terminal.');
+  assert.ok(at > 0, r.out);
+  assert.equal(said[at + 1], `claude ${add(where)}`);
+  assert.deepEqual(calls(where), [add(where)]);
+  assert.equal(Object.keys(json(where, '.claude/settings.json').hooks).length, 7);
+  assert.equal(lines(one(['status'], where).out).at(-1), `Claude Code was found and is not connected. Type ${app(where, 'agent-ctx')} install to connect.`);
+});
+
+test('every command that a person or an agent is told to type exists on the computer in both forms', async () => {
+  for (const form of ['script', 'program']) {
+    const where = home();
+    const go = (args: string[]): string[] => lines((form === 'script' ? run(MAIN, args, where) : one(args, where)).out);
+    const file = form === 'script' ? app(where) : app(where, 'agent-ctx');
+    const me = form === 'script' ? `node ${file}` : file;
+    const told = go(['install', '--yes']);
+    assert.equal(existsSync(file), true, file);
+    const help = go(['--help']);
+    assert.deepEqual(help.slice(2).map((line) => line.split(/ {2,}/)[0]), ['install', 'status', 'rules', 'uninstall'].map((name) => `${me} ${name}`));
+    const saved = await server(where, 'cursor', [['rule', RULE]], form === 'script' ? [] : preload(where));
+    assert.deepEqual(saved, [`Rule saved as pending. The person turns the rule on in a terminal with ${me} rules.`]);
+    const status = go(['status']);
+    assert.ok(status.includes(`1 rule is pending. Type ${me} rules to read the rule.`), status.join('\n'));
+    const listed = go(['rules']);
+    assert.equal(listed.at(-1), `Type ${me} rules accept ID to turn a rule on, or ${me} rules reject ID to turn a rule down.`);
+    const piped = go(['rules', 'accept', 'ffffffff']);
+    assert.deepEqual(piped, [`A rule is turned on or down by a person at a terminal, so type ${me} rules accept ID in a terminal of your own.`]);
+    for (const line of [...told, ...help, ...saved, ...status, ...listed, ...piped]) assert.equal(/(^|[^/\w-])agent-ctx (install|status|rules|uninstall)\b/.test(line), false, line);
+  }
+});

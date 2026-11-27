@@ -35,6 +35,23 @@ export function run(file: string, args: string[], where: Place, input = '', more
   return { code: r.status, out: r.stdout, err: r.stderr, ms: Number(process.hrtime.bigint() - started) / 1e6 };
 }
 
+export function program(where: Place): string {
+  const file = join(where.root, 'fetched', 'agent-ctx');
+  if (!existsSync(file)) put(file, '#!/bin/sh\necho one program\n');
+  return file;
+}
+
+export function preload(where: Place): string[] {
+  const fake = `globalThis.Bun={isStandaloneExecutable:true};process.execPath=${JSON.stringify(program(where))}`;
+  return ['--import', `data:text/javascript,${encodeURIComponent(fake)}`];
+}
+
+export function one(args: string[], where: Place, more: Record<string, string> = {}): Ran {
+  const started = process.hrtime.bigint();
+  const r = spawnSync(process.execPath, [...preload(where), MAIN, ...args], { encoding: 'utf8', env: envOf(where, more), input: '' });
+  return { code: r.status, out: r.stdout, err: r.stderr, ms: Number(process.hrtime.bigint() - started) / 1e6 };
+}
+
 export function hook(where: Place, agent: string, event: Json, more: Record<string, string> = {}): Ran {
   return run(HOOK, ['--agent', agent], where, JSON.stringify(event), more);
 }
@@ -72,12 +89,15 @@ export function typing(args: string[], until: string, where: Place): ChildProces
 export function stub(where: Place): void {
   const file = join(where.bin, 'claude');
   const record = '"$HOME/.claude/plugins/installed_plugins.json"';
+  const server = '{"mcpServers":{"agent-ctx":{"type":"stdio","command":"%s","args":["mcp","--agent","claude-code"],"env":{}}}}';
   writeFileSync(
     file,
     [
       '#!/bin/sh',
       'echo "$*" >> "$STUB_LOG"',
       '[ -n "$STUB_FAIL" ] && exit 1',
+      `if [ "$1 $2" = "mcp add" ]; then printf '${server}\\n' "$7" > "$HOME/.claude.json"; fi`,
+      'if [ "$1 $2" = "mcp remove" ]; then rm -f "$HOME/.claude.json"; fi',
       `if [ "$1 $2" = "plugin install" ]; then mkdir -p "$HOME/.claude/plugins"; printf '{"version":2,"plugins":{"agent-ctx@agent-ctx":[{"scope":"user"}]}}\\n' > ${record}; fi`,
       `if [ "$1 $2" = "plugin uninstall" ]; then rm -f ${record}; rmdir "$HOME/.claude/plugins" 2>/dev/null; fi`,
       'exit 0',
@@ -128,8 +148,8 @@ export function plain(out: string, where: Place): string {
   return out.split(where.root).join('').replace(/\S*\/node\b/g, 'node').replace(/npx -y github:\S+/g, 'COMMAND').replace(/"[^"\n]*"/g, 'WORDS');
 }
 
-export async function server(where: Place, agent: string, calls: [string, Json][]): Promise<string[]> {
-  const child = spawn(process.execPath, [MAIN, 'mcp', '--agent', agent], { env: envOf(where), stdio: ['pipe', 'pipe', 'pipe'] });
+export async function server(where: Place, agent: string, calls: [string, Json][], node: string[] = []): Promise<string[]> {
+  const child = spawn(process.execPath, [...node, MAIN, 'mcp', '--agent', agent], { env: envOf(where), stdio: ['pipe', 'pipe', 'pipe'] });
   const answers = new Map<number, string>();
   let buffer = '';
   let done: () => void = () => undefined;

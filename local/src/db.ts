@@ -1,7 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { Engine, type Caller } from '../../service/src/engine.ts';
 import { MAX, SAY, type Max } from '../../service/src/limits.ts';
@@ -15,6 +15,10 @@ const STEPS: string[][] = [];
 const STATEMENTS_KEPT = 200;
 const LOCKED = 5;
 const OTHER = 'another agent';
+const SOURCE = 'npx -y github:sohan-bhat/agent-ctx';
+const AT_PAGE = 'Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.';
+
+export const PROGRAM = (globalThis as { Bun?: { isStandaloneExecutable?: boolean } }).Bun?.isStandaloneExecutable ? process.execPath : '';
 
 export const CAPS: Max = { ...MAX, perMinute: 100000, perDay: 100000, storedPerDay: 5000, storeBytes: 100 * 1024 * 1024 };
 
@@ -24,7 +28,6 @@ const WORDS: [string, string][] = [
   [SAY.agents, 'This computer already has 20 connected agents.'],
   [SAY.full, 'The memory on this computer is full at 100 MB, so nothing new is stored.'],
   [SAY.projects, 'This computer already has 200 projects with saved items.'],
-  ['Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.', 'Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules.'],
 ];
 
 type Value = string | number | null;
@@ -37,6 +40,18 @@ export function folder(): string {
 
 export function file(): string {
   return join(folder(), 'memory.db');
+}
+
+export function quote(text: string): string {
+  return /^[\w\-./:=@%+,\\]+$/.test(text) ? text : JSON.stringify(text);
+}
+
+export function typed(): string {
+  const app = join(folder(), 'app');
+  if (PROGRAM) return quote(existsSync(join(app, 'agent-ctx')) ? join(app, 'agent-ctx') : PROGRAM);
+  const started = process.argv[1] ?? '';
+  if (basename(started) === 'agent-ctx' && !started.includes('_npx')) return 'agent-ctx';
+  return existsSync(join(app, 'agent-ctx.mjs')) ? `node ${quote(join(app, 'agent-ctx.mjs'))}` : SOURCE;
 }
 
 function sqlite(): typeof import('node:sqlite') {
@@ -181,7 +196,7 @@ export function open(wait = BUSY_MS): Db {
 export function local(text: string): string {
   let out = text;
   for (const [from, to] of WORDS) if (out.includes(from)) out = out.split(from).join(to);
-  return out;
+  return out.includes(AT_PAGE) ? out.split(AT_PAGE).join(`Rule saved as pending. The person turns the rule on in a terminal with ${typed()} rules.`) : out;
 }
 
 export function who(name: string | undefined): Caller {

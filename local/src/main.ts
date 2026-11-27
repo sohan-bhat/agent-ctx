@@ -20,7 +20,7 @@ function option(args: string[], name: string): string | undefined {
 const args = process.argv.slice(2);
 
 if (args[0] === 'hook') {
-  await import(new URL('hook.mjs', import.meta.url).href).catch(() => undefined);
+  await import('./event.ts');
 } else {
   if (!recent(process.versions.node)) stop(`Node ${NODE.join('.')} or newer is required for agent-ctx and this computer has Node ${process.versions.node}.`);
   if (args[0] === 'mcp') {

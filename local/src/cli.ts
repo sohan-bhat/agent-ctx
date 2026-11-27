@@ -1,20 +1,22 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { projectName, resolveIds, ruleLine, shortIds, type Item, type RuleBody } from '../../core/src/index.ts';
-import { Refusal, caller, file, folder, open, type Db } from './db.ts';
-import { apply, detect, plan, unplan, type Agent, type Change, type Paths } from './install.ts';
+import { PROGRAM, Refusal, caller, file, folder, open, quote, typed, type Db } from './db.ts';
+import { apply, connected, detect, plan, unplan, type Agent, type Change, type Paths } from './install.ts';
 
 declare const VERSION: string;
 
 const NAMES: Record<Agent, string> = { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', gemini: 'Gemini CLI', 'claude-desktop': 'the Claude desktop app' };
 const AGENTS = Object.keys(NAMES) as Agent[];
-const FILES = ['agent-ctx.mjs', 'hook.mjs', 'LICENSES.txt'];
+const BUILT = ['agent-ctx.mjs', 'hook.mjs', 'LICENSES.txt'];
+const ONE = 'agent-ctx';
+const FILES = PROGRAM ? [ONE] : BUILT;
 const BACKUP = '.agent-ctx-backup';
-const SOURCE = 'npx -y github:sohan-bhat/agent-ctx';
+const DONE: Record<string, string> = { install: 'installed', uninstall: 'removed', add: 'added', remove: 'removed' };
 const SIGNS = ['CLAUDECODE', 'CURSOR_AGENT', 'CODEX_SANDBOX', 'GEMINI_CLI'];
 const ASKS: Agent[] = ['cursor', 'codex', 'gemini', 'claude-desktop'];
 const HELD = 'because the text has the form of an instruction to an agent';
@@ -25,10 +27,11 @@ const say = (...lines: string[]): void => void process.stdout.write(lines.map((l
 const list = (names: string[]): string => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 const lead = (text: string): string => text.slice(0, 1).toUpperCase() + text.slice(1);
 const count = (n: number, one: string, many = `${one}s`): string => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
-const quote = (text: string): string => (/^[\w\-./:=@%+,\\]+$/.test(text) ? text : JSON.stringify(text));
 const named = (agents: Agent[]): string => list(agents.map((agent) => NAMES[agent]));
 const text = (path: string): string | null => (fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : null);
 const real = (change: Change): boolean => !!change.run || change.after !== change.before;
+const source = (name: string): string => PROGRAM || join(dirname(fileURLToPath(import.meta.url)), name);
+const about = (): string[] => usage().map((line) => line.replace(/^agent-ctx(?= [a-z])/, typed()));
 
 function node(): string {
   const real = fs.realpathSync(process.execPath);
@@ -45,13 +48,7 @@ function node(): string {
 
 function paths(): Paths {
   const platform = process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux';
-  return { home: homedir(), app: join(folder(), 'app', FILES[0]), node: node(), platform };
-}
-
-function self(p: Paths): string {
-  const started = process.argv[1] ?? '';
-  if (basename(started) === 'agent-ctx' && !started.includes('_npx')) return 'agent-ctx';
-  return fs.existsSync(p.app) ? `node ${quote(p.app)}` : SOURCE;
+  return { home: homedir(), app: join(folder(), 'app', FILES[0]), node: PROGRAM ? '' : node(), platform };
 }
 
 function enter(line: string): Promise<boolean> {
@@ -75,31 +72,29 @@ async function agreed(yes: boolean): Promise<boolean> {
 }
 
 function program(p: Paths): { to: string; stale: string[]; missing: string[] } {
-  const from = dirname(fileURLToPath(import.meta.url));
   const to = dirname(p.app);
   const same = (name: string): boolean => {
-    const there = join(to, name);
-    return fs.existsSync(there) && fs.readFileSync(there).equals(fs.readFileSync(join(from, name)));
+    const [here, there] = [source(name), join(to, name)];
+    if (!fs.existsSync(there)) return false;
+    return fs.realpathSync(there) === fs.realpathSync(here) || (fs.statSync(there).size === fs.statSync(here).size && fs.readFileSync(there).equals(fs.readFileSync(here)));
   };
-  const missing = FILES.filter((name) => !fs.existsSync(join(from, name)));
-  const here = fs.existsSync(to) && fs.realpathSync(to) === fs.realpathSync(from);
-  return { to, missing, stale: here || missing.length ? [] : FILES.filter((name) => !same(name)) };
+  const missing = FILES.filter((name) => !fs.existsSync(source(name)));
+  return { to, missing, stale: missing.length ? [] : FILES.filter((name) => !same(name)) };
 }
 
 function place(to: string, names: string[]): void {
-  const from = dirname(fileURLToPath(import.meta.url));
   fs.mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
   fs.mkdirSync(to, { recursive: true, mode: 0o700 });
   for (const name of names) {
     const temp = join(to, `${name}.tmp`);
-    fs.copyFileSync(join(from, name), temp);
-    fs.chmodSync(temp, name.endsWith('.mjs') ? 0o755 : 0o644);
+    fs.copyFileSync(source(name), temp);
+    fs.chmodSync(temp, name.endsWith('.txt') ? 0o644 : 0o755);
     fs.renameSync(temp, join(to, name));
   }
 }
 
 function clear(to: string): boolean {
-  for (const name of FILES) for (const path of [join(to, name), join(to, `${name}.tmp`)]) fs.rmSync(path, { force: true });
+  for (const name of [...BUILT, ONE]) for (const path of [join(to, name), join(to, `${name}.tmp`)]) fs.rmSync(path, { force: true });
   try {
     fs.rmdirSync(to);
   } catch {
@@ -124,12 +119,12 @@ function write(steps: () => void): boolean {
   }
 }
 
-function commands(changes: Change[], task: string): void {
+function commands(changes: Change[]): void {
   for (const { run } of changes) {
     if (!run) continue;
     const done = spawnSync(run[0], run.slice(1), { stdio: 'ignore', timeout: 180000, shell: process.platform === 'win32' });
     if (!done.error && done.status === 0) continue;
-    say(`The plugin could not be ${task} from here, so type the next line in a terminal.`, run.join(' '));
+    say(`The ${run[1] === 'mcp' ? 'server' : 'plugin'} could not be ${DONE[run[2]]} from here, so type the next line in a terminal.`, run.map(quote).join(' '));
   }
 }
 
@@ -160,9 +155,9 @@ async function install(yes: boolean): Promise<number> {
     apply(edits);
   });
   if (!written) return 1;
-  commands(edits, 'installed');
+  commands(edits);
   const asks = found.some((agent) => ASKS.includes(agent));
-  say(`Open a new session in ${named(found)} so the memory is loaded.`, ...(asks ? ['Approve the agent-ctx server and hooks if an agent asks.'] : []), `Type ${self(p)} status to see what is connected.`);
+  say(`Open a new session in ${named(found)} so the memory is loaded.`, ...(asks ? ['Approve the agent-ctx server and hooks if an agent asks.'] : []), `Type ${typed()} status to see what is connected.`);
   return 0;
 }
 
@@ -170,7 +165,7 @@ async function uninstall(yes: boolean): Promise<number> {
   const p = paths();
   const found = detect(p);
   const recorded = fs.existsSync(join(p.home, '.claude', 'plugins', 'installed_plugins.json'));
-  const changes = AGENTS.filter((agent) => agent !== 'claude-code' || (recorded && found.includes(agent))).flatMap((agent) => unplan(agent, p));
+  const changes = AGENTS.flatMap((agent) => unplan(agent, p)).filter((change) => change.run?.[1] !== 'plugin' || (recorded && found.includes('claude-code')));
   const edits = changes.filter(real);
   const notes = changes.filter((change) => !real(change)).map((change) => change.what);
   const app = dirname(p.app);
@@ -193,7 +188,7 @@ async function uninstall(yes: boolean): Promise<number> {
   const written = write(() => apply([...edits, ...copies]));
   if (!written) return 1;
   if (fs.existsSync(app) && !clear(app)) say(`${app} contains other files and stays in place.`);
-  commands(edits, 'removed');
+  commands(edits);
   say(...memory);
   return 0;
 }
@@ -219,7 +214,7 @@ function status(): number {
         const bytes = [path, `${path}-wal`].reduce((n, part) => n + (fs.statSync(part, { throwIfNoEntry: false })?.size ?? 0), 0);
         lines.push(`The memory file is ${path} with ${size(bytes)}.`);
         lines.push(`The memory has ${count(sum((row) => row.kind === 'card'), 'card')}, ${count(sum((row) => row.kind === 'handoff'), 'handoff')} and ${count(sum((row) => row.kind === 'rule' && row.status === 'active' && !row.held), 'active rule')}.`);
-        if (pending) lines.push(`${lead(count(pending, 'rule is', 'rules are'))} pending. Type ${self(p)} rules to read ${pending === 1 ? 'the rule' : 'each rule'}.`);
+        if (pending) lines.push(`${lead(count(pending, 'rule is', 'rules are'))} pending. Type ${typed()} rules to read ${pending === 1 ? 'the rule' : 'each rule'}.`);
       } finally {
         db.close();
       }
@@ -228,17 +223,16 @@ function status(): number {
     }
   }
   const found = detect(p);
-  const on = found.filter((agent) => !plan(agent, p).length);
+  const on = found.filter((agent) => connected(agent, p));
   const off = found.filter((agent) => !on.includes(agent));
   lines.push(on.length ? `${lead(named(on))} ${on.length === 1 ? 'is' : 'are'} connected.` : 'No agent is connected.');
-  if (off.length) lines.push(`${lead(named(off))} ${off.length === 1 ? 'was found and is' : 'were found and are'} not connected. Type ${self(p)} install to connect.`);
+  if (off.length) lines.push(`${lead(named(off))} ${off.length === 1 ? 'was found and is' : 'were found and are'} not connected. Type ${typed()} install to connect.`);
   say(...lines);
   return 0;
 }
 
 async function rules(args: string[]): Promise<number> {
-  const p = paths();
-  const me = self(p);
+  const me = typed();
   const [verb, asked] = args;
   if (verb !== undefined && ((verb !== 'accept' && verb !== 'reject') || !asked)) {
     say(`Type ${me} rules to list the pending rules, ${me} rules accept ID to turn a rule on, or ${me} rules reject ID to turn a rule down.`);
@@ -296,7 +290,7 @@ async function rules(args: string[]): Promise<number> {
   }
 }
 
-function about(): string[] {
+function usage(): string[] {
   return [
     `agent-ctx ${VERSION} is one memory on this computer, shared by every agent you use.`,
     `The memory is kept in one file at ${file()} and nothing stays open in the background.`,
