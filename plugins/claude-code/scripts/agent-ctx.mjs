@@ -40357,7 +40357,7 @@ function serve(name) {
   };
   const codec2 = createRequestStateCodec({ key: randomBytes(32), ttlSeconds: 600 });
   const reach = { caller: () => ({ who: who2, memory: () => memory }), state: () => codec2 };
-  serveStdio(() => createServer(reach, "0.3.0"));
+  serveStdio(() => createServer(reach, "0.3.1"));
 }
 var init_serve = __esm({
   "local/src/serve.ts"() {
@@ -45146,7 +45146,7 @@ function size2(bytes2) {
 function status2() {
   const p = paths();
   const path = file();
-  const lines2 = [`agent-ctx ${"0.3.0"}`];
+  const lines2 = [`agent-ctx ${"0.3.1"}`];
   if (!fs4.existsSync(path)) lines2.push(`No memory file exists yet at ${path}.`);
   else {
     try {
@@ -45234,7 +45234,7 @@ async function rules(args2) {
 }
 function usage() {
   return [
-    `agent-ctx ${"0.3.0"} is one memory on this computer, shared by every agent you use.`,
+    `agent-ctx ${"0.3.1"} is one memory on this computer, shared by every agent you use.`,
     `The memory is kept in one file at ${file()} and nothing stays open in the background.`,
     "agent-ctx install      connect every agent found on this computer",
     "agent-ctx status       the memory file and the connected agents",
@@ -45252,7 +45252,7 @@ async function run3(args2) {
     return 0;
   }
   if (has("--version")) {
-    say3("0.3.0");
+    say3("0.3.1");
     return 0;
   }
   if (command2 === void 0 || command2 === "install") return install(has("--yes"));

@@ -1,6 +1,6 @@
 {
   "name": "agent-ctx",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Shared memory across agents from different vendors",
   "author": {
     "name": "agent-ctx"
