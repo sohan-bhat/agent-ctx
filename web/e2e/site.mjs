@@ -705,7 +705,7 @@ async function released(b, site, w, h) {
       for (const x of said.querySelectorAll('[aria-hidden]')) x.remove();
       e.scrollLeft = 80;
       const part = [...e.querySelectorAll('*')].find((x) => getComputedStyle(x).textOverflow === 'ellipsis') ?? e;
-      return { text: e.textContent, said: said.textContent.trim(), title: e.getAttribute('title') ?? '', room: e.clientWidth, need: e.scrollWidth, moved: e.scrollLeft, flow: getComputedStyle(e).overflowX, cut: `${getComputedStyle(part).textOverflow} ${getComputedStyle(part).whiteSpace}`, high: e.getBoundingClientRect().height, mono: /mono/i.test(getComputedStyle(e).fontFamily) };
+      return { text: e.textContent, said: said.textContent.trim(), title: e.getAttribute('title') ?? '', room: e.clientWidth, need: e.scrollWidth, moved: e.scrollLeft, over: e.getBoundingClientRect().right - (document.querySelector('[data-site=column]')?.getBoundingClientRect().right ?? 0), flow: getComputedStyle(e).overflowX, cut: `${getComputedStyle(part).textOverflow} ${getComputedStyle(part).whiteSpace}`, high: e.getBoundingClientRect().height, mono: /mono/i.test(getComputedStyle(e).fontFamily) };
     });
     const s = await shape(page);
     check(
@@ -715,7 +715,7 @@ async function released(b, site, w, h) {
     );
     check(`${tag} the pill shows the start of the prompt in the console font behind a sign that is hidden from a screen reader`, /^>\s*Set up agent-ctx/.test(pill.text) && pill.said === LINE && pill.title === LINE && pill.mono, pill.text);
     check(`${tag} the link inside the prompt is ${GUIDE}`, (pill.said.match(/https?:\/\/\S+/g) ?? []).join() === GUIDE, (pill.said.match(/https?:\/\/\S+/g) ?? []).join(' '));
-    check(`${tag} the pill never scrolls, never wraps and has no scroll width beyond the pill`, pill.room > 100 && pill.need <= pill.room && pill.moved === 0 && pill.flow !== 'auto' && pill.flow !== 'scroll' && pill.cut === 'ellipsis nowrap' && pill.high < 50, `${pill.need} px of content in ${pill.room} px, ${pill.cut}, ${Math.round(pill.high ?? 0)} px tall`);
+    check(`${tag} the pill never scrolls, never wraps, ends inside the text column and has no scroll width beyond the pill`, pill.room > 100 && pill.need <= pill.room && pill.over <= 0.5 && pill.moved === 0 && pill.flow !== 'auto' && pill.flow !== 'scroll' && pill.cut === 'ellipsis nowrap' && pill.high < 50, `${pill.need} px of content in ${pill.room} px, ${pill.cut}, ${Math.round(pill.high ?? 0)} px tall`);
     if (touch) await copy.tap().catch(() => {});
     else await copy.click().catch(() => {});
     const done = await waitFor(() => page.locator('[data-site=action]').getByRole('button', { name: 'Copied' }).count(), 2000);
