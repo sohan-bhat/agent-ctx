@@ -327,7 +327,7 @@ async function walk(b, site, w, h, scheme) {
     const frame = await box(page, '[data-site=demo]');
     const column = await box(page, '[data-site=column]');
     check(`${tag} the top of the demo frame is inside the first screen`, !!frame && frame.y > 0 && frame.y < h - 40, `frame ${span(frame)}`);
-    check(`${tag} the text column is ${wide ? 'between 600 and 700 px wide' : 'as wide as the screen allows'}`, !!column && (wide ? column.width >= 600 && column.width <= 700 : column.width <= w - 16 && column.width >= w - 80), `${Math.round(column?.width ?? 0)} px`);
+    check(`${tag} the text column is ${w >= 720 ? 'between 600 and 700 px wide' : 'as wide as the screen allows'}`, !!column && (w >= 720 ? column.width >= 600 && column.width <= 700 : Math.abs(column.width - (w - (w >= 640 ? 64 : 32))) <= 1), `${Math.round(column?.width ?? 0)} px`);
     check(`${tag} the demo frame is ${wide ? 'wider than the text column and at most 1100 px' : 'no wider than the screen'}`, !!frame && !!column && (wide ? frame.width >= column.width + 200 && frame.width <= 1100.5 : frame.width <= w), `${Math.round(frame?.width ?? 0)} px`);
     await page.waitForTimeout(700);
     const rest = await top(page);
