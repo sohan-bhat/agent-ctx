@@ -231,6 +231,7 @@ async function run(b, w, h) {
 
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });
+      await page.locator('#space').focus();
       await page.waitForTimeout(900);
       await shot('space', scheme);
       await menu(page, 'Rules');
