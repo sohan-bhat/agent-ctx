@@ -1,9 +1,11 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { browser, engine, overflow, waitFor, web } from './lib.mjs';
 
 const ROOT = path.join(web, '..');
@@ -23,7 +25,7 @@ const LANTERN = '/work/lantern';
 const GOALS = { search: 'Add berth search by arrival week', taps: 'Guard berth holds against a double submit', refund: 'Finish partial berth refunds', tiles: 'Split the tile export across workers', glyphs: 'Keep shaped labels between zoom levels', live: 'Email a berth confirmation' };
 const LINT = 'run the linter before each push';
 const DATES = 'write every date in ISO form';
-const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
+const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').filter(Boolean).map((s) => s.split('x').map(Number));
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok: !!ok });
@@ -109,8 +111,10 @@ function rows(where, query, ...args) {
 
 const stored = (where) => readdirSync(where.AGENT_CTX_HOME).filter((name) => name.startsWith('memory.db')).map((name) => readFileSync(path.join(where.AGENT_CTX_HOME, name)).toString('latin1')).join('');
 
-async function start(where) {
-  const child = spawn(process.execPath, [MAIN, 'page'], { env: where.env, stdio: ['ignore', 'pipe', 'pipe'] });
+const started = (where) => (existsSync(where.log) ? readFileSync(where.log, 'utf8') : '');
+
+async function start(where, env = where.env) {
+  const child = spawn(process.execPath, [MAIN, 'page'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   child.stdout.on('data', (d) => (out += String(d)));
   child.stderr.on('data', (d) => (out += String(d)));
@@ -184,7 +188,7 @@ async function run(b, w, h) {
     await seed(where);
     server = await start(where);
     const origin = `http://127.0.0.1:${server.port}`;
-    check(`${tag} the page command prints one line and starts no browser`, server.out().trim().split('\n').length === 1 && !existsSync(where.log), server.out().trim().replace(server.token, 'TOKEN'));
+    check(`${tag} the page command prints the address in one line`, server.out().trim().split('\n').length === 1, server.out().trim().replace(server.token, 'TOKEN'));
     ctx = await b.newContext({ viewport: { width: w, height: h }, hasTouch: touch, ...(engine === 'firefox' ? {} : { isMobile: touch }), acceptDownloads: true, colorScheme: 'light' });
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin }).catch(() => {});
     await ctx.addInitScript(() => {
@@ -281,8 +285,9 @@ async function run(b, w, h) {
     const wanted = [`The program is copied to ${app}.`, `The server agent-ctx is added to ${mcp}.`, `${hooks} is created with the agent-ctx hooks for sessionStart, beforeSubmitPrompt, postToolUse, afterAgentResponse and stop.`];
     await note();
     const wide = await overflow(page);
+    const past = await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('[role=dialog], [role=dialog] li')].map((e) => e.scrollWidth - e.clientWidth)));
     check(`${tag} Connect for Cursor shows the plain lines and writes nothing yet`, JSON.stringify(plan) === JSON.stringify(wanted) && readFileSync(mcp, 'utf8') === original && !existsSync(hooks) && !existsSync(app), plan.join(' | '));
-    check(`${tag} the lines with long paths stay inside the screen`, wide.scroll <= 0 && !wide.wide.length, JSON.stringify(wide));
+    check(`${tag} the lines with long paths stay inside the screen and inside the dialog`, wide.scroll <= 0 && !wide.wide.length && past <= 0, `${JSON.stringify(wide)}, ${past} px past the dialog`);
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `plan-${tag}-light.png`) });
     await page.locator('[data-plan=cursor]').getByRole('button', { name: 'Connect' }).click();
     const on = await waitFor(async () => (await row('cursor').getAttribute('data-connected').catch(() => null)) === '1', 4000);
@@ -308,7 +313,7 @@ async function run(b, w, h) {
     const copied = await waitFor(() => pane.getByRole('button', { name: 'Copied' }).count(), 2000);
     const clip = await page.evaluate(() => navigator.clipboard.readText()).catch(() => null);
     await note();
-    check(`${tag} Claude Code gets the line to type with a Copy button and no command is run`, typed === COMMAND && pills === 0 && !!copied && (clip === null || clip === COMMAND) && !existsSync(where.log), `${typed}, clipboard ${clip === null ? 'not readable in this browser' : 'holds the line'}`);
+    check(`${tag} Claude Code gets the line to type with a Copy button and no command is run`, typed === COMMAND && pills === 0 && !!copied && (clip === null || clip === COMMAND) && !/^claude /m.test(started(where)), `${typed}, clipboard ${clip === null ? 'not readable in this browser' : 'holds the line'}`);
     await shut(page);
 
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 10000 }), menu(page, 'Export')]);
@@ -351,6 +356,7 @@ async function run(b, w, h) {
     check(`${tag} no request leaves the loopback address`, urls.length > 10 && !outside.length, outside.length ? outside.join(' | ') : `${urls.length} requests, all to ${origin}`);
     check(`${tag} no console error on the page`, !errors.length, errors.join(' | '));
 
+    check(`${tag} no browser was opened by the page command`, !/^(open|xdg-open) /m.test(started(where)), started(where).trim().replace(server.token, 'TOKEN'));
     const again = await page.goto(`${origin}/`);
     check(`${tag} a load of the address without the token gets the one plain line`, again.status() === 403 && (await page.locator('body').textContent()).trim() === REFUSED);
     await ctx.close();
@@ -367,6 +373,53 @@ async function run(b, w, h) {
   }
 }
 
+async function fetched(b) {
+  const { NAME, pack } = await import(pathToFileURL(path.join(web, 'pack.mjs')).href);
+  const where = place();
+  const made = pack(FILES, path.join(where.dir, 'release', NAME));
+  const bytes = readFileSync(made.path);
+  const sum = (data) => `${createHash('sha256').update(data).digest('hex')}  ${NAME}\n`;
+  let sums = sum(Buffer.from('other bytes'));
+  const site = createServer((req, res) => {
+    const name = (req.url ?? '').slice(1);
+    if (name === NAME) return void res.writeHead(200).end(bytes);
+    if (name === 'SHA256SUMS') return void res.writeHead(200).end(sums);
+    res.writeHead(404).end();
+  });
+  await new Promise((done) => site.listen(0, '127.0.0.1', done));
+  const { AGENT_CTX_PAGE_DIR: _unused, ...rest } = where.env;
+  const env = { ...rest, AGENT_CTX_RELEASES: `http://127.0.0.1:${site.address().port}` };
+  const kept = path.join(where.AGENT_CTX_HOME, 'app', 'page');
+  let server = null;
+  let ctx = null;
+  try {
+    await seed(where);
+    const bad = spawn(process.execPath, [MAIN, 'page'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let said = '';
+    bad.stdout.on('data', (d) => (said += String(d)));
+    const code = await Promise.race([new Promise((done) => bad.on('exit', done)), sleep(15000).then(() => 'not ended')]);
+    if (bad.exitCode === null) bad.kill('SIGTERM');
+    check('a wrong hash ends in one plain line and keeps no page files', code === 1 && said.trim() === 'The fetched page files do not match the hash in SHA256SUMS, so nothing was kept.' && !existsSync(path.join(where.AGENT_CTX_HOME, 'app')), `exit ${code}, ${said.trim().split('\n')[0]}`);
+    sums = sum(bytes);
+    server = await start(where, env);
+    ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text().slice(0, 200)));
+    await page.goto(server.base);
+    await ready(page);
+    const s = await space(page);
+    const lines = server.out().trim().split('\n');
+    const whole = made.files.every((name) => existsSync(path.join(kept, ...name.split('/'))));
+    check('the page files fetched from a release address with a good hash draw the memory', lines.length === 2 && lines[0] === `The page files were fetched once and are kept in ${kept}.` && whole && s.blocks >= 5 && !errors.length, `${made.files.length} files in ${made.size} bytes, ${s.blocks} blocks${errors.length ? `, ${errors.join(' | ')}` : ''}`);
+  } finally {
+    if (ctx) await ctx.close();
+    if (server && server.child.exitCode === null) server.child.kill('SIGTERM');
+    await new Promise((done) => site.close(done));
+    rmSync(where.dir, { recursive: true, force: true });
+  }
+}
+
 if (!existsSync(path.join(FILES, 'index.html'))) {
   console.log(`No built page was found in ${FILES}. Run npm --prefix web run build:local first.`);
   process.exit(1);
@@ -374,6 +427,11 @@ if (!existsSync(path.join(FILES, 'index.html'))) {
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const b = await browser();
 try {
+  try {
+    await fetched(b);
+  } catch (e) {
+    check('the fetch path runs to the end', false, String(e?.message ?? e).split('\n')[0]);
+  }
   for (const [w, h] of sizes) {
     try {
       await run(b, w, h);

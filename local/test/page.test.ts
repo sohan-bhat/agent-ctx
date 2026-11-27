@@ -194,8 +194,9 @@ test('page prints the address in one plain line, serves the page files under the
   assert.deepEqual([bare.status, bare.headers.location], [308, `/${p.token}/`]);
   for (const path of ['_headers', 'missing.js', 'assets', 'assets/']) assert.equal((await ask(p.port, `/${p.token}/${path}`)).status, 404, path);
   assert.equal((await ask(p.port, `/${p.token}/`, { method: 'POST', headers: { origin: `http://127.0.0.1:${p.port}` } })).status, 405);
-  assert.equal(existsSync(join(where.root, 'open.log')), false, 'a browser was opened');
   assert.equal(await stop(p), 0);
+  await sleep(500);
+  assert.equal(existsSync(join(where.root, 'open.log')), false, 'a browser was opened');
   assert.deepEqual(opener('darwin', p.base), ['open', p.base]);
   assert.deepEqual(opener('linux', p.base), ['xdg-open', p.base]);
   assert.deepEqual(opener('win32', p.base), ['cmd', '/c', 'start', '', p.base]);
