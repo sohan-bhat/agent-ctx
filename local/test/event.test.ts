@@ -202,6 +202,95 @@ test('a saved Cursor prompt older than 30 minutes is forgotten', () => {
   assert.deepEqual(asked(where).map((r) => r.k), ['asked:c-5']);
 });
 
+const EMPTY = { code: 0, out: '{}', err: '' };
+const agy = (more: Json = {}, session = 'v-5'): Json => ({ conversationId: session, workspacePaths: [KILN], transcriptPath: '/work/brain/transcript.jsonl', artifactDirectoryPath: '/work/brain', modelName: 'model-v', ...more });
+const turn = (words: string, n = 0): Json => agy({ invocationNum: n, initialNumSteps: n + 1, lastUserInput: words });
+const used = (name: string, args: Json, error = ''): Json => agy({ toolCall: { name, args }, stepIdx: 3, error, tool_response: 'tool-result-text' });
+const step = (where: Place, event: string, stdin: Json, more: Record<string, string> = {}): ReturnType<typeof run> => run(HOOK, ['--agent', 'antigravity', '--event', event], where, JSON.stringify(stdin), more);
+const steps = (out: string): string => (JSON.parse(out) as { injectSteps: { systemMessage: { systemMessage: string } }[] }).injectSteps[0].systemMessage.systemMessage;
+const said = (where: Place): Asked[] => rows<Asked>(where, "SELECT k, v FROM meta WHERE k LIKE 'said:%' ORDER BY k");
+
+test('an Antigravity conversation is stored through hooks named in the command, and the first model call gets the handoff as one injected step', () => {
+  const where = place(TMP);
+  session(where);
+  const prompt = 'Fire the test tiles for the kiln shelf glaze';
+  const first = step(where, 'PreInvocation', turn(prompt));
+  assert.deepEqual([first.code, first.err], [0, '']);
+  const out = JSON.parse(first.out) as { injectSteps: Json[] };
+  assert.deepEqual([Object.keys(out), out.injectSteps.length, Object.keys(out.injectSteps[0])], [['injectSteps'], 1, ['systemMessage']]);
+  assert.equal(steps(first.out).split('\n')[0], HEADER.replace('NAME', 'kiln'));
+  assert.match(steps(first.out), /\nHANDOFF from claude-code on \d{4}-\d{2}-\d{2}[^\n]*\n> goal: Glaze the kiln shelf with the cone 6 mix\n/);
+  assert.deepEqual(quiet(step(where, 'PostToolUse', used('write_to_file', { TargetFile: `${KILN}/tiles.md`, CodeContent: 'cone 6' }))), EMPTY);
+  assert.deepEqual(quiet(step(where, 'PostToolUse', used('view_file', { AbsolutePath: `${KILN}/glaze.md` }))), EMPTY);
+  assert.deepEqual(quiet(step(where, 'PostToolUse', used('run_command', { CommandLine: 'npm test', Cwd: KILN }, 'exit status 1'))), EMPTY);
+  assert.deepEqual(quiet(step(where, 'Stop', agy({ executionNum: 1, terminationReason: 'model_stop', error: '', fullyIdle: true }))), EMPTY);
+  assert.deepEqual(rows<{ t: string; text: string; path: string; ok: number | null }>(where, "SELECT t, IFNULL(text, '') AS text, IFNULL(path, '') AS path, ok FROM events WHERE session = 'v-5' ORDER BY at, t DESC"), [
+    { t: 'prompt', text: prompt, path: '', ok: null },
+    { t: 'edit', text: '', path: `${KILN}/tiles.md`, ok: null },
+    { t: 'command', text: 'npm test', path: '', ok: 0 },
+    { t: 'stop', text: '', path: '', ok: 1 },
+  ]);
+  assert.deepEqual(rows<{ kind: string; via: string }>(where, "SELECT kind, json_extract(origin, '$.via') AS via FROM items WHERE json_extract(origin, '$.agent') = 'antigravity' ORDER BY kind"), [
+    { kind: 'card', via: 'hook' },
+    { kind: 'handoff', via: 'hook' },
+  ]);
+  assert.equal(readFileSync(join(where.AGENT_CTX_HOME, 'memory.db')).includes('tool-result-text'), false);
+  const next = hook(where, 'claude-code', claude('UserPromptSubmit', { prompt: 'continue' }, 's-9'));
+  assert.match(next.out, /\nHANDOFF from antigravity on \d{4}-\d{2}-\d{2}[^\n]*\n> goal: Fire the test tiles for the kiln shelf glaze\n/);
+  assert.equal(said(where).length, 1);
+});
+
+test('an Antigravity prompt is stored once however many model calls follow, and a prompt with new words is stored again', () => {
+  const where = place(TMP);
+  const prompt = 'Fire the test tiles for the kiln shelf glaze';
+  const later = `Which cone did we pick for the celadon glaze and why? key=${'sk'}-${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4'}`;
+  const prompts = (): number => rows<{ n: number }>(where, "SELECT COUNT(*) AS n FROM events WHERE session = 'v-5' AND t = 'prompt'")[0].n;
+  assert.deepEqual(quiet(step(where, 'PreInvocation', turn(prompt))), EMPTY);
+  rows(where, "UPDATE events SET key = 'old-' || key, at = at - 60000 WHERE session = 'v-5'");
+  for (const n of [1, 2, 3]) assert.deepEqual(quiet(step(where, 'PreInvocation', turn(prompt, n))), EMPTY);
+  assert.deepEqual([prompts(), said(where).map((r) => [r.k, (JSON.parse(r.v) as { prompt: string }).prompt])], [1, [['said:v-5', prompt]]]);
+  assert.deepEqual(quiet(step(where, 'PreInvocation', turn(prompt, 0))), EMPTY);
+  assert.equal(prompts(), 1);
+  assert.deepEqual(quiet(step(where, 'PreInvocation', turn(later, 4))), EMPTY);
+  assert.deepEqual(quiet(step(where, 'PreInvocation', turn(later, 5))), EMPTY);
+  assert.equal(prompts(), 2);
+  assert.equal(said(where)[0].v.includes('a1B2c3D4e5F6'), false);
+  assert.equal(readFileSync(join(where.AGENT_CTX_HOME, 'memory.db')).includes('a1B2c3D4e5F6'), false);
+  assert.deepEqual(quiet(step(where, 'PreInvocation', turn(prompt, 0))), EMPTY);
+  assert.equal(prompts(), 3);
+  assert.deepEqual(quiet(step(where, 'PreInvocation', agy({ invocationNum: 0, initialNumSteps: 1, lastUserInput: prompt }, 'v-6'))), EMPTY);
+  rows(where, 'UPDATE meta SET v = ? WHERE k = ?', JSON.stringify({ at: Date.now() - 8 * 86400000, prompt }), 'said:v-6');
+  assert.deepEqual(quiet(step(where, 'PreInvocation', turn(later, 6))), EMPTY);
+  assert.deepEqual(said(where).map((r) => r.k), ['said:v-5']);
+});
+
+test('an Antigravity hook prints an empty object and stores nothing with no event, a wrong event, broken input or a variable of another product', () => {
+  const where = place(TMP);
+  const stdin = JSON.stringify(turn('Fire the test tiles for the kiln shelf glaze'));
+  for (const args of [['--agent', 'antigravity'], ['--agent', 'antigravity', '--event'], ['--agent', 'antigravity', '--event', 'SessionStart'], ['--agent', 'antigravity', '--event=PostInvocation'], ['--agent=antigravity', '--event', 'constructor']]) {
+    assert.deepEqual(quiet(run(HOOK, args, where, stdin)), EMPTY, args.join(' '));
+  }
+  for (const input of ['', '{', 'not json', '[]', 'null']) assert.deepEqual(quiet(run(HOOK, ['--agent', 'antigravity', '--event', 'PreInvocation'], where, input)), EMPTY, input);
+  for (const sign of ['CURSOR_VERSION', 'DEVIN_PROJECT_DIR', 'GROK_HOOK_EVENT', 'MUSE_SESSION_ID']) assert.deepEqual(quiet(step(where, 'PreInvocation', JSON.parse(stdin) as Json, { [sign]: '1' })), EMPTY, sign);
+  assert.equal(existsSync(where.AGENT_CTX_HOME), false);
+  assert.deepEqual(quiet(run(HOOK, ['--agent', 'antigravity', '--event=PreInvocation'], where, stdin)), EMPTY);
+  assert.equal(count(where, 'events'), 1);
+  assert.deepEqual(quiet(run(MAIN, ['hook', '--agent', 'antigravity', '--event', 'Stop'], where, JSON.stringify(agy({ executionNum: 1, terminationReason: 'error', error: 'quota', fullyIdle: true })))), EMPTY);
+  assert.deepEqual(rows<{ t: string; ok: number | null }>(where, "SELECT t, ok FROM events WHERE t = 'stop'"), [{ t: 'stop', ok: 0 }]);
+  const blocked = place(TMP);
+  writeFileSync(blocked.AGENT_CTX_HOME, 'a file where the folder belongs');
+  assert.deepEqual(quiet(step(blocked, 'PreInvocation', JSON.parse(stdin) as Json)), EMPTY);
+});
+
+test('a Claude Code hook started inside Grok Build or Muse Code stores nothing and prints nothing', () => {
+  const where = place(TMP);
+  const event = claude('UserPromptSubmit', { prompt: ASK });
+  for (const sign of ['GROK_HOOK_EVENT', 'GROK_HOOK_NAME', 'GROK_SESSION_ID', 'GROK_WORKSPACE_ROOT', 'MUSE_SESSION_ID', 'MUSE_THREAD_ID']) assert.deepEqual(quiet(hook(where, 'claude-code', event, { [sign]: '1' })), SILENT, sign);
+  assert.equal(existsSync(where.AGENT_CTX_HOME), false);
+  assert.deepEqual(quiet(hook(where, 'claude-code', event, { GROK_HOME: '/work/grok', MUSE_TRANSPORT_TRACE: '1' })), SILENT);
+  assert.equal(count(where, 'events'), 1);
+});
+
 test('the local limits are 100,000 calls and 5,000 stored items a day in 100 MB, and no local text names an account or a page', async () => {
   assert.deepEqual(CAPS, { perMinute: 100000, perDay: 100000, storedPerDay: 5000, agents: 20, inputBytes: 8192, storeBytes: 100 * 1024 * 1024 });
   assert.deepEqual([MAX.perDay, MAX.storedPerDay, MAX.storeBytes], [2000, 500, 10 * 1024 * 1024]);

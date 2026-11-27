@@ -1,11 +1,12 @@
 import { read as readFd } from 'node:fs';
 import type { EventArgs, Part } from '../../service/src/engine.ts';
-import { fits, hears, read, write, type Host } from './hook.ts';
+import { blank, fits, hears, read, repeats, write, type Host } from './hook.ts';
 
 const WAIT = 1000;
 const GIVE_UP = 3000;
 const ASKED = 30 * 60000;
 const ASKED_CHARS = 800;
+const SAID = 7 * 86400000;
 const ID_MAX = 200;
 const CHUNK = 65536;
 const FRAME = 'claude-code';
@@ -16,11 +17,13 @@ const KICKED = 'mirror:kick';
 
 interface Asked { at: number; prompt: string }
 
-function agent(args: string[]): string | undefined {
-  const joined = args.find((a) => a.startsWith('--agent='));
-  if (joined) return joined.slice(8);
-  const at = args.indexOf('--agent');
-  return at >= 0 ? args[at + 1] : undefined;
+const ARGS = process.argv.slice(2);
+
+function option(name: string): string | undefined {
+  const joined = ARGS.find((a) => a.startsWith(`${name}=`));
+  if (joined) return joined.slice(name.length + 1);
+  const at = ARGS.indexOf(name);
+  return at >= 0 ? ARGS[at + 1] : undefined;
 }
 
 function stream(): Promise<string> {
@@ -65,9 +68,9 @@ async function sync(): Promise<void> {
 
 async function run(): Promise<string> {
   const started = Date.now();
-  const host = agent(process.argv.slice(2)) as Host | undefined;
+  const host = option('--agent') as Host | undefined;
   if (!host || !fits(host, process.env)) return '';
-  const a = read(host, await input());
+  const a = read(host, await input(), option('--event'));
   if (!a?.event) return '';
   const event = a.event;
   const [{ clean, stripOwn, stripPrivate }, { fitEvent }, { caller, local, open, who }] = await Promise.all([import('../../core/src/index.ts'), import('../../service/src/limits.ts'), import('./db.ts')]);
@@ -81,15 +84,24 @@ async function run(): Promise<string> {
         const fit = fitEvent({ ...args, host: FRAME });
         return fit ? local(plain((await engine.event(c, fit, part)).text)) : '';
       };
-      const late = !hears(host, 'UserPromptSubmit') && !!a.session && a.session.length <= ID_MAX;
+      const known = !!a.session && a.session.length <= ID_MAX;
+      const late = !hears(host, 'UserPromptSubmit') && known;
       const key = `asked:${a.session}`;
       const now = Date.now();
+      const words = (): string => clean(stripOwn(stripPrivate(a.prompt ?? '')), ASKED_CHARS);
+      const note = (prefix: string, age: number): void => {
+        for (const row of engine.store.q<{ k: string; v: string }>('SELECT k, v FROM meta WHERE k >= ? AND k < ?', `${prefix}:`, `${prefix};`)) {
+          if (now - (JSON.parse(row.v) as Asked).at > age) engine.store.dropMeta(row.k);
+        }
+        if (a.prompt) engine.store.setMeta(`${prefix}:${a.session}`, { at: now, prompt: words() } satisfies Asked);
+      };
+      if (event === 'UserPromptSubmit' && repeats(host) && known && a.prompt) {
+        if (engine.store.meta<Asked | null>(`said:${a.session}`, null)?.prompt === words()) return '';
+        note('said', SAID);
+      }
       if (event === 'UserPromptSubmit' && late) {
         await send(a, 'store');
-        for (const row of engine.store.q<{ k: string; v: string }>("SELECT k, v FROM meta WHERE k >= 'asked:' AND k < 'asked;'")) {
-          if (now - (JSON.parse(row.v) as Asked).at > ASKED) engine.store.dropMeta(row.k);
-        }
-        if (a.prompt) engine.store.setMeta(key, { at: now, prompt: clean(stripOwn(stripPrivate(a.prompt)), ASKED_CHARS) } satisfies Asked);
+        note('asked', ASKED);
         return '';
       }
       let text = '';
@@ -113,14 +125,17 @@ async function run(): Promise<string> {
   }
 }
 
+let printed = false;
+
+function end(out = ''): void {
+  const text = printed ? '' : out || blank(option('--agent'));
+  printed = true;
+  if (text) process.stdout.write(text, () => process.exit(0));
+  else process.exit(0);
+}
+
 process.emitWarning = () => undefined;
-process.on('uncaughtException', () => process.exit(0));
-process.on('unhandledRejection', () => process.exit(0));
-setTimeout(() => process.exit(0), GIVE_UP).unref();
-run().then(
-  (out) => {
-    if (out) process.stdout.write(out, () => process.exit(0));
-    else process.exit(0);
-  },
-  () => process.exit(0),
-);
+process.on('uncaughtException', () => end());
+process.on('unhandledRejection', () => end());
+setTimeout(end, GIVE_UP).unref();
+run().then(end, () => end());
