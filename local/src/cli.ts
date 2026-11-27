@@ -95,6 +95,7 @@ function place(to: string, names: string[]): void {
 }
 
 function clear(to: string): boolean {
+  fs.rmSync(join(to, 'page'), { recursive: true, force: true });
   for (const name of [...BUILT, ONE]) for (const path of [join(to, name), join(to, `${name}.tmp`)]) fs.rmSync(path, { force: true });
   try {
     fs.rmdirSync(to);
@@ -317,6 +318,7 @@ export async function run(args: string[]): Promise<number> {
   if (command === undefined || command === 'install') return install(has('--yes'));
   if (command === 'uninstall') return uninstall(has('--yes'));
   if (command === 'status') return status();
+  if (command === 'page') return (await import('./page.ts')).page({ paths, program, place, self, signs: SIGNS });
   if (command === 'rules') return rules(args.slice(args.indexOf('rules') + 1).filter((arg) => !arg.startsWith('-')));
   if (command === 'mirror' || command === 'sync' || command === 'restore') return mirror(command, args.slice(args.indexOf(command) + 1).filter((arg) => !arg.startsWith('-')), { say, me: typed(), agreed: () => agreed(has('--yes')) });
   process.stderr.write(`${[`No command named ${command.replace(/[^\w.-]+/g, '').slice(0, 40)} exists in this version.`, ...about()].join('\n')}\n`);
