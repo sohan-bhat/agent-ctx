@@ -9,6 +9,10 @@ const ASKED_CHARS = 800;
 const ID_MAX = 200;
 const CHUNK = 65536;
 const FRAME = 'claude-code';
+const MAIN = 'agent-ctx.mjs';
+const KICK = 60000;
+const MIRROR = 'mirror';
+const KICKED = 'mirror:kick';
 
 interface Asked { at: number; prompt: string }
 
@@ -53,6 +57,11 @@ function plain(text: string): string {
   }
 }
 
+async function sync(): Promise<void> {
+  const [{ spawn }, { fileURLToPath }] = await Promise.all([import('node:child_process'), import('node:url')]);
+  spawn(process.execPath, [fileURLToPath(new URL(MAIN, import.meta.url)), 'sync'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+}
+
 async function run(): Promise<string> {
   const started = Date.now();
   const host = agent(process.argv.slice(2)) as Host | undefined;
@@ -62,6 +71,7 @@ async function run(): Promise<string> {
   const event = a.event;
   const [{ clean, stripOwn, stripPrivate }, { fitEvent }, { caller, local, open, who }] = await Promise.all([import('../../core/src/index.ts'), import('../../service/src/limits.ts'), import('./db.ts')]);
   const db = open(WAIT);
+  let due = false;
   try {
     db.patience(started + WAIT - Date.now());
     return await caller(db)(async (engine) => {
@@ -90,10 +100,15 @@ async function run(): Promise<string> {
         }
       }
       const own = await send(a);
+      if ((event === 'SessionStart' || event === 'Stop') && engine.store.meta<{ on?: boolean } | null>(MIRROR, null)?.on && now - engine.store.meta<number>(KICKED, 0) >= KICK) {
+        engine.store.setMeta(KICKED, now);
+        due = true;
+      }
       return write(host, event, text || own);
     });
   } finally {
     db.close();
+    if (due) await sync().catch(() => undefined);
   }
 }
 

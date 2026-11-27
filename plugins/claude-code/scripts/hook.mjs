@@ -3999,6 +3999,10 @@ var ASKED_CHARS = 800;
 var ID_MAX2 = 200;
 var CHUNK = 65536;
 var FRAME = "claude-code";
+var MAIN = "agent-ctx.mjs";
+var KICK = 6e4;
+var MIRROR = "mirror";
+var KICKED = "mirror:kick";
 function agent(args) {
   const joined = args.find((a) => a.startsWith("--agent="));
   if (joined) return joined.slice(8);
@@ -4035,6 +4039,10 @@ function plain(text) {
     return "";
   }
 }
+async function sync() {
+  const [{ spawn }, { fileURLToPath }] = await Promise.all([import("node:child_process"), import("node:url")]);
+  spawn(process.execPath, [fileURLToPath(new URL(MAIN, import.meta.url)), "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+}
 async function run() {
   const started = Date.now();
   const host = agent(process.argv.slice(2));
@@ -4044,6 +4052,7 @@ async function run() {
   const event = a.event;
   const [{ clean: clean2, stripOwn: stripOwn2, stripPrivate: stripPrivate2 }, { fitEvent: fitEvent2 }, { caller: caller2, local: local2, open: open2, who: who2 }] = await Promise.all([Promise.resolve().then(() => (init_src(), src_exports)), Promise.resolve().then(() => (init_limits(), limits_exports)), Promise.resolve().then(() => (init_db(), db_exports))]);
   const db = open2(WAIT);
+  let due = false;
   try {
     db.patience(started + WAIT - Date.now());
     return await caller2(db)(async (engine) => {
@@ -4072,10 +4081,15 @@ async function run() {
         }
       }
       const own2 = await send(a);
+      if ((event === "SessionStart" || event === "Stop") && engine.store.meta(MIRROR, null)?.on && now - engine.store.meta(KICKED, 0) >= KICK) {
+        engine.store.setMeta(KICKED, now);
+        due = true;
+      }
       return write(host, event, text || own2);
     });
   } finally {
     db.close();
+    if (due) await sync().catch(() => void 0);
   }
 }
 process.emitWarning = () => void 0;

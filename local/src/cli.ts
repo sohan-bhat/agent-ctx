@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { projectName, resolveIds, ruleLine, shortIds, type Item, type RuleBody } from '../../core/src/index.ts';
 import { PROGRAM, Refusal, caller, file, folder, open, quote, typed, type Db } from './db.ts';
 import { apply, connected, detect, plan, unplan, type Agent, type Change, type Paths } from './install.ts';
+import { command as mirror } from './sync.ts';
 
 declare const VERSION: string;
 
@@ -316,6 +317,7 @@ export async function run(args: string[]): Promise<number> {
   if (command === 'uninstall') return uninstall(has('--yes'));
   if (command === 'status') return status();
   if (command === 'rules') return rules(args.slice(args.indexOf('rules') + 1).filter((arg) => !arg.startsWith('-')));
+  if (command === 'mirror' || command === 'sync' || command === 'restore') return mirror(command, args.slice(args.indexOf(command) + 1).filter((arg) => !arg.startsWith('-')), { say, me: self(paths()), agreed: () => agreed(has('--yes')) });
   process.stderr.write(`${[`No command named ${command.replace(/[^\w.-]+/g, '').slice(0, 40)} exists in this version.`, ...about()].join('\n')}\n`);
   return 1;
 }
