@@ -1,6 +1,6 @@
 # agent-ctx
 
-agent-ctx is one memory on your computer, shared by the agents you use. Claude Code, Cursor, Codex, Gemini CLI and the Claude desktop app read and write one file, so the next agent carries on where the last agent stopped. No program stays open in the background and the memory stays on the computer. Claude Code is proven with the real program, and the other four are built from the documents of each vendor and are not yet tested with the real programs.
+agent-ctx is one memory on your computer, shared by the agents you use. Claude Code, Cursor, Codex, Gemini CLI, Antigravity, Grok Build, Muse Code and the Claude desktop app read and write one file, so the next agent carries on where the last agent stopped. No program stays open in the background and the memory stays on the computer. Claude Code alone is proven with the real program. The other seven are built from the documents of each vendor and are not yet tested with the real programs.
 
 ## Install
 

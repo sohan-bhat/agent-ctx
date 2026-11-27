@@ -128,7 +128,7 @@ class Server {
 function home(name) {
   const root = join(TMP, name);
   const where = { root, HOME: join(root, 'home'), ctx: join(root, 'memory'), bin: join(root, 'bin'), log: join(root, 'claude.log') };
-  for (const dir of [where.bin, ...['.claude', '.cursor', '.codex', '.gemini'].map((d) => join(where.HOME, d))]) mkdirSync(dir, { recursive: true });
+  for (const dir of [where.bin, ...['.claude', '.cursor', '.codex', '.gemini', '.gemini/antigravity-cli', '.grok', '.config/muse'].map((d) => join(where.HOME, d))]) mkdirSync(dir, { recursive: true });
   writeFileSync(join(where.HOME, '.gemini', 'settings.json'), '{\n  "theme": "dark"\n}\n');
   const record = '"$HOME/.claude/plugins/installed_plugins.json"';
   const server = '{"mcpServers":{"agent-ctx":{"type":"stdio","command":"%s","args":["mcp","--agent","claude-code"],"env":{}}}}';
@@ -234,15 +234,15 @@ async function install() {
   const second = program(['install', '--yes'], where.env);
   const same = JSON.stringify([tree(where.HOME), tree(where.ctx)]) === JSON.stringify(once);
   const app = join(where.ctx, 'app');
-  const written = [...(PROGRAM ? ['.claude/settings.json'] : []), '.cursor/mcp.json', '.cursor/hooks.json', '.codex/config.toml', '.codex/hooks.json', '.gemini/settings.json'].map((f) => readFileSync(join(where.HOME, f), 'utf8'));
+  const written = [...(PROGRAM ? ['.claude/settings.json'] : []), '.cursor/mcp.json', '.cursor/hooks.json', '.codex/config.toml', '.codex/hooks.json', '.gemini/settings.json', '.gemini/config/mcp_config.json', '.gemini/config/hooks.json', '.grok/config.toml', '.config/muse/settings.json'].map((f) => readFileSync(join(where.HOME, f), 'utf8'));
   const paths = written.flatMap((text) => [...text.matchAll(/[^\s"']+\/app\/(?:agent-ctx(?:\.mjs)?|hook\.mjs)(?![\w.-])/g)].map((m) => m[0]));
-  const inApp = paths.length >= 12 && paths.every((p) => dirname(p) === app && existsSync(p));
+  const inApp = paths.length >= 18 && paths.every((p) => dirname(p) === app && existsSync(p));
   const bare = !PROGRAM || (readdirSync(app).join() === 'agent-ctx' && written.every((text) => !/\bnode\b|\.mjs/.test(text.split(TMP).join(''))));
   const calls = readFileSync(where.log, 'utf8').trim().split('\n');
   const want = PROGRAM ? `mcp add --scope user agent-ctx -- ${join(app, 'agent-ctx')} mcp --agent claude-code` : 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
   const pass = first.code === 0 && second.code === 0 && same && inApp && bare && calls.length === 1 && calls[0] === want && second.out.includes('already connected, so nothing was changed.');
   const form = PROGRAM ? `with one program of ${statSync(PROGRAM).size.toLocaleString('en-US')} bytes and no node on PATH, every written command is free of node and of script files ${bare}. ` : '';
-  return { pass, evidence: `${form}the stub got "claude ${calls.join(' | ')}", ${written.length} files were written for ${PROGRAM ? 'Claude Code, ' : ''}Cursor, Codex and Gemini CLI, all ${paths.length} program paths lie in ${relative(TMP, app)}, and the second run printed "${second.out.trim().split('\n').pop()}" with every file unchanged ${same}` };
+  return { pass, evidence: `${form}the stub got "claude ${calls.join(' | ')}", ${written.length} files were written for ${PROGRAM ? 'Claude Code, ' : ''}Cursor, Codex, Gemini CLI, Antigravity, Grok Build and Muse Code, all ${paths.length} program paths lie in ${relative(TMP, app)}, and the second run printed "${second.out.trim().split('\n').pop()}" with every file unchanged ${same}` };
 }
 
 async function removal() {
