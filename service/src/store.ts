@@ -1,7 +1,7 @@
 import { itemBytes, readRule, type Item, type Kind } from '../../core/src/index.ts';
 
 const SCHEMA = [
-  'CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER, updated INTEGER, taken INTEGER) WITHOUT ROWID',
   'CREATE INDEX IF NOT EXISTS items_project_created ON items(project, created)',
   "CREATE INDEX IF NOT EXISTS items_rules ON items(kind) WHERE kind = 'rule'",
   'CREATE TABLE IF NOT EXISTS events(session TEXT, key TEXT, t TEXT, at INTEGER, text TEXT, path TEXT, ok INTEGER, flags TEXT, PRIMARY KEY(session, key)) WITHOUT ROWID',
@@ -14,9 +14,16 @@ const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS delivered(reader TEXT PRIMARY KEY, items TEXT) WITHOUT ROWID',
   'CREATE TABLE IF NOT EXISTS queue(item TEXT PRIMARY KEY, at INTEGER) WITHOUT ROWID',
   'CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS hidden(id TEXT PRIMARY KEY, item TEXT, at INTEGER) WITHOUT ROWID',
+  'CREATE TABLE IF NOT EXISTS removed(id TEXT PRIMARY KEY, at INTEGER) WITHOUT ROWID',
 ];
 
-export const TABLES = ['items', 'events', 'sessions', 'projects', 'paths', 'aliases', 'agents', 'delivered', 'queue', 'meta'];
+const ADDED = ['updated', 'taken'];
+const PUT_COLUMNS = ['project', 'kind', 'body', 'origin', 'flags', 'held', 'pinned', 'folded', 'created', 'bytes', 'taken'];
+const STAMP = 'COALESCE(updated, created)';
+const PUT = `INSERT INTO items(id, ${PUT_COLUMNS.join(', ')}, updated) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ${PUT_COLUMNS.map((c) => `${c} = excluded.${c}`).join(', ')}, updated = CASE WHEN excluded.taken = 1 THEN excluded.updated ELSE MAX(excluded.updated, COALESCE(items.updated, items.created) + 1) END`;
+
+export const TABLES = ['items', 'events', 'sessions', 'projects', 'paths', 'aliases', 'agents', 'delivered', 'queue', 'meta', 'hidden', 'removed'];
 
 export interface ItemRow {
   id: string;
@@ -36,6 +43,8 @@ export interface EventRow { session: string; key: string; t: string; at: number;
 export interface SessionRow { id: string; agent: string; model: string | null; project: string; start: number; last: number; primed: number; grant_id: string; n: number }
 export interface AgentRow { id: string; label: string; first: number; last: number }
 export interface ReadRow { item: string; agent: string; at: number }
+export interface Gone { id: string; at: number }
+export type Timed = Item & { updated: number };
 
 export function toItem(r: ItemRow): Item {
   return {
@@ -84,6 +93,8 @@ export class Store {
 
   init(): void {
     for (const s of SCHEMA) this.q(s);
+    const have = new Set(this.q<{ name: string }>('PRAGMA table_info(items)').map((c) => c.name));
+    for (const column of ADDED) if (!have.has(column)) this.q(`ALTER TABLE items ADD COLUMN ${column} INTEGER`);
   }
 
   counts(): { read: number; written: number } {
@@ -142,10 +153,10 @@ export class Store {
     return this.q<{ bytes: number }>('SELECT bytes FROM items WHERE id = ?', id)[0]?.bytes ?? 0;
   }
 
-  put(item: Item): number {
+  put(item: Item, at: number | null = null, taken = false): number {
     const n = itemBytes(item);
     this.q(
-      'INSERT INTO items(id, project, kind, body, origin, flags, held, pinned, folded, created, bytes) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET project = excluded.project, kind = excluded.kind, body = excluded.body, origin = excluded.origin, flags = excluded.flags, held = excluded.held, pinned = excluded.pinned, folded = excluded.folded, created = excluded.created, bytes = excluded.bytes',
+      PUT,
       item.id,
       item.project,
       item.kind,
@@ -157,8 +168,49 @@ export class Store {
       item.folded ? 1 : 0,
       item.created,
       n,
+      taken ? 1 : 0,
+      at,
     );
     return n;
+  }
+
+  changed(since: number): Timed[] {
+    return this.q<ItemRow & { at: number }>(`SELECT *, ${STAMP} AS at FROM items WHERE ${STAMP} > ? AND COALESCE(taken, 0) = 0 ORDER BY at, id`, since).map((r) => ({ ...toItem(r), updated: r.at }));
+  }
+
+  timed(id: string): Timed | null {
+    const row = this.q<ItemRow & { at: number }>(`SELECT *, ${STAMP} AS at FROM items WHERE id = ?`, id)[0];
+    return row ? { ...toItem(row), updated: row.at } : null;
+  }
+
+  hide(id: string, item: Item | null, at: number): void {
+    this.q('INSERT INTO hidden(id, item, at) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET item = COALESCE(excluded.item, hidden.item), at = MAX(excluded.at, hidden.at)', id, item ? JSON.stringify(item) : null, at);
+  }
+
+  hiddenItem(id: string): Item | null {
+    const row = this.q<{ item: string | null }>('SELECT item FROM hidden WHERE id = ?', id)[0];
+    return row?.item ? (JSON.parse(row.item) as Item) : null;
+  }
+
+  hiddenItems(): Item[] {
+    return this.q<{ item: string }>('SELECT item FROM hidden WHERE item IS NOT NULL ORDER BY at DESC, id').map((r) => JSON.parse(r.item) as Item);
+  }
+
+  gone(table: 'hidden' | 'removed', since: number): Gone[] {
+    return this.q<Gone>(`SELECT id, at FROM ${table} WHERE at > ? ORDER BY at, id`, since);
+  }
+
+  goneAt(table: 'hidden' | 'removed', id: string): number | null {
+    return this.q<{ at: number }>(`SELECT at FROM ${table} WHERE id = ?`, id)[0]?.at ?? null;
+  }
+
+  setRemoved(id: string, at: number): void {
+    this.q('INSERT INTO removed(id, at) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET at = excluded.at', id, at);
+  }
+
+  unmark(id: string): void {
+    this.q('DELETE FROM hidden WHERE id = ?', id);
+    this.q('DELETE FROM removed WHERE id = ?', id);
   }
 
   remove(id: string): number {

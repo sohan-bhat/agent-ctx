@@ -216,6 +216,7 @@ export function caller(db: Db): Call {
         if (!engine || changes !== seen) {
           engine = new Engine(db, () => Date.now(), CAPS);
           engine.limits.reserve = 0;
+          engine.tracked = true;
           seen = changes;
         }
         const out = await fn(engine);

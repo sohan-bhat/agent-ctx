@@ -45,7 +45,7 @@ import {
   type Source,
   type Via,
 } from '../../core/src/index.ts';
-import { Store, TABLES, newer, type AgentRow, type EventRow, type ReadRow, type SessionRow, type Sql } from './store.ts';
+import { Store, TABLES, newer, type AgentRow, type EventRow, type Gone, type ReadRow, type SessionRow, type Sql, type Timed } from './store.ts';
 import { Limits, SAY, type Max } from './limits.ts';
 
 export interface Caller { agent: string; grant: string; scopes: string[] }
@@ -62,6 +62,9 @@ export interface Space { projects: { key: string; name: string; items: number }[
 export interface Me { bytes: number; max: number; callsToday: number; storedToday: number }
 export interface Exported { items: Item[]; projects: { key: string; name: string }[]; agents: AgentRow[] }
 export interface Page { send(text: string): void; close(): void; address(): string | null }
+export interface Changes { items: Timed[]; hidden: Gone[]; removed: Gone[] }
+export interface Merged { put: string[]; hidden: string[] }
+export interface NoteArgs { id: string; project?: string; text: string }
 
 const MINUTE = 60000;
 const DAY = 86400000;
@@ -94,6 +97,8 @@ export const SAME_CARD = 'Nothing new to save. This checkpoint matches a saved c
 export const ADDED_CARD = 'Checkpoint added to the saved card of the same work.';
 export const NOTHING_NEW = 'Nothing new found. Every line came from agent-ctx memory, so nothing was saved.';
 const KEPT_FLAGS = new Set(['role', 'override', 'shell']);
+const NOTE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/;
+const NOTE_PROJECT = 'inbox';
 
 function val(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
@@ -170,6 +175,7 @@ export class Engine {
   limits: Limits;
   lastRows = { read: 0, written: 0 };
   bootRows = { read: 0, written: 0 };
+  tracked = false;
   private sql: Sql;
   private now: () => number;
   private page: Page | null;
@@ -380,8 +386,8 @@ export class Engine {
     return compact({ agent: c.agent, model, session, via, source, at: now }) as Origin;
   }
 
-  private putItem(item: Item): void {
-    this.store.put(item);
+  private putItem(item: Item, at: number = this.now(), taken = false): void {
+    this.store.put(item, at, taken);
     for (const [key, list] of [...this.pools]) {
       const at = list.findIndex((i) => i.id === item.id);
       if (key !== item.project || item.folded) {
@@ -441,7 +447,7 @@ export class Engine {
     }
   }
 
-  private save(item: Item, now: number, counted: boolean, after?: (saved: Item) => void): Result {
+  private save(item: Item, now: number, counted: boolean, after?: (saved: Item) => void, alone = false): Result {
     if (counted) {
       const r = this.limits.canStore(now);
       if (r) {
@@ -457,7 +463,7 @@ export class Engine {
     }
     let prev = this.store.bytesOf(clean.id);
     let merged: 'added' | undefined;
-    if (clean.kind === 'card' && !prev) {
+    if (clean.kind === 'card' && !prev && !alone) {
       const target = this.mergeTarget(clean, now);
       if (target) {
         const next = mergeCard(target, clean, now);
@@ -478,7 +484,7 @@ export class Engine {
       this.limits.refuse(SAY.full, now);
       return { ok: false, text: SAY.full };
     }
-    this.putItem(clean);
+    this.putItem(clean, now);
     this.limits.setBytes(total - prev + size);
     if (counted) this.limits.stored(now);
     this.limits.clear();
@@ -500,7 +506,7 @@ export class Engine {
       for (const i of before) if (!kept.has(i.id)) this.store.remove(i.id);
       for (const i of items) {
         const o = old.get(i.id);
-        if (!o || o.folded !== i.folded || JSON.stringify(o.body) !== JSON.stringify(i.body)) this.store.put(i);
+        if (!o || o.folded !== i.folded || JSON.stringify(o.body) !== JSON.stringify(i.body)) this.store.put(i, now);
       }
       total = totalBytes(items);
     });
@@ -1114,14 +1120,94 @@ export class Engine {
   }
 
   async remove(id: string): Promise<boolean> {
-    const item = this.store.item(id);
+    const item = this.tracked ? this.store.timed(id) : this.store.item(id);
     if (!item) return false;
     const n = this.removeItem(item);
     const now = this.now();
+    if (this.tracked) this.store.setRemoved(id, Math.max(now, (item as Timed).updated + 1));
     this.limits.setBytes(this.limits.bytes() - n);
     this.limits.flush(now, true);
     this.push({ type: 'remove', id });
     return true;
+  }
+
+  changes(since: number): Changes {
+    return { items: this.store.changed(since), hidden: this.store.gone('hidden', since), removed: this.store.gone('removed', since) };
+  }
+
+  private place(item: Item, now: number, at: number, taken: boolean): boolean {
+    const limit = this.itemRoom();
+    const size = itemBytes(item);
+    let prev = this.store.bytesOf(item.id);
+    let total = this.limits.bytes();
+    if (total - prev + size > FOLD_AT * limit && total > this.limits.folded() + 0.02 * limit) {
+      total = this.fold(now);
+      prev = this.store.bytesOf(item.id);
+    }
+    if (total - prev + size > limit) return false;
+    this.putItem(item, at, taken);
+    this.limits.setBytes(total - prev + size);
+    this.store.unmark(item.id);
+    this.push({ type: 'item', item });
+    return true;
+  }
+
+  private guarded(item: Item): Item {
+    const b = item.body as RuleBody;
+    if (item.kind !== 'rule' || b.status !== 'active') return item;
+    const old = this.store.item(item.id);
+    const o = old?.kind === 'rule' ? (old.body as RuleBody) : null;
+    if (o && o.status === 'active' && old?.project === item.project && o.text === b.text && o.words === b.words && o.scope === b.scope) return { ...item, body: o };
+    const { proof: _proof, ...rest } = b;
+    return { ...item, body: { ...rest, status: 'pending' } };
+  }
+
+  merged(m: { put: Item[]; hide: string[] }, when: Record<string, number> = {}): Merged {
+    const now = this.now();
+    const out: Merged = { put: [], hidden: [] };
+    for (const raw of m.put ?? []) {
+      const { updated, ...item } = raw as Item & { updated?: number };
+      const at = typeof updated === 'number' ? updated : now;
+      if (Math.max(this.store.goneAt('hidden', item.id) ?? -1, this.store.goneAt('removed', item.id) ?? -1) >= at) continue;
+      if (this.place(fit(this.guarded(item)), now, at, true)) out.put.push(item.id);
+    }
+    for (const id of m.hide ?? []) {
+      const item = this.store.item(id);
+      if (item) {
+        this.limits.setBytes(this.limits.bytes() - this.removeItem(item));
+        this.push({ type: 'remove', id });
+        out.hidden.push(id);
+      }
+      this.store.hide(id, item, Object.hasOwn(when, id) ? when[id] : now);
+    }
+    this.limits.flush(now, true);
+    return out;
+  }
+
+  hidden(): ItemView[] {
+    return this.store.hiddenItems().map(view);
+  }
+
+  unhide(id: string): ItemView | null {
+    const item = this.store.hiddenItem(id);
+    const now = this.now();
+    if (!item || !this.place(item, now, Math.max(now, (this.store.goneAt('hidden', id) ?? 0) + 1), false)) return null;
+    this.limits.flush(now, true);
+    return view(item);
+  }
+
+  async note(c: Caller, a: NoteArgs): Promise<Result> {
+    return this.measure(async () => {
+      const now = this.now();
+      const stop = await this.gate(c, now, 'write', a);
+      if (stop) return stop;
+      const text = val(a.text);
+      if (typeof a.id !== 'string' || !NOTE_ID.test(a.id) || !text) return { ok: false, text: '' };
+      if (this.store.bytesOf(a.id) || this.store.goneAt('hidden', a.id) !== null || this.store.goneAt('removed', a.id) !== null) return { ok: true, text: '' };
+      const project = this.project({ folder: val(a.project) ?? NOTE_PROJECT }, now);
+      if (!project) return { ok: false, text: this.refusal ?? SAY.place };
+      return this.save({ ...newItem('card', project, { goal: text }, this.origin(c, now, 'import', 'agent')), id: a.id }, now, true, undefined, true);
+    });
   }
 
   async addRule(a: { text: string; scope: 'project' | 'all'; project?: string }): Promise<Result> {
@@ -1157,7 +1243,7 @@ export class Engine {
     const has = (k: string) => this.store.q('SELECT key FROM projects WHERE key = ?', k).length > 0;
     if (!has(from) || !has(into)) return false;
     this.sql.transactionSync(() => {
-      this.store.q('UPDATE items SET project = ? WHERE project = ?', into, from);
+      this.store.q('UPDATE items SET project = ?, updated = MAX(?, COALESCE(updated, created) + 1), taken = 0 WHERE project = ?', into, this.now(), from);
       this.store.q('UPDATE paths SET key = ? WHERE key = ?', into, from);
       this.store.q('UPDATE aliases SET key = ? WHERE key = ?', into, from);
       this.store.q('UPDATE sessions SET project = ? WHERE project = ?', into, from);

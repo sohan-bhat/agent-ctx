@@ -2313,13 +2313,13 @@ function toItem(r) {
 function newer(a, b) {
   return b.created - a.created || (b.id < a.id ? -1 : b.id > a.id ? 1 : 0);
 }
-var SCHEMA, TABLES, Store;
+var SCHEMA, ADDED, PUT_COLUMNS, STAMP, PUT, TABLES, Store;
 var init_store = __esm({
   "service/src/store.ts"() {
     "use strict";
     init_src();
     SCHEMA = [
-      "CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER) WITHOUT ROWID",
+      "CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, project TEXT, kind TEXT, body TEXT, origin TEXT, flags TEXT, held INTEGER, pinned INTEGER, folded INTEGER, created INTEGER, bytes INTEGER, updated INTEGER, taken INTEGER) WITHOUT ROWID",
       "CREATE INDEX IF NOT EXISTS items_project_created ON items(project, created)",
       "CREATE INDEX IF NOT EXISTS items_rules ON items(kind) WHERE kind = 'rule'",
       "CREATE TABLE IF NOT EXISTS events(session TEXT, key TEXT, t TEXT, at INTEGER, text TEXT, path TEXT, ok INTEGER, flags TEXT, PRIMARY KEY(session, key)) WITHOUT ROWID",
@@ -2331,9 +2331,15 @@ var init_store = __esm({
       "CREATE TABLE IF NOT EXISTS agents(id TEXT PRIMARY KEY, label TEXT, first INTEGER, last INTEGER) WITHOUT ROWID",
       "CREATE TABLE IF NOT EXISTS delivered(reader TEXT PRIMARY KEY, items TEXT) WITHOUT ROWID",
       "CREATE TABLE IF NOT EXISTS queue(item TEXT PRIMARY KEY, at INTEGER) WITHOUT ROWID",
-      "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT) WITHOUT ROWID"
+      "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT) WITHOUT ROWID",
+      "CREATE TABLE IF NOT EXISTS hidden(id TEXT PRIMARY KEY, item TEXT, at INTEGER) WITHOUT ROWID",
+      "CREATE TABLE IF NOT EXISTS removed(id TEXT PRIMARY KEY, at INTEGER) WITHOUT ROWID"
     ];
-    TABLES = ["items", "events", "sessions", "projects", "paths", "aliases", "agents", "delivered", "queue", "meta"];
+    ADDED = ["updated", "taken"];
+    PUT_COLUMNS = ["project", "kind", "body", "origin", "flags", "held", "pinned", "folded", "created", "bytes", "taken"];
+    STAMP = "COALESCE(updated, created)";
+    PUT = `INSERT INTO items(id, ${PUT_COLUMNS.join(", ")}, updated) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ${PUT_COLUMNS.map((c) => `${c} = excluded.${c}`).join(", ")}, updated = CASE WHEN excluded.taken = 1 THEN excluded.updated ELSE MAX(excluded.updated, COALESCE(items.updated, items.created) + 1) END`;
+    TABLES = ["items", "events", "sessions", "projects", "paths", "aliases", "agents", "delivered", "queue", "meta", "hidden", "removed"];
     Store = class {
       rowsRead = 0;
       rowsWritten = 0;
@@ -2350,6 +2356,8 @@ var init_store = __esm({
       }
       init() {
         for (const s of SCHEMA) this.q(s);
+        const have = new Set(this.q("PRAGMA table_info(items)").map((c) => c.name));
+        for (const column of ADDED) if (!have.has(column)) this.q(`ALTER TABLE items ADD COLUMN ${column} INTEGER`);
       }
       counts() {
         return { read: this.rowsRead, written: this.rowsWritten };
@@ -2395,10 +2403,10 @@ var init_store = __esm({
       bytesOf(id) {
         return this.q("SELECT bytes FROM items WHERE id = ?", id)[0]?.bytes ?? 0;
       }
-      put(item) {
+      put(item, at2 = null, taken = false) {
         const n = itemBytes(item);
         this.q(
-          "INSERT INTO items(id, project, kind, body, origin, flags, held, pinned, folded, created, bytes) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET project = excluded.project, kind = excluded.kind, body = excluded.body, origin = excluded.origin, flags = excluded.flags, held = excluded.held, pinned = excluded.pinned, folded = excluded.folded, created = excluded.created, bytes = excluded.bytes",
+          PUT,
           item.id,
           item.project,
           item.kind,
@@ -2409,9 +2417,41 @@ var init_store = __esm({
           item.pinned ? 1 : 0,
           item.folded ? 1 : 0,
           item.created,
-          n
+          n,
+          taken ? 1 : 0,
+          at2
         );
         return n;
+      }
+      changed(since) {
+        return this.q(`SELECT *, ${STAMP} AS at FROM items WHERE ${STAMP} > ? AND COALESCE(taken, 0) = 0 ORDER BY at, id`, since).map((r) => ({ ...toItem(r), updated: r.at }));
+      }
+      timed(id) {
+        const row = this.q(`SELECT *, ${STAMP} AS at FROM items WHERE id = ?`, id)[0];
+        return row ? { ...toItem(row), updated: row.at } : null;
+      }
+      hide(id, item, at2) {
+        this.q("INSERT INTO hidden(id, item, at) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET item = COALESCE(excluded.item, hidden.item), at = MAX(excluded.at, hidden.at)", id, item ? JSON.stringify(item) : null, at2);
+      }
+      hiddenItem(id) {
+        const row = this.q("SELECT item FROM hidden WHERE id = ?", id)[0];
+        return row?.item ? JSON.parse(row.item) : null;
+      }
+      hiddenItems() {
+        return this.q("SELECT item FROM hidden WHERE item IS NOT NULL ORDER BY at DESC, id").map((r) => JSON.parse(r.item));
+      }
+      gone(table, since) {
+        return this.q(`SELECT id, at FROM ${table} WHERE at > ? ORDER BY at, id`, since);
+      }
+      goneAt(table, id) {
+        return this.q(`SELECT at FROM ${table} WHERE id = ?`, id)[0]?.at ?? null;
+      }
+      setRemoved(id, at2) {
+        this.q("INSERT INTO removed(id, at) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET at = excluded.at", id, at2);
+      }
+      unmark(id) {
+        this.q("DELETE FROM hidden WHERE id = ?", id);
+        this.q("DELETE FROM removed WHERE id = ?", id);
       }
       remove(id) {
         const n = this.bytesOf(id);
@@ -2501,7 +2541,7 @@ function keep(m, k, v, cap) {
   while (m.size > cap) m.delete(m.keys().next().value);
   return v;
 }
-var MINUTE, DAY3, LIVE2, AGENT_LIVE, SAME_GRANT_WAIT, KEEP_EVENTS, EVENTS_PER_SESSION, POOL, SPACE_ITEMS, READS_KEPT, POOLS_KEPT, SESSIONS_KEPT, EVENT_SESSIONS_KEPT, WALK_PAGE, OWN_TOOL, PATH_MAX, ID_MAX, MAX_PROJECTS, ROW, STOP_CHARS, SUMMARY_CHARS, PROMPT_KEPT, PROMPT_LONG, COMMAND_CHARS, PLACEHOLDER, FAILED2, NOT_STATED, SAME_CARD, ADDED_CARD, NOTHING_NEW, KEPT_FLAGS, Engine;
+var MINUTE, DAY3, LIVE2, AGENT_LIVE, SAME_GRANT_WAIT, KEEP_EVENTS, EVENTS_PER_SESSION, POOL, SPACE_ITEMS, READS_KEPT, POOLS_KEPT, SESSIONS_KEPT, EVENT_SESSIONS_KEPT, WALK_PAGE, OWN_TOOL, PATH_MAX, ID_MAX, MAX_PROJECTS, ROW, STOP_CHARS, SUMMARY_CHARS, PROMPT_KEPT, PROMPT_LONG, COMMAND_CHARS, PLACEHOLDER, FAILED2, NOT_STATED, SAME_CARD, ADDED_CARD, NOTHING_NEW, KEPT_FLAGS, NOTE_ID, NOTE_PROJECT, Engine;
 var init_engine = __esm({
   "service/src/engine.ts"() {
     "use strict";
@@ -2539,11 +2579,14 @@ var init_engine = __esm({
     ADDED_CARD = "Checkpoint added to the saved card of the same work.";
     NOTHING_NEW = "Nothing new found. Every line came from agent-ctx memory, so nothing was saved.";
     KEPT_FLAGS = /* @__PURE__ */ new Set(["role", "override", "shell"]);
+    NOTE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/;
+    NOTE_PROJECT = "inbox";
     Engine = class {
       store;
       limits;
       lastRows = { read: 0, written: 0 };
       bootRows = { read: 0, written: 0 };
+      tracked = false;
       sql;
       now;
       page;
@@ -2738,22 +2781,22 @@ var init_engine = __esm({
       origin(c, now, via, source, session, model) {
         return compact({ agent: c.agent, model, session, via, source, at: now });
       }
-      putItem(item) {
-        this.store.put(item);
+      putItem(item, at2 = this.now(), taken = false) {
+        this.store.put(item, at2, taken);
         for (const [key, list] of [...this.pools]) {
-          const at2 = list.findIndex((i) => i.id === item.id);
+          const at3 = list.findIndex((i) => i.id === item.id);
           if (key !== item.project || item.folded) {
-            if (at2 >= 0) this.pools.delete(key);
+            if (at3 >= 0) this.pools.delete(key);
             continue;
           }
           const full = list.length >= POOL;
-          if (at2 >= 0) list.splice(at2, 1);
+          if (at3 >= 0) list.splice(at3, 1);
           const pos = list.findIndex((i) => newer(item, i) < 0);
           if (pos >= 0) {
             list.splice(pos, 0, item);
             if (list.length > POOL) list.pop();
           } else if (!full) list.push(item);
-          else if (at2 >= 0) this.pools.delete(key);
+          else if (at3 >= 0) this.pools.delete(key);
         }
         if (item.kind === "rule" && this.rulesCache) this.rulesCache = [...this.rulesCache.filter((r) => r.id !== item.id), item];
       }
@@ -2793,7 +2836,7 @@ var init_engine = __esm({
           this.deliveredCache.get(r.reader)?.delete(id);
         }
       }
-      save(item, now, counted, after2) {
+      save(item, now, counted, after2, alone = false) {
         if (counted) {
           const r = this.limits.canStore(now);
           if (r) {
@@ -2809,7 +2852,7 @@ var init_engine = __esm({
         }
         let prev = this.store.bytesOf(clean2.id);
         let merged;
-        if (clean2.kind === "card" && !prev) {
+        if (clean2.kind === "card" && !prev && !alone) {
           const target = this.mergeTarget(clean2, now);
           if (target) {
             const next = mergeCard(target, clean2, now);
@@ -2830,7 +2873,7 @@ var init_engine = __esm({
           this.limits.refuse(SAY.full, now);
           return { ok: false, text: SAY.full };
         }
-        this.putItem(clean2);
+        this.putItem(clean2, now);
         this.limits.setBytes(total - prev + size2);
         if (counted) this.limits.stored(now);
         this.limits.clear();
@@ -2851,7 +2894,7 @@ var init_engine = __esm({
           for (const i of before) if (!kept.has(i.id)) this.store.remove(i.id);
           for (const i of items) {
             const o = old.get(i.id);
-            if (!o || o.folded !== i.folded || JSON.stringify(o.body) !== JSON.stringify(i.body)) this.store.put(i);
+            if (!o || o.folded !== i.folded || JSON.stringify(o.body) !== JSON.stringify(i.body)) this.store.put(i, now);
           }
           total = totalBytes(items);
         });
@@ -3428,14 +3471,87 @@ ${SAY.placeRead}` : SAY.placeRead, noProject: true };
         return view(i);
       }
       async remove(id) {
-        const item = this.store.item(id);
+        const item = this.tracked ? this.store.timed(id) : this.store.item(id);
         if (!item) return false;
         const n = this.removeItem(item);
         const now = this.now();
+        if (this.tracked) this.store.setRemoved(id, Math.max(now, item.updated + 1));
         this.limits.setBytes(this.limits.bytes() - n);
         this.limits.flush(now, true);
         this.push({ type: "remove", id });
         return true;
+      }
+      changes(since) {
+        return { items: this.store.changed(since), hidden: this.store.gone("hidden", since), removed: this.store.gone("removed", since) };
+      }
+      place(item, now, at2, taken) {
+        const limit = this.itemRoom();
+        const size2 = itemBytes(item);
+        let prev = this.store.bytesOf(item.id);
+        let total = this.limits.bytes();
+        if (total - prev + size2 > FOLD_AT * limit && total > this.limits.folded() + 0.02 * limit) {
+          total = this.fold(now);
+          prev = this.store.bytesOf(item.id);
+        }
+        if (total - prev + size2 > limit) return false;
+        this.putItem(item, at2, taken);
+        this.limits.setBytes(total - prev + size2);
+        this.store.unmark(item.id);
+        this.push({ type: "item", item });
+        return true;
+      }
+      guarded(item) {
+        const b = item.body;
+        if (item.kind !== "rule" || b.status !== "active") return item;
+        const old = this.store.item(item.id);
+        const o = old?.kind === "rule" ? old.body : null;
+        if (o && o.status === "active" && old?.project === item.project && o.text === b.text && o.words === b.words && o.scope === b.scope) return { ...item, body: o };
+        const { proof: _proof, ...rest } = b;
+        return { ...item, body: { ...rest, status: "pending" } };
+      }
+      merged(m, when = {}) {
+        const now = this.now();
+        const out = { put: [], hidden: [] };
+        for (const raw of m.put ?? []) {
+          const { updated, ...item } = raw;
+          const at2 = typeof updated === "number" ? updated : now;
+          if (Math.max(this.store.goneAt("hidden", item.id) ?? -1, this.store.goneAt("removed", item.id) ?? -1) >= at2) continue;
+          if (this.place(fit(this.guarded(item)), now, at2, true)) out.put.push(item.id);
+        }
+        for (const id of m.hide ?? []) {
+          const item = this.store.item(id);
+          if (item) {
+            this.limits.setBytes(this.limits.bytes() - this.removeItem(item));
+            this.push({ type: "remove", id });
+            out.hidden.push(id);
+          }
+          this.store.hide(id, item, Object.hasOwn(when, id) ? when[id] : now);
+        }
+        this.limits.flush(now, true);
+        return out;
+      }
+      hidden() {
+        return this.store.hiddenItems().map(view);
+      }
+      unhide(id) {
+        const item = this.store.hiddenItem(id);
+        const now = this.now();
+        if (!item || !this.place(item, now, Math.max(now, (this.store.goneAt("hidden", id) ?? 0) + 1), false)) return null;
+        this.limits.flush(now, true);
+        return view(item);
+      }
+      async note(c, a) {
+        return this.measure(async () => {
+          const now = this.now();
+          const stop = await this.gate(c, now, "write", a);
+          if (stop) return stop;
+          const text = val(a.text);
+          if (typeof a.id !== "string" || !NOTE_ID.test(a.id) || !text) return { ok: false, text: "" };
+          if (this.store.bytesOf(a.id) || this.store.goneAt("hidden", a.id) !== null || this.store.goneAt("removed", a.id) !== null) return { ok: true, text: "" };
+          const project = this.project({ folder: val(a.project) ?? NOTE_PROJECT }, now);
+          if (!project) return { ok: false, text: this.refusal ?? SAY.place };
+          return this.save({ ...newItem("card", project, { goal: text }, this.origin(c, now, "import", "agent")), id: a.id }, now, true, void 0, true);
+        });
       }
       async addRule(a) {
         const now = this.now();
@@ -3468,7 +3584,7 @@ ${SAY.placeRead}` : SAY.placeRead, noProject: true };
         const has = (k) => this.store.q("SELECT key FROM projects WHERE key = ?", k).length > 0;
         if (!has(from) || !has(into)) return false;
         this.sql.transactionSync(() => {
-          this.store.q("UPDATE items SET project = ? WHERE project = ?", into, from);
+          this.store.q("UPDATE items SET project = ?, updated = MAX(?, COALESCE(updated, created) + 1), taken = 0 WHERE project = ?", into, this.now(), from);
           this.store.q("UPDATE paths SET key = ? WHERE key = ?", into, from);
           this.store.q("UPDATE aliases SET key = ? WHERE key = ?", into, from);
           this.store.q("UPDATE sessions SET project = ? WHERE project = ?", into, from);
@@ -3615,6 +3731,7 @@ function caller(db) {
     if (!engine || changes !== seen) {
       engine = new Engine(db, () => Date.now(), CAPS);
       engine.limits.reserve = 0;
+      engine.tracked = true;
       seen = changes;
     }
     const out = await fn(engine);
