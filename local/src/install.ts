@@ -2,21 +2,23 @@ import fs from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, win32 } from 'node:path';
 import PLUGIN from '../../plugins/claude-code/hooks/hooks.json' with { type: 'json' };
 
-export type Agent = 'claude-code' | 'cursor' | 'codex' | 'gemini' | 'claude-desktop';
+export type Agent = 'claude-code' | 'cursor' | 'codex' | 'gemini' | 'antigravity' | 'grok' | 'muse' | 'claude-desktop';
 export interface Paths { home: string; app: string; node: string; platform: 'darwin' | 'linux' | 'win32' }
-export interface Change { file: string; what: string; before: string | null; after: string | null; run?: string[] }
+export interface Change { file: string; what: string; before: string | null; after: string | null; run?: string[]; folder?: boolean }
 
 type Obj = Record<string, unknown>;
 type Mine = (value: unknown) => boolean;
 type Verb = 'created' | 'added' | 'updated' | 'removed' | 'gone';
 interface Hooks { events: string[]; nested: boolean; version: boolean; entry: Obj; groups?: Record<string, Obj[]> }
-interface Target { file: string; server?: Obj; hooks?: Hooks }
+interface Target { file: string; server?: Obj; hooks?: Hooks; block?: Obj; under?: string; stamp?: string }
 interface Part { path: string[]; array: boolean; from: number; to: number }
 interface Pair { name: string; full: string[]; value: string }
 
 const NAME = 'agent-ctx';
 const BACKUP = `.${NAME}-backup`;
 const HOOK = 'hook.mjs';
+const SERVERS = 'mcpServers';
+const KEPT = 'write_to_file|replace_file_content|multi_replace_file_content|run_command';
 const MARK = /"agent-ctx"\s*:|hook\.mjs\\?"? --agent |agent-ctx\\?"? hook --agent |^\s*\[\s*mcp_servers\s*\.\s*["']?agent-ctx/m;
 const LAYOUT = 'has an unexpected layout';
 const LINK = 'is a link to a place outside the home folder';
@@ -180,15 +182,29 @@ function wire(doc: Obj, target: Target, on: boolean, mine: Mine, file: string): 
   const parts: string[] = [];
   let next = doc;
   let old = false;
+  const stamped = (mark: string, body: string): void => {
+    if (on && !Object.hasOwn(next, mark)) next = { [mark]: 1, ...next };
+    if (!on && next[mark] === 1 && !had(mark) && (backed || !Object.hasOwn(next, body))) next = drop(next, mark);
+  };
   if (target.server) {
-    const servers = doc.mcpServers === undefined ? {} : doc.mcpServers;
-    if (!isObj(servers)) throw new Odd(LAYOUT);
+    const under = target.under ?? SERVERS;
+    const servers = doc[under] === undefined ? {} : doc[under];
+    if (!isObj(servers) || (target.stamp && Object.hasOwn(doc, target.stamp) && doc[target.stamp] !== 1)) throw new Odd(LAYOUT);
     const now = Object.hasOwn(servers, NAME) ? servers[NAME] : undefined;
     const want = !on ? undefined : isObj(now) && typeof now.command === 'string' ? { ...now, ...target.server } : target.server;
     if (!same(now, want)) {
       const rest = on ? { ...servers, [NAME]: want } : drop(servers, NAME);
-      next = Object.keys(rest).length || had('mcpServers') ? { ...next, mcpServers: rest } : drop(next, 'mcpServers');
+      next = Object.keys(rest).length || had(under) ? { ...next, [under]: rest } : drop(next, under);
+      if (target.stamp) stamped(target.stamp, under);
       parts.push(`the server ${NAME}`);
+      old = now !== undefined;
+    }
+  }
+  if (target.block) {
+    const now = Object.hasOwn(doc, NAME) ? doc[NAME] : undefined;
+    if (!same(now, on ? target.block : undefined)) {
+      next = on ? { ...next, [NAME]: target.block } : drop(next, NAME);
+      parts.push(`the ${NAME} hooks for ${list(Object.keys(target.block))}`);
       old = now !== undefined;
     }
   }
@@ -215,8 +231,7 @@ function wire(doc: Obj, target: Target, on: boolean, mine: Mine, file: string): 
     const rest = Object.fromEntries(out);
     if ((on || hit) && !same(hooks, rest)) {
       next = out.length || had('hooks') ? { ...next, hooks: rest } : drop(next, 'hooks');
-      if (on && version && !Object.hasOwn(next, 'version')) next = { version: 1, ...next };
-      if (!on && version && next.version === 1 && !had('version') && (backed || !Object.hasOwn(next, 'hooks'))) next = drop(next, 'version');
+      if (version) stamped('version', 'hooks');
       parts.push(`the ${NAME} hooks for ${list(events)}`);
       old ||= hit;
     }
@@ -226,7 +241,8 @@ function wire(doc: Obj, target: Target, on: boolean, mine: Mine, file: string): 
 
 function json(target: Target, p: Paths, on: boolean, apps: string[]): Change[] {
   const hand = [
-    target.server ? `add "${NAME}": ${JSON.stringify(target.server)} under mcpServers` : '',
+    target.server ? `add "${NAME}": ${JSON.stringify(target.server)} under ${target.under ?? SERVERS}` : '',
+    target.block ? `add "${NAME}": ${JSON.stringify(target.block)} at the top level` : '',
     target.hooks ? `add ${JSON.stringify(target.hooks.entry)} under hooks for ${list(target.hooks.events)}` : '',
   ].filter(Boolean).join(' and ');
   const file = locate(target.file, p);
@@ -369,6 +385,12 @@ function toml(target: string, p: Paths, on: boolean, command: string, args: stri
   return [{ file, what, before, after: `${text}${gap}${text.trim() === '' ? '' : `${cr}\n`}${fresh.join('\n')}\n` }];
 }
 
+function tidy(folder: string, edits: Change[]): Change[] {
+  const gone = edits.filter((change) => change.before !== null && change.after === null).map((change) => change.file);
+  if (!gone.length || !fs.existsSync(folder) || fs.readdirSync(folder).some((name) => !gone.includes(join(folder, name)))) return [];
+  return [{ file: folder, what: `The folder ${folder} is removed, because no file is left in the folder.`, before: '', after: null, folder: true }];
+}
+
 function plugin(p: Paths, on: boolean): Change[] {
   const record = dig(loose(load(join(p.home, '.claude', 'plugins', 'installed_plugins.json'), p)), 'plugins');
   const known = isObj(record) ? Object.keys(record).some((name) => name.split('@')[0] === NAME) : null;
@@ -406,8 +428,16 @@ function changes(agent: Agent, p: Paths, on: boolean): Change[] {
   const [command, args] = launch(p, agent);
   const server: Obj = { command, args };
   if (agent === 'claude-desktop') return json({ file: desktop(p), server }, p, on, [p.app]);
-  const folder = join(p.home, `.${agent}`);
+  if (agent === 'grok') return toml(join(p.home, '.grok', 'config.toml'), p, on, command, args);
+  if (agent === 'muse') return json({ file: join(p.home, '.config', 'muse', 'settings.json'), server: { transport: 'stdio', ...server, mode: 'optional' }, under: 'mcp_servers', stamp: 'schema_version' }, p, on, [p.app]);
+  const folder = agent === 'antigravity' ? join(p.home, '.gemini', 'config') : join(p.home, `.${agent}`);
   const run: Obj = { type: 'command', command: line(p, agent) };
+  if (agent === 'antigravity') {
+    const at = (event: string): Obj => ({ ...run, command: `${run.command} --event ${event}` });
+    const block: Obj = { PreInvocation: [at('PreInvocation')], PostToolUse: [{ matcher: KEPT, hooks: [at('PostToolUse')] }], Stop: [at('Stop')] };
+    const edits = [...json({ file: join(folder, 'mcp_config.json'), server }, p, on, [p.app]), ...json({ file: join(folder, 'hooks.json'), block }, p, on, [p.app])];
+    return on ? edits : [...edits, ...tidy(folder, edits)];
+  }
   if (agent === 'cursor') {
     const file = join(folder, 'mcp.json');
     const apps = [p.app, ...former(dig(loose(load(file, p)), 'mcpServers', NAME))];
@@ -434,6 +464,9 @@ export function detect(p: Paths): Agent[] {
     ['cursor', [join(p.home, '.cursor')]],
     ['codex', [join(p.home, '.codex')]],
     ['gemini', [join(p.home, '.gemini', 'settings.json')]],
+    ['antigravity', ['antigravity-cli', 'antigravity', 'config'].map((name) => join(p.home, '.gemini', name))],
+    ['grok', [join(p.home, '.grok')]],
+    ['muse', [join(p.home, '.config', 'muse')]],
     ['claude-desktop', [dirname(desktop(p))]],
   ];
   return marks.filter(([, files]) => files.some((file) => fs.existsSync(file))).map(([agent]) => agent);
@@ -452,7 +485,7 @@ export function connected(agent: Agent, p: Paths): boolean {
 }
 
 export function apply(changes: Change[]): void {
-  const edits = changes.filter((change) => !change.run && change.after !== change.before);
+  const edits = changes.filter((change) => !change.run && !change.folder && change.after !== change.before);
   for (const { file, before } of edits) {
     if (read(file) !== before) throw new Error(`${file} changed after the plan was made, so nothing was written.`);
   }
@@ -476,4 +509,5 @@ export function apply(changes: Change[]): void {
       fs.rmSync(temp, { force: true });
     }
   }
+  for (const { file, folder } of changes) if (folder && fs.existsSync(file) && !fs.readdirSync(file).length) fs.rmdirSync(file);
 }
