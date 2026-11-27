@@ -71,7 +71,7 @@
 .site-typed [data-room]::before {
   content: attr(data-room);
   grid-area: 1 / 1;
-  padding-right: 2.5px;
+  padding-right: 3px;
   visibility: hidden;
 }
 
@@ -81,7 +81,7 @@
 
 .site-caret {
   display: inline-block;
-  width: 1.5px;
+  width: 2px;
   height: 1.15em;
   margin-left: 1px;
   background: currentColor;
