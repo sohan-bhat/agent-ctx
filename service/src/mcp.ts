@@ -174,9 +174,9 @@ function user(text: string) {
 
 export const TOOL_CHARS = JSON.stringify(toolList()).length;
 
-export function createServer(reach: Reach): McpServer {
+export function createServer(reach: Reach, version: string): McpServer {
   const server = new McpServer(
-    { name: 'agent-ctx', version: '0.1.0' },
+    { name: 'agent-ctx', version },
     { instructions: INSTRUCTIONS, maxToolInputElements: 400, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, requestState: { verify: (state, ctx) => reach.state().verify(state, ctx) } },
   );
   server.registerTool('recall', { description: DESCRIBE.recall, inputSchema: SCHEMA.recall, annotations: ANNOTATIONS.recall, _meta: META.recall }, (args, ctx) =>

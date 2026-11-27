@@ -13,7 +13,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPTS = join(ROOT, 'plugins', 'claude-code', 'scripts');
 const BUNDLE = join(SCRIPTS, 'agent-ctx.mjs');
 const BUILT = ['agent-ctx.mjs', 'hook.mjs', 'LICENSES.txt'];
-const PENDING = 'Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules.';
+const PENDING = 'Rule saved as pending. The person turns the rule on in a terminal with npx -y github:sohan-bhat/agent-ctx rules.';
 const TMP = mkdtempSync(join(tmpdir(), 'agent-ctx-local-'));
 const REAL = join(userInfo().homedir, '.agent-ctx');
 const REAL_BEFORE = existsSync(REAL);
@@ -155,7 +155,7 @@ test('the version is the version in package.json and the bare command prints at 
     const lines = bare.out.trimEnd().split('\n');
     assert.ok(lines.length <= 6 && lines.every((l) => l.trim()), bare.out);
     assert.ok(lines[0].includes(args.length === 1 && args[0] === '--help' ? `agent-ctx ${version}` : 'No agent was found on this computer, so nothing was changed.'), lines[0]);
-    const prose = bare.out.replace(join(where.AGENT_CTX_HOME, 'memory.db'), 'PATH');
+    const prose = bare.out.replace(join(where.AGENT_CTX_HOME, 'memory.db'), 'PATH').replace(/npx -y github:\S+/g, 'COMMAND');
     assert.equal(/\b(it|its|itself|it's)\b|[—–;:()]| - /i.exec(prose), null);
   }
   const unknown = run(['frobnicate'], where);
@@ -163,6 +163,13 @@ test('the version is the version in package.json and the bare command prints at 
   assert.equal(unknown.out, '');
   assert.equal(unknown.err.split('\n')[0], 'No command named frobnicate exists in this version.');
   assert.equal(existsSync(where.AGENT_CTX_HOME), false);
+});
+
+test('the version in the answer to initialize is the version in package.json', async () => {
+  const version = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
+  const a = new Agent('codex', place());
+  assert.deepEqual(((await a.start()).result as { serverInfo: unknown }).serverInfo, { name: 'agent-ctx', version });
+  assert.equal(await a.stop(), 0);
 });
 
 test('a Node older than 22.16 gets one plain line and a non zero exit', () => {

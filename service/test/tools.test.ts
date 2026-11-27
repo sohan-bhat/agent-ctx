@@ -7,6 +7,7 @@ import { evictDurableObject, runInDurableObject } from 'cloudflare:test';
 import { type EventArgs, NOT_STATED, type Person } from '../src/person.ts';
 import { env, exports } from 'cloudflare:workers';
 import { CARRY_ON, continueText, INSTRUCTIONS, TOOL_CHARS } from '../src/mcp.ts';
+import { version } from '../../package.json';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 {
@@ -654,6 +655,12 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
       const text = await r.text();
       expect(r.status).toBe(200);
       expect(text).toContain('"recall"');
+    });
+
+    test('the version in the answer to initialize is the version in package.json', async () => {
+      const a = await agent('era-version', 'dcr', ['read'], 'legacy');
+      expect(a.client.getServerVersion()).toEqual({ name: 'agent-ctx', version });
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     });
 
     test('neither era claims list change notifications, since the tool and prompt lists never change', async () => {

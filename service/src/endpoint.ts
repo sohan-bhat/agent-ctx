@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { createRequestStateCodec, type RequestStateCodec } from '@modelcontextprotocol/server';
 import { createMcpHandler, getMcpAuthContext } from 'agents/mcp/server';
+import { version } from '../../package.json';
 import type { Props } from './auth.ts';
 import { BODY_MAX, createServer, type Reach } from './mcp.ts';
 
@@ -37,7 +38,7 @@ function hostOf(): string[] {
   }
 }
 
-const handler = createMcpHandler(() => createServer(reach), { route: '/mcp', allowedHostnames: hostOf(), maxRequestBodySize: BODY_MAX });
+const handler = createMcpHandler(() => createServer(reach, version), { route: '/mcp', allowedHostnames: hostOf(), maxRequestBodySize: BODY_MAX });
 
 async function bounded(request: Request): Promise<Request | null> {
   if (!request.body) return request;

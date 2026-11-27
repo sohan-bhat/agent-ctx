@@ -3,6 +3,8 @@ import { createServer, type Memory, type Reach } from '../../service/src/mcp.ts'
 import { createRequestStateCodec, serveStdio } from '../../service/src/stdio.ts';
 import { caller, open, who as named } from './db.ts';
 
+declare const VERSION: string;
+
 export function serve(name: string | undefined): void {
   const db = open();
   process.on('exit', () => db.close());
@@ -19,5 +21,5 @@ export function serve(name: string | undefined): void {
   };
   const codec = createRequestStateCodec<string>({ key: randomBytes(32), ttlSeconds: 600 });
   const reach: Reach = { caller: () => ({ who, memory: () => memory }), state: () => codec };
-  serveStdio(() => createServer(reach));
+  serveStdio(() => createServer(reach, VERSION));
 }
