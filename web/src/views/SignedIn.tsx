@@ -3,9 +3,10 @@ import { ListIcon } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { api, type Agent, type Item, type Live, type Me, type RuleBody, type Space as SpaceData } from '@/lib/api';
+import { GONE } from '@/lib/local';
 import { count, isPending, megabytes, since } from '@/lib/utils';
 import { navigate } from '@/router';
-import { AddAgent } from './AddAgent';
+import { AddAgent, Agents } from './AddAgent';
 import { AgentMenu, DeleteAccount, Merge } from './Dialogs';
 import type { Actions } from './Panel';
 import { Rules, type RuleActions } from './Rules';
@@ -164,9 +165,9 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
   const storage = `${megabytes(me.limits.bytes)} of ${megabytes(me.limits.max)}\u00a0MB`;
   const cost = `about ${count(Math.round(me.toolChars / 4))} tokens added to each agent`;
   const notice = failed ? (
-    <p>The service cannot be reached. Reload to try again.</p>
+    <p>{import.meta.env.MODE === 'page' ? GONE : 'The service cannot be reached. Reload to try again.'}</p>
   ) : !online ? (
-    <p>Live updates are off right now. Reload to try again.</p>
+    <p>{import.meta.env.MODE === 'page' ? GONE : 'Live updates are off right now. Reload to try again.'}</p>
   ) : data && !items.length ? (
     <p>{agents.length ? `${agents.map((a) => a.label).join(', ')} connected, and nothing is saved yet.` : 'Press Add agent to begin.'}</p>
   ) : null;
@@ -184,7 +185,16 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
           <ul className="order-last flex basis-full flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] sm:order-none sm:basis-auto" aria-label="Connected agents" data-agents>
             {agents.map((a: Agent) => (
               <li key={a.id} className="max-w-full" data-agent={a.label}>
-                <AgentMenu agent={a} seen={since(a.last, now)} onDisconnect={disconnect} />
+                {import.meta.env.MODE === 'page' ? (
+                  <span className="inline-flex min-h-11 max-w-full items-center gap-1.5 sm:min-h-7">
+                    <span translate="no" className="truncate">
+                      {a.label}
+                    </span>
+                    <span className="num inline-block min-w-[3ch] shrink-0 text-xs">{since(a.last, now)}</span>
+                  </span>
+                ) : (
+                  <AgentMenu agent={a} seen={since(a.last, now)} onDisconnect={disconnect} />
+                )}
               </li>
             ))}
           </ul>
@@ -219,22 +229,24 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
                   Export
                 </DropdownMenuItem>
                 <DropdownMenuItem className="min-h-11 text-sm text-destructive focus:text-destructive sm:min-h-8" onSelect={() => setDeleting(true)}>
-                  Delete account
+                  {import.meta.env.MODE === 'page' ? 'Delete memory' : 'Delete account'}
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="min-h-11 text-sm sm:min-h-8"
-                  onSelect={async () => {
-                    try {
-                      await api.signOut();
-                    } finally {
-                      navigate('/', true);
-                      onSignedOut();
-                    }
-                  }}
-                >
-                  Sign out
-                </DropdownMenuItem>
+                {import.meta.env.MODE === 'page' ? null : <DropdownMenuSeparator />}
+                {import.meta.env.MODE === 'page' ? null : (
+                  <DropdownMenuItem
+                    className="min-h-11 text-sm sm:min-h-8"
+                    onSelect={async () => {
+                      try {
+                        await api.signOut();
+                      } finally {
+                        navigate('/', true);
+                        onSignedOut();
+                      }
+                    }}
+                  >
+                    Sign out
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -260,7 +272,7 @@ export function SignedIn({ me: first, onSignedOut }: { me: Me; onSignedOut: () =
           onTime={(t) => setScrub(t >= end - (end - start) / 600 ? null : t)}
         />
       </main>
-      <AddAgent open={adding} onOpenChange={setAdding} back={() => addButton.current?.focus()} />
+      {import.meta.env.MODE === 'page' ? <Agents open={adding} onOpenChange={setAdding} back={() => addButton.current?.focus()} /> : <AddAgent open={adding} onOpenChange={setAdding} back={() => addButton.current?.focus()} />}
       <Rules open={rules} onOpenChange={setRules} items={items} projects={projects} actions={ruleActions} back={backToMenu} />
       <Merge
         back={backToMenu}

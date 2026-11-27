@@ -107,7 +107,7 @@ export function DeleteAccount({ open, onOpenChange, onDelete, back }: { open: bo
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-[0.9375rem] font-bold">Delete account?</AlertDialogTitle>
+          <AlertDialogTitle className="text-[0.9375rem] font-bold">{import.meta.env.MODE === 'page' ? 'Delete memory?' : 'Delete account?'}</AlertDialogTitle>
         </AlertDialogHeader>
         <div className="grid gap-2">
           <Label htmlFor="confirm-delete" className="text-sm">
@@ -135,7 +135,7 @@ export function DeleteAccount({ open, onOpenChange, onDelete, back }: { open: bo
               }
             }}
           >
-            Delete account
+            {import.meta.env.MODE === 'page' ? 'Delete memory' : 'Delete account'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
