@@ -9,6 +9,8 @@ import {
   type WheelEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -318,7 +320,10 @@ function Typed() {
 }
 
 function Action() {
+  const still = useReduced();
   const [copied, setCopied] = useState(false);
+  const back = useRef(0);
+  useEffect(() => () => clearTimeout(back.current), []);
   const home = (
     <a href={HOME} rel="noreferrer">
       View on GitHub
@@ -340,14 +345,35 @@ function Action() {
         </p>
       </>
     );
+  const buzz = () => {
+    try {
+      navigator.vibrate?.(10);
+    } catch {
+      return;
+    }
+  };
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(INSTALL);
       setCopied(true);
+      clearTimeout(back.current);
+      back.current = window.setTimeout(() => setCopied(false), 1600);
+      buzz();
     } catch {
       setCopied(false);
     }
   };
+  const word = copied ? "Copied" : "Copy";
+  const label = (
+    <>
+      {copied && (
+        <svg className="site-check size-3.5" viewBox="0 0 16 16" aria-hidden>
+          <path d="M3.5 8.5 6.5 11.5 12.5 4.5" pathLength={1} />
+        </svg>
+      )}
+      {word}
+    </>
+  );
   return (
     <>
       <div className="site-action" data-site="action">
@@ -363,11 +389,26 @@ function Action() {
           <span className="select-all">{INSTALL}</span>
         </code>
         <Button
-          className="h-11 w-[5.5rem] rounded-full text-[0.9375rem]"
+          className="h-11 w-[6.75rem] rounded-full text-[0.9375rem]"
           aria-live="polite"
           onClick={() => void copy()}
         >
-          {copied ? "Copied" : "Copy"}
+          {still ? (
+            label
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <m.span
+                key={word}
+                className="inline-flex items-center gap-1.5"
+                initial={{ opacity: 0, filter: "blur(2px)" }}
+                animate={{ opacity: 1, filter: "blur(0px)" }}
+                exit={{ opacity: 0, filter: "blur(2px)" }}
+                transition={{ duration: 0.09 }}
+              >
+                {label}
+              </m.span>
+            </AnimatePresence>
+          )}
         </Button>
         <Button asChild variant="outline" size="lg" className={PILL}>
           {home}
