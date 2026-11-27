@@ -307,3 +307,10 @@ test('the language of a project drops its full list from a text that holds no sa
   assert.deepEqual(tokens('der Kunde und die Rechnung', ['de']), ['kund', 'rechnung']);
   assert.deepEqual(tokens('the car is on the plus plan', ['es']), ['car', 'plus', 'plan']);
 });
+
+test('in a project of italian cards the plural and the singular of a noun give one term', () => {
+  assert.deepEqual(tokens('piatto piatti tavolo tavoli banco banchi pizza pizze', ['it']), ['piatt', 'piatt', 'tavol', 'tavol', 'banc', 'banc', 'pizz', 'pizz']);
+  assert.deepEqual(tokens('piatto piatti gli ogni'), ['piatto', 'piatti']);
+  assert.deepEqual(tokens('piatto piatti', ['es']), ['piatto', 'piatti']);
+  assert.deepEqual(tokens('data cache tokens', ['it']), ['data', 'cach', 'token']);
+});

@@ -172,12 +172,21 @@ function fold(text: string): string {
   return capped.normalize('NFKD').replace(FOLDED, '$1').normalize('NFC').toLowerCase();
 }
 
-function word(w: string, out: string[], extra: Set<string>): void {
+type Rule = (w: string) => string;
+
+const PLURAL: Partial<Record<Lang, Rule>> = {
+  it: (w) => {
+    const s = w.length >= 5 && /[aeio]$/.test(w) ? w.slice(0, -1) : w;
+    return s.length >= 5 && /[cg]h$/.test(s) ? s.slice(0, -1) : s;
+  },
+};
+
+function word(w: string, out: string[], extra: Set<string>, rules: Rule[]): void {
   if (ASCII.test(w)) {
     if (w.length < 2 || w.length > 30) return;
     if (/^\d+$/.test(w) && w.length > 4) return;
     if (ALL_STOP.has(w) || extra.has(w)) return;
-    out.push(stem(w));
+    out.push(rules.reduce((s, r) => r(s), stem(w)));
     return;
   }
   const n = [...w].length;
@@ -235,9 +244,10 @@ export function tokens(text: string, langs: readonly Lang[] = []): string[] {
   const parts = partsOf(text);
   const extra = new Set<string>();
   for (const l of new Set([...held(wordsIn(parts)), ...langs])) for (const w of FULL_LISTS[l]) extra.add(w);
+  const rules = langs.flatMap((l) => PLURAL[l] ?? []);
   const out: string[] = [];
   for (const [p, isWord] of parts) {
-    if (isWord) word(p, out, extra);
+    if (isWord) word(p, out, extra, rules);
     else out.push(p);
   }
   return out;

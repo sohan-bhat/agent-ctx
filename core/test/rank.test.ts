@@ -301,6 +301,21 @@ test('a short query to a project of spanish cards drops spanish function words',
   assert.deepEqual(rankItems(panaderia, 'lo de la barra', NOW).map((h) => h.item.id), ['c3']);
 });
 
+const pizzeria = [
+  card('p1', 'Menu delle pizze del giorno', 3, { decisions: [{ what: 'pubblicare il menu ogni mattina', why: 'i clienti chiedevano sempre le novità' }] }),
+  card('p2', 'Consegna a domicilio in bicicletta', 4, { decisions: [{ what: 'calcolare il percorso più breve', why: 'i fattorini perdevano tempo nel traffico' }] }),
+  card('p3', 'Forno a legna e tempi di cottura', 5, { decisions: [{ what: 'segnare il tempo di ogni pizza', why: 'alcune pizze uscivano bruciate' }] }),
+  card('p4', 'Ordine al telefono', 6, { decisions: [{ what: 'salvare il numero del cliente', why: 'molti clienti richiamavano' }] }),
+  card('p5', 'Tavolo prenotato per la sera', 7, { decisions: [{ what: 'bloccare il tavolo due ore', why: 'arrivavano gruppi senza avviso' }] }),
+  card('p6', 'Ricevuta fiscale stampata', 8, { decisions: [{ what: 'usare la stampante della cassa', why: 'la cassa era lontana dai tavoli' }] }),
+];
+
+test('a query to a project of italian cards meets the singular of a plural noun', () => {
+  const hits = rankItems(pizzeria, 'tavoli prenotati', NOW);
+  assert.equal(hits[0]?.item.id, 'p5');
+  assert.equal(hits[0].matched, 2);
+});
+
 test('english and code sentences keep every word, alone and as a query to a project of english cards', () => {
   const quote = card('quote', 'The client error said no se puede guardar porque falta el archivo', 1);
   const pool = [quote, ...SHARED.map(([s], k) => card(`s${k}`, s, k + 2))];
