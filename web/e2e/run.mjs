@@ -42,6 +42,24 @@ async function signedOut(b, url, w, h) {
     const after = await labels(page);
     const moved = before.length && after.length ? Math.max(...before.map((a, i) => Math.hypot(a.x - (after[i]?.x ?? a.x), a.y - (after[i]?.y ?? a.y)))) : 0;
     check(`${tag} a drag turns the demo scene`, moved > 8, `label moved ${moved.toFixed(1)} px`);
+    if (w >= 1000) {
+      const pill = page.getByRole('link', { name: 'Sign in with GitHub' });
+      const spot = await pill.boundingBox();
+      const sized = () =>
+        pill.evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          return { width: r.width, mid: r.top + r.height / 2 };
+        });
+      const calm = await sized();
+      await page.mouse.move(spot.x + spot.width / 2, spot.y + spot.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(220);
+      const down = await sized();
+      await page.mouse.move(spot.x + spot.width / 2, spot.y + spot.height + 200);
+      await page.mouse.up();
+      const small = down.width / calm.width;
+      check(`${tag} while the sign in button is held down the button has no vertical move and a scale between 0.95 and 0.99`, small >= 0.95 && small <= 0.99 && Math.abs(down.mid - calm.mid) < 0.5, `scale ${small.toFixed(3)}, moved ${(down.mid - calm.mid).toFixed(2)} px`);
+    }
     const o = await overflow(page);
     check(`${tag} signed out has nothing wider than the screen`, o.scroll <= 0 && !o.wide.length, JSON.stringify(o));
     check(`${tag} signed out has no console error`, !errors.length, errors.join(' | '));

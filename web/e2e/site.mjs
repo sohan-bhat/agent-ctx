@@ -509,6 +509,12 @@ function rhythm(log) {
 const ranged = (list, [low, high], kinds) => list.length >= 6 && list.every((v) => v >= low && v <= high) && new Set(list.map((v) => Math.round(v))).size >= kinds;
 const near = (a, z, ms) => a.starts.filter((v) => z.starts.some((u) => Math.abs(u - v) <= ms)).length / Math.max(1, a.starts.length);
 const reach = (list) => (list.length ? `${list.length} times from ${Math.round(Math.min(...list))} to ${Math.round(Math.max(...list))} ms` : 'no times');
+const sized = (loc) =>
+  loc.evaluate((e) => {
+    const r = e.getBoundingClientRect();
+    return { width: r.width, mid: r.top + r.height / 2, wide: e.offsetWidth, shift: getComputedStyle(e).transform };
+  });
+const scaled = (now, calm) => (calm?.width > 0 && now?.width > 0 ? now.width / calm.width : 0);
 const steady = (typed) => typed.tall.length === 1 && Math.abs(typed.tall[0] - typed.line) < 1 && typed.top.length === 1 && typed.under.length === 1 && typed.drop.join() === '0' && typed.lead[0].length === 1 && typed.place[0].length === 1 && typed.out === 0;
 const placed = (typed) => `heights ${typed.tall.join(' ')}, line ${typed.line}, tops ${typed.top.join(' ')}, "${LEADS[0]}" ${typed.lead[0].join(' or ')} px and "${LEADS[1]}" ${typed.lead[1].length} places from the left, ${typed.out} moments past the column, sentence at ${typed.under.join(' ')}`;
 
@@ -721,11 +727,32 @@ async function released(b, site, w, h) {
     check(`${tag} the pill shows the start of the prompt in the console font behind a sign that is hidden from a screen reader`, /^>\s*Set up agent-ctx/.test(pill.text) && pill.said === LINE && pill.title === LINE && pill.mono, pill.text);
     check(`${tag} the link inside the prompt is ${GUIDE}`, (pill.said.match(/https?:\/\/\S+/g) ?? []).join() === GUIDE, (pill.said.match(/https?:\/\/\S+/g) ?? []).join(' '));
     check(`${tag} the pill never scrolls, never wraps, ends inside the text column and has no scroll width beyond the pill`, pill.room > 100 && pill.need <= pill.room && pill.over <= 0.5 && pill.moved === 0 && pill.flow !== 'auto' && pill.flow !== 'scroll' && pill.cut === 'ellipsis nowrap' && pill.high < 50, `${pill.need} px of content in ${pill.room} px, ${pill.cut}, ${Math.round(pill.high ?? 0)} px tall`);
-    if (touch) await copy.tap().catch(() => {});
-    else await copy.click().catch(() => {});
+    const button = page.locator('[data-site=action] button');
+    const spot = await button.boundingBox().catch(() => null);
+    const calm = await sized(button).catch(() => ({ width: 0, mid: 0, wide: 0 }));
+    await page.mouse.move((spot?.x ?? 0) + (spot?.width ?? 0) / 2, (spot?.y ?? 0) + (spot?.height ?? 0) / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(220);
+    const down = await sized(button).catch(() => ({ width: 0, mid: 0, wide: 0 }));
+    await page.mouse.up();
+    const small = scaled(down, calm);
+    check(`${tag} while Copy is held down the button has no vertical move and a scale between 0.95 and 0.99`, small >= 0.95 && small <= 0.99 && Math.abs(down.mid - calm.mid) < 0.5, `scale ${small.toFixed(3)}, moved ${(down.mid - calm.mid).toFixed(2)} px`);
+    await page.waitForTimeout(450);
+    const up = scaled(await sized(button).catch(() => null), calm);
+    check(`${tag} within 500 ms after release the scale is 1 again`, Math.abs(up - 1) < 0.003, `scale ${up.toFixed(4)}`);
     const done = await waitFor(() => page.locator('[data-site=action]').getByRole('button', { name: 'Copied' }).count(), 2000);
+    const told = await sized(button).catch(() => ({ wide: -1 }));
     const held = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
     check(`${tag} Copy puts the prompt without the leading sign on the clipboard`, !!done && held === LINE, held);
+    const back = await waitFor(() => page.locator('[data-site=action]').getByRole('button', { name: 'Copy', exact: true }).count(), 3000);
+    const again = await sized(button).catch(() => ({ wide: -2 }));
+    check(`${tag} the Copy button has the same width before a press, in the Copied state and after the return`, !!done && !!back && calm.wide > 0 && told.wide === calm.wide && again.wide === calm.wide, `${calm.wide} then ${told.wide} then ${again.wide} px`);
+    await button.focus().catch(() => {});
+    await page.keyboard.down('Space');
+    await page.waitForTimeout(220);
+    const key = scaled(await sized(button).catch(() => null), calm);
+    await page.keyboard.up('Space');
+    check(`${tag} a press with the Space key gives the same scale as a pointer press`, key > 0 && key < 0.99 && Math.abs(key - small) < 0.006, `scale ${key.toFixed(3)} by key and ${small.toFixed(3)} by pointer`);
     const o = await across(page, w);
     const t = await texts(page);
     const bad = faults(t.out);
@@ -753,6 +780,17 @@ async function still(b, site) {
     const blocks = Number(await page.locator('[aria-roledescription=space]').getAttribute('data-blocks'));
     check('reduced motion leaves the demo still at the end of the day', t0 === END && t1 === END && blocks > 20 && !errors.length, `${clock(t0)} then ${clock(t1)}, ${blocks} blocks`);
     const late = await drawn();
+    await page.evaluate(() => scrollTo(0, 0));
+    const pill = page.locator('[data-site=action] a >> nth=1');
+    const spot = await pill.boundingBox();
+    const calm = await sized(pill);
+    await page.mouse.move(spot.x + spot.width / 2, spot.y + spot.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(220);
+    const down = await sized(pill);
+    await page.mouse.move(4, 4);
+    await page.mouse.up();
+    check('with reduced motion a held button has no transform', down.shift === 'none' && Math.abs(scaled(down, calm) - 1) < 0.0005 && Math.abs(down.mid - calm.mid) < 0.01, `transform ${down.shift}, scale ${scaled(down, calm).toFixed(4)}, moved ${(down.mid - calm.mid).toFixed(2)} px`);
     check('reduced motion leaves the logo still and filled at the start and later', early.length === 12 && [...early, ...late].every((v) => v === '0 1 none'), [...new Set([...early, ...late])].join(' | ') || 'no logo');
     check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, cursor states ${carets.join(' and ')}`);
   } finally {
