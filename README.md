@@ -4,7 +4,11 @@ agent-ctx is one memory on your computer, shared by the agents you use. Claude C
 
 ## Install
 
-You need Node 22.16 or newer. Paste the line below into a terminal.
+On macOS and Linux, paste the line below into a terminal. No Node is needed, and one program is placed at `~/.agent-ctx/app/agent-ctx`. This line can be used from the first release on.
+
+    curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh
+
+With Node 22.16 or newer, the line below gives the same result today.
 
     npx -y github:sohan-bhat/agent-ctx
 
@@ -12,16 +16,16 @@ Every agent found on the computer is connected, and each change is printed in on
 
 ## Commands
 
-    agent-ctx install      connect every agent found on this computer
-    agent-ctx status       the memory file and the connected agents
-    agent-ctx rules        the pending rules, with accept ID and reject ID
-    agent-ctx uninstall    take agent-ctx out and keep the memory
+    ~/.agent-ctx/app/agent-ctx install      connect every agent found on this computer
+    ~/.agent-ctx/app/agent-ctx status       the memory file and the connected agents
+    ~/.agent-ctx/app/agent-ctx rules        the pending rules, with accept ID and reject ID
+    ~/.agent-ctx/app/agent-ctx uninstall    take agent-ctx out and keep the memory
 
-With no agent-ctx command on your PATH, type `node ~/.agent-ctx/app/agent-ctx.mjs` in place of `agent-ctx`. A standing rule that an agent proposes stays pending until you accept the rule at a terminal.
+After an install through npx, type `node ~/.agent-ctx/app/agent-ctx.mjs` in place of `~/.agent-ctx/app/agent-ctx`. A standing rule that an agent proposes stays pending until you accept the rule at a terminal.
 
 ## Remove
 
-    agent-ctx uninstall
+    ~/.agent-ctx/app/agent-ctx uninstall
 
 Every entry of the install is taken out and the memory is kept. The last printed line is the command for deleting the memory.
 
