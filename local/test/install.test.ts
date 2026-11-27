@@ -509,6 +509,17 @@ describe('codex', () => {
     assert.equal(text(join(p.home, CONFIG)), head);
   });
 
+  test('codex reads no table header inside a string over several lines', (t) => {
+    const p = make(t);
+    const note = 'tip = \'"""\' # a """ mark\nnotes = """\nAdd these lines by hand.\n\n[mcp_servers.agent-ctx]\ncommand = "node"\n"""\n';
+    put(join(p.home, CONFIG), note);
+    connect('codex', p);
+    assert.equal(text(join(p.home, CONFIG)), `${note}\n${table(p)}`);
+    assert.deepEqual(plan('codex', p), []);
+    disconnect('codex', p);
+    assert.equal(text(join(p.home, CONFIG)), note);
+  });
+
   test('codex leaves a table with values over several lines alone', (t) => {
     const p = make(t);
     const body = '[mcp_servers.agent-ctx]\ncommand = "node"\nargs = [\n  "/old/agent-ctx.js",\n]\n';

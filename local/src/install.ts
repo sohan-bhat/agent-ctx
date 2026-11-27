@@ -254,11 +254,35 @@ function strings(value: string): string[] | null {
   return /^\[?[\s,]*\]?\s*(#.*)?$/.test(rest.trim()) ? out : null;
 }
 
+function quiet(lines: string[]): boolean[] {
+  let open = '';
+  return lines.map((line) => {
+    const was = open !== '';
+    for (let at = 0; at < line.length; at += 1) {
+      const three = line.slice(at, at + 3);
+      if (open !== '') {
+        if (open.startsWith('"') && line[at] === '\\') at += 1;
+        else if (line.startsWith(open, at)) {
+          at += open.length - 1;
+          open = '';
+        }
+      } else if (line[at] === '#') break;
+      else if (three === '"""' || three === "'''") {
+        open = three;
+        at += 2;
+      } else if (line[at] === '"' || line[at] === "'") open = line[at];
+    }
+    if (open.length === 1) open = '';
+    return was;
+  });
+}
+
 function survey(text: string) {
   const lines = text.split('\n');
+  const hush = quiet(lines);
   const all: Part[] = [{ path: [], array: false, from: -1, to: lines.length }];
   lines.forEach((line, at) => {
-    const head = header(line);
+    const head = hush[at] ? null : header(line);
     if (!head) return;
     all[all.length - 1].to = at;
     all.push({ ...head, from: at, to: lines.length });
@@ -269,8 +293,8 @@ function survey(text: string) {
     return to;
   };
   const pairs = (part: Part): (Pair | null)[] =>
-    lines.slice(part.from + 1, end(part)).map((line) => {
-      const found = key(line);
+    lines.slice(part.from + 1, end(part)).map((line, at) => {
+      const found = hush[part.from + 1 + at] ? null : key(line);
       return found?.rest.startsWith('=') ? { name: found.path.join('.'), full: [...part.path, ...found.path], value: found.rest.slice(1) } : null;
     });
   const mine = all.filter((part) => ours(part.path));
