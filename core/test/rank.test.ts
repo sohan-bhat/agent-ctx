@@ -281,7 +281,7 @@ const SHARED: [string, string[]][] = [
   ['the todo list says nada about the algo bug', ['todo', 'list', 'say', 'nada', 'algo', 'bug']],
   ['an ensemble encore with super bravo pardon notes', ['ensembl', 'encor', 'super', 'bravo', 'pardon', 'not']],
   ['doit runs the comment task and the parfait job', ['doit', 'run', 'comment', 'task', 'parfait', 'job']],
-  ['the falls and the seine are the halt points on the map', ['fall', 'sein', 'halt', 'point', 'map']],
+  ['the falls and the seine are the end points on the map', ['fall', 'sein', 'end', 'point', 'map']],
   ['the dir path and the mag reader in the ins file', ['dir', 'path', 'mag', 'reader', 'ins', 'fil']],
   ['a pure poi export with verso pages and a col grid', ['pur', 'poi', 'export', 'verso', 'pag', 'col', 'grid']],
 ];

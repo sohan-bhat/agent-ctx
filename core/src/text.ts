@@ -83,7 +83,7 @@ const EXTRA: Record<keyof typeof STOP_LISTS, readonly string[]> = {
   ),
   de: words(
     'der die das den dem des und ist mit im am an auf aus bei fur uber um zu von vom es er man als oder war hat bis so da wo also',
-    'du ab ob ins ans aufs bin mag sei ware dir seine wen nun oft bald fast halt mal ja gut dank mach super toll prima hallo falls muss',
+    'du ab ob ins ans aufs bin mag sei ware dir seine wen nun oft bald fast mal ja gut dank mach super toll prima hallo falls muss',
   ),
   fr: words(
     'le la les de des du un une et est en au aux ce ces cet se sa son ses il ils elle on ne pas par pour sur qui mais ou nous vous tout plus tres sans mon ma mes nos car si',
