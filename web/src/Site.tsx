@@ -84,6 +84,17 @@ const FAQ = [
   ],
 ];
 
+const whole = (text: string) =>
+  text.split(/(\S*agent-ctx\S*)/).map((part, i) =>
+    i % 2 ? (
+      <span key={i} className="whitespace-nowrap">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+
 const DARK = "(prefers-color-scheme: dark)";
 const system = window.matchMedia(DARK);
 const scheme = new EventTarget();
@@ -422,8 +433,8 @@ function Site() {
           <h2 id="faq">FAQ</h2>
           {FAQ.map(([question, answer]) => (
             <div key={question}>
-              <h3>{question}</h3>
-              <p>{answer}</p>
+              <h3>{whole(question)}</h3>
+              <p>{whole(answer)}</p>
             </div>
           ))}
         </section>
