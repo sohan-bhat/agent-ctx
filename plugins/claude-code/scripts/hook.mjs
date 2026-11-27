@@ -3524,23 +3524,36 @@ var db_exports = {};
 __export(db_exports, {
   CAPS: () => CAPS,
   Db: () => Db,
+  PROGRAM: () => PROGRAM,
   Refusal: () => Refusal,
   caller: () => caller,
   file: () => file,
   folder: () => folder,
   local: () => local,
   open: () => open,
+  quote: () => quote2,
+  typed: () => typed,
   who: () => who
 });
 import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 function folder() {
   return process.env.AGENT_CTX_HOME || join(homedir(), ".agent-ctx");
 }
 function file() {
   return join(folder(), "memory.db");
+}
+function quote2(text) {
+  return /^[\w\-./:=@%+,\\]+$/.test(text) ? text : JSON.stringify(text);
+}
+function typed() {
+  const app = join(folder(), "app");
+  if (PROGRAM) return quote2(existsSync(join(app, "agent-ctx")) ? join(app, "agent-ctx") : PROGRAM);
+  const started = process.argv[1] ?? "";
+  if (basename(started) === "agent-ctx" && !started.includes("_npx")) return "agent-ctx";
+  return existsSync(join(app, "agent-ctx.mjs")) ? `node ${quote2(join(app, "agent-ctx.mjs"))}` : SOURCE2;
 }
 function sqlite() {
   const emit = process.emitWarning;
@@ -3588,7 +3601,7 @@ function open(wait = BUSY_MS) {
 function local(text) {
   let out = text;
   for (const [from, to] of WORDS) if (out.includes(from)) out = out.split(from).join(to);
-  return out;
+  return out.includes(AT_PAGE) ? out.split(AT_PAGE).join(`Rule saved as pending. The person turns the rule on in a terminal with ${typed()} rules.`) : out;
 }
 function who(name) {
   const clean2 = (name ?? "").replace(/\s+/g, " ").replace(/[^\p{L}\p{N} ._-]+/gu, "").replace(/ +/g, " ").trim().slice(0, 40).trim();
@@ -3613,7 +3626,7 @@ function caller(db) {
     throw e;
   });
 }
-var SCHEMA2, BUSY_MS, NEWER, STEPS2, STATEMENTS_KEPT, LOCKED, OTHER, CAPS, WORDS, Refusal, Db;
+var SCHEMA2, BUSY_MS, NEWER, STEPS2, STATEMENTS_KEPT, LOCKED, OTHER, SOURCE2, AT_PAGE, PROGRAM, CAPS, WORDS, Refusal, Db;
 var init_db = __esm({
   "local/src/db.ts"() {
     "use strict";
@@ -3627,14 +3640,16 @@ var init_db = __esm({
     STATEMENTS_KEPT = 200;
     LOCKED = 5;
     OTHER = "another agent";
+    SOURCE2 = "npx -y github:sohan-bhat/agent-ctx";
+    AT_PAGE = "Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.";
+    PROGRAM = globalThis.Bun?.isStandaloneExecutable ? process.execPath : "";
     CAPS = { ...MAX, perMinute: 1e5, perDay: 1e5, storedPerDay: 5e3, storeBytes: 100 * 1024 * 1024 };
     WORDS = [
       [SAY.day, "The limit of 100,000 calls for today is reached. Calls are accepted again tomorrow."],
       [SAY.stored, "5,000 items were stored on this computer today. More can be stored tomorrow."],
       [SAY.agents, "This computer already has 20 connected agents."],
       [SAY.full, "The memory on this computer is full at 100 MB, so nothing new is stored."],
-      [SAY.projects, "This computer already has 200 projects with saved items."],
-      ["Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.", "Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules."]
+      [SAY.projects, "This computer already has 200 projects with saved items."]
     ];
     Refusal = class extends Error {
     };
