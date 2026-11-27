@@ -198,8 +198,8 @@ export function merge(local: Item[], incoming: Rec[], device: string, now: numbe
   for (const raw of incoming ?? []) {
     const rec = check(raw);
     if (!rec || rec.device === device || rec.at > until) continue;
-    const now = best.get(rec.id);
-    if (!now || order(rec, now) > 0) best.set(rec.id, rec);
+    const top = best.get(rec.id);
+    if (!top || order(rec, top) > 0) best.set(rec.id, rec);
   }
   const mine = new Map<string, Item>();
   for (const item of local ?? []) if (item) mine.set(item.id, item);
