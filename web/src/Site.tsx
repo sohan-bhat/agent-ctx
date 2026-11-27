@@ -1,7 +1,8 @@
-import { StrictMode, useCallback, useEffect, useRef, useState, type WheelEvent } from 'react';
+import { StrictMode, useCallback, useEffect, useRef, useState, useSyncExternalStore, type WheelEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { REPO } from '@/agents';
 import { DEMO_AGENTS, DEMO_END, DEMO_ITEMS, DEMO_PROJECTS, DEMO_READS, DEMO_START } from '@/demo';
 import { useReduced } from '@/lib/utils';
@@ -15,89 +16,139 @@ const INSTALL = `npx -y github:${REPO}`;
 const RATE = (DEMO_END - DEMO_START) / 30_000;
 const AGENTS = DEMO_AGENTS.map((a) => a.label);
 const NONE = new Set<string>();
+const LEAD = 'Work started in Claude Code is continued in ';
+const NAMES = ['Cursor', 'Codex', 'Gemini CLI', 'Claude desktop'];
 const OPEN = [
   [8, 12],
   [13, 18],
 ];
-const HOURS = OPEN.reduce((sum, [from, to]) => sum + to - from, 0);
-const TICKS = [0, 6, 12, 18, 24];
 const pct = (hours: number) => `${(hours / 24) * 100}%`;
-const LINK = 'underline decoration-foreground/35 underline-offset-4 transition-colors duration-150 hover:decoration-foreground';
+const PILL = 'h-11 rounded-full px-5 text-[0.9375rem]';
 
-function Demo() {
-  const reduced = useReduced();
-  const [time, setTime] = useState(reduced ? DEMO_END : DEMO_START);
-  const [playing, setPlaying] = useState(!reduced);
-  const idle = useRef({ held: false, open: false });
-  useEffect(() => {
-    if (!playing) return;
-    let frame = 0;
-    let last = performance.now();
-    let due = 0;
-    const step = (now: number) => {
-      due += idle.current.held || idle.current.open ? 0 : Math.min(100, now - last);
-      last = now;
-      if (due >= 33) {
-        const by = due * RATE;
-        due = 0;
-        setTime((t) => Math.min(DEMO_END, t + by));
-      }
-      frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [playing]);
-  useEffect(() => {
-    if (time >= DEMO_END) setPlaying(false);
-  }, [time]);
-  const onHold = useCallback((held: boolean) => {
-    idle.current.held = held;
-  }, []);
-  const onPanel = useCallback((open: boolean) => {
-    idle.current.open = open;
-  }, []);
-  const scroll = (e: WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) e.stopPropagation();
+const FAQ = [
+  ['What does agent-ctx do?', 'One memory is shared by all of your coding agents, so work started in one agent is continued in the next agent without a new explanation.'],
+  ['Which agents work with agent-ctx?', 'Claude Code, Cursor, Codex, Gemini CLI and the Claude desktop app are supported, and the first release is still being tested.'],
+  ['Where is the memory kept?', 'The memory is one database file in the folder .agent-ctx in your home folder, and no account exists.'],
+  ['What is active in the background?', 'Nothing is active while no agent is open. Each agent starts a small helper while that agent is open, and one hook is run at each prompt for under a tenth of a second.'],
+  ['What leaves my computer?', 'Nothing leaves your computer unless you turn on a copy to storage of your own.'],
+  ['Can my agents be tricked by a web page or a file through the memory?', 'Text from a web page or a file is stored as information and is delivered to an agent as quoted memory. Such text never becomes a rule unless you accept the rule yourself.'],
+  ['How do I remove agent-ctx?', 'Every entry that was added is taken out with one command, and the memory file stays until you delete the folder.'],
+  ['What does agent-ctx cost?', 'agent-ctx is free and open source under the MIT licence.'],
+];
+
+const DARK = '(prefers-color-scheme: dark)';
+const system = window.matchMedia(DARK);
+const scheme = new EventTarget();
+const painted: string[] = [];
+let choice: boolean | null = null;
+const isDark = () => choice ?? system.matches;
+Object.defineProperties(scheme, { matches: { get: isDark }, media: { value: DARK } });
+system.addEventListener('change', () => scheme.dispatchEvent(new Event('change')));
+const query = window.matchMedia.bind(window);
+window.matchMedia = (q) => (q === DARK ? (scheme as unknown as MediaQueryList) : query(q));
+
+function tokens(dark: boolean): [string, string][] {
+  const out: [string, string][] = [];
+  const take = (rule: CSSRule) => {
+    if (!(rule instanceof CSSStyleRule) || rule.selectorText !== ':root') return;
+    for (const name of rule.style) if (name.startsWith('--') || name === 'color-scheme') out.push([name, rule.style.getPropertyValue(name)]);
   };
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const rule of sheet.cssRules) {
+        if (!(rule instanceof CSSMediaRule)) take(rule);
+        else if (dark && rule.conditionText.replace(/\s/g, '') === DARK.replace(/\s/g, '')) for (const inner of rule.cssRules) take(inner);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+function setTheme(dark: boolean) {
+  const root = document.documentElement;
+  for (const name of painted.splice(0)) root.style.removeProperty(name);
+  choice = dark === system.matches ? null : dark;
+  if (choice !== null)
+    for (const [name, value] of tokens(choice)) {
+      root.style.setProperty(name, value);
+      painted.push(name);
+    }
+  scheme.dispatchEvent(new Event('change'));
+}
+
+function watch(f: () => void) {
+  scheme.addEventListener('change', f);
+  return () => scheme.removeEventListener('change', f);
+}
+
+function Top() {
+  const dark = useSyncExternalStore(watch, isDark);
   return (
-    <div className="site-demo" onWheelCapture={scroll}>
-      <Space
-        projects={DEMO_PROJECTS}
-        agents={AGENTS}
-        items={DEMO_ITEMS}
-        reads={DEMO_READS}
-        queue={NONE}
-        start={DEMO_START}
-        end={DEMO_END}
-        time={time}
-        clockOnly
-        segments={false}
-        label="Demo of the shared space, one day of work by three agents"
-        onTime={(t) => {
-          setPlaying(false);
-          setTime(t);
-        }}
-        onHold={onHold}
-        onPanel={onPanel}
-        aside={<span className="num pointer-events-none absolute right-0 top-0 text-xs">demo</span>}
-      />
-    </div>
+    <nav className="site-top" aria-label="Site">
+      <a href={HOME} rel="noreferrer">
+        GitHub
+      </a>
+      <Label htmlFor="site-theme" className="text-sm">
+        Dark
+      </Label>
+      <Switch id="site-theme" checked={dark} onCheckedChange={setTheme} />
+    </nav>
+  );
+}
+
+function Typed() {
+  const reduced = useReduced();
+  const [at, setAt] = useState({ name: 0, shown: NAMES[0].length, back: false });
+  useEffect(() => {
+    if (reduced) return;
+    const full = at.shown === NAMES[at.name].length;
+    const id = setTimeout(
+      () => {
+        if (at.back) setAt(at.shown ? { ...at, shown: at.shown - 1 } : { name: (at.name + 1) % NAMES.length, shown: 0, back: false });
+        else setAt(full ? { ...at, back: true } : { ...at, shown: at.shown + 1 });
+      },
+      at.back ? (at.shown ? 55 : 500) : full ? 2600 : 110,
+    );
+    return () => clearTimeout(id);
+  }, [at, reduced]);
+  return (
+    <p className="site-typed" data-site="typed" data-room={`${LEAD}${NAMES[NAMES.length - 1]}`}>
+      <span>
+        {LEAD}
+        <span className="sr-only">{NAMES[0]}.</span>
+        <span aria-hidden data-site="agent">
+          {reduced ? NAMES[0] : NAMES[at.name].slice(0, at.shown)}
+        </span>
+        <span className="site-caret" aria-hidden />
+      </span>
+    </p>
   );
 }
 
 function Action() {
   const [copied, setCopied] = useState(false);
+  const home = (
+    <a href={HOME} rel="noreferrer">
+      View on GitHub
+    </a>
+  );
   if (!RELEASED)
     return (
-      <div className="site-action site-action-link" data-site="action">
-        <Button asChild size="lg" className="site-pill h-11 rounded-full px-5 text-[0.9375rem]">
-          <a href={HOME} rel="noreferrer">
-            Code on GitHub
-            <ArrowUpRightIcon weight="bold" aria-hidden />
-          </a>
-        </Button>
-        <p data-site="status">The first release is being tested.</p>
-      </div>
+      <>
+        <div className="site-action" data-site="action">
+          <Button asChild size="lg" className={PILL}>
+            {home}
+          </Button>
+          <Button asChild variant="outline" size="lg" className={PILL}>
+            <a href="#faq">Read the FAQ</a>
+          </Button>
+        </div>
+        <p className="site-status" data-site="status">
+          The first release is being tested.
+        </p>
+      </>
     );
   const copy = async () => {
     try {
@@ -112,45 +163,99 @@ function Action() {
       <code translate="no" data-site="install" className="site-install num select-all">
         {INSTALL}
       </code>
-      <Button className="site-pill h-11 w-[5.5rem] rounded-full text-[0.9375rem]" aria-live="polite" onClick={() => void copy()}>
+      <Button className="h-11 w-[5.5rem] rounded-full text-[0.9375rem]" aria-live="polite" onClick={() => void copy()}>
         {copied ? 'Copied' : 'Copy'}
       </Button>
+      <Button asChild variant="outline" size="lg" className={PILL}>
+        {home}
+      </Button>
+    </div>
+  );
+}
+
+function Demo() {
+  const reduced = useReduced();
+  const frame = useRef<HTMLDivElement>(null);
+  const [time, setTime] = useState(reduced ? DEMO_END : DEMO_START);
+  const [seen, setSeen] = useState(false);
+  const [stopped, setStopped] = useState(reduced);
+  const idle = useRef({ held: false, open: false });
+  useEffect(() => {
+    const el = frame.current;
+    if (!el || seen) return;
+    const io = new IntersectionObserver(([entry]) => setSeen(entry.intersectionRatio >= 0.4), { threshold: 0.4 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [seen]);
+  useEffect(() => {
+    if (!seen || stopped) return;
+    let id = 0;
+    let last = performance.now();
+    let due = 0;
+    const step = (now: number) => {
+      due += idle.current.held || idle.current.open ? 0 : Math.min(100, now - last);
+      last = now;
+      if (due >= 33) {
+        const by = due * RATE;
+        due = 0;
+        setTime((t) => Math.min(DEMO_END, t + by));
+      }
+      id = requestAnimationFrame(step);
+    };
+    id = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(id);
+  }, [seen, stopped]);
+  useEffect(() => {
+    if (time >= DEMO_END) setStopped(true);
+  }, [time]);
+  const onHold = useCallback((held: boolean) => {
+    idle.current.held = held;
+  }, []);
+  const onPanel = useCallback((open: boolean) => {
+    idle.current.open = open;
+  }, []);
+  const scroll = (e: WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) e.stopPropagation();
+  };
+  return (
+    <div ref={frame} className="site-demo" data-site="demo" onWheelCapture={scroll}>
+      <Space
+        projects={DEMO_PROJECTS}
+        agents={AGENTS}
+        items={DEMO_ITEMS}
+        reads={DEMO_READS}
+        queue={NONE}
+        start={DEMO_START}
+        end={DEMO_END}
+        time={time}
+        clockOnly
+        segments={false}
+        label="Demo of the shared space, one day of work by three agents"
+        onTime={(t) => {
+          setStopped(true);
+          setTime(t);
+        }}
+        onHold={onHold}
+        onPanel={onPanel}
+      />
     </div>
   );
 }
 
 function Day() {
   return (
-    <div className="site-day" data-site="day" role="img" aria-label={`Across one day of 24 hours a background server is active for all 24 hours, and agent-ctx is active for ${HOURS} hours, only while an agent is open`}>
-      <p className="site-bar-name">
-        <span>A background server</span>
-        <span className="num">24 hours</span>
-      </p>
-      <svg className="site-bar site-bar-server" data-site="bar" width="100%" height="18">
+    <div className="site-day" data-site="day" role="img" aria-label="A background server is active through all 24 hours of a day, and agent-ctx is active only while an agent is open.">
+      <p>A background server</p>
+      <svg className="site-bar-server" data-site="bar" width="100%" height="14">
         <rect x="0" y="0" width="100%" height="100%" rx="3" />
       </svg>
-      <p className="site-bar-name">
-        <span translate="no">agent-ctx</span>
-        <span className="num">{HOURS} hours</span>
-      </p>
-      <svg className="site-bar site-bar-ours" data-site="bar" width="100%" height="18">
+      <p translate="no">agent-ctx</p>
+      <svg className="site-bar-ours" data-site="bar" width="100%" height="14">
         <line x1="0" y1="50%" x2="100%" y2="50%" />
         {OPEN.map(([from, to]) => (
           <rect key={from} x={pct(from)} y="0" width={pct(to - from)} height="100%" rx="3" />
         ))}
       </svg>
-      <svg className="site-ticks" width="100%" height="8">
-        {TICKS.map((h) => (
-          <line key={h} x1={pct(h)} y1="0" x2={pct(h)} y2="100%" />
-        ))}
-      </svg>
-      <p className="site-hours num">
-        {TICKS.map((h) => (
-          <span key={h} style={{ left: pct(h) }}>
-            {String(h).padStart(2, '0')}:00
-          </span>
-        ))}
-      </p>
     </div>
   );
 }
@@ -161,85 +266,31 @@ function Site() {
       <a href="#space" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-sm focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground">
         Skip to the demo
       </a>
+      <Top />
       <main>
-        <section className="site-first">
-          <p className="site-wordmark" data-site="wordmark" translate="no">
-            agent-ctx
-          </p>
-          <div className="site-intro">
-            <div className="site-say">
-              <h1>One memory shared by your coding agents</h1>
-              <p className="site-line" data-site="line">
-                Work started in Claude Code is continued in Cursor or Codex without explaining anything again.
-              </p>
+        <div className="site-column site-head" data-site="column">
+          <h1 translate="no">agent-ctx</h1>
+          <Typed />
+          <p data-site="line">One memory is shared by every coding agent and stays on your own computer.</p>
+          <Action />
+        </div>
+        <Demo />
+        <section className="site-column site-faq" data-site="faq">
+          <h2 id="faq">FAQ</h2>
+          {FAQ.map(([question, answer], i) => (
+            <div key={question}>
+              <h3>{question}</h3>
+              <p>{answer}</p>
+              {i === 3 && <Day />}
             </div>
-            <Action />
-          </div>
-          <Demo />
-        </section>
-
-        <section className="site-part" data-site="part">
-          <h2>How work is passed from one agent to the next</h2>
-          <ol className="site-steps" data-site="steps">
-            <li>
-              <span className="num" aria-hidden>
-                1
-              </span>
-              <p>Claude Code works on a task, and the goal, the decisions and the changed files are saved as a short card.</p>
-            </li>
-            <li>
-              <span className="num" aria-hidden>
-                2
-              </span>
-              <p>You open Cursor or Codex in the same project.</p>
-            </li>
-            <li>
-              <span className="num" aria-hidden>
-                3
-              </span>
-              <p>The second agent reads the saved cards at the start and continues the work.</p>
-            </li>
-          </ol>
-        </section>
-
-        <section className="site-part" data-site="part">
-          <h2>What is active on your computer</h2>
-          <Day />
-          <dl className="site-rows" data-site="rows">
-            <div>
-              <dt>No agent open</dt>
-              <dd>Nothing from agent-ctx is running.</dd>
-            </div>
-            <div>
-              <dt>An agent is open</dt>
-              <dd>One small process is started by that agent and remains only while that agent is open.</dd>
-            </div>
-            <div>
-              <dt>Each prompt</dt>
-              <dd>One short command is run to save and fetch memory, and that command is over within a moment.</dd>
-            </div>
-            <div>
-              <dt>The memory page</dt>
-              <dd>The page is served only while you have the page open.</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="site-part site-keep" data-site="part">
-          <div>
-            <h2>What stays with you</h2>
-            <p>The memory is one small database file on your own computer, with no server, no account and no keys.</p>
-          </div>
-          <p className="site-file num" translate="no">
-            ~/.agent-ctx/<b>memory.db</b>
-          </p>
+          ))}
         </section>
       </main>
       <footer className="site-foot">
-        <a href={HOME} rel="noreferrer" translate="no" className={`num ${LINK}`}>
+        <p>MIT licence</p>
+        <a href={HOME} rel="noreferrer" translate="no" className="num">
           github.com/{REPO}
         </a>
-        <p>MIT licence</p>
         <p>No cookie is set by this page and nothing is loaded from another host.</p>
       </footer>
     </div>
