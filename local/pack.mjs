@@ -6,7 +6,7 @@ import { crc32, deflateRawSync } from 'node:zlib';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export const ENTRY = join(ROOT, 'local', 'dist', 'agent-ctx.js');
+export const ENTRY = join(ROOT, 'plugins', 'claude-code', 'scripts', 'agent-ctx.mjs');
 export const OUT = join(ROOT, 'local', 'out', 'agent-ctx.mcpb');
 export const ICON = join(ROOT, 'plugins', 'claude-code', '.claude-plugin', 'icon.png');
 
