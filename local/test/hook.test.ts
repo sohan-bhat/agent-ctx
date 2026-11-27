@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { LIMIT, fits, read, write, type EventArgs, type Host } from '../src/hook.ts';
+import { LIMIT, fits, hears, read, write, type EventArgs, type Host } from '../src/hook.ts';
 
 type Json = Record<string, unknown>;
 type Sample = [name: string, host: Host, stdin: Json, want: EventArgs];
@@ -272,6 +272,13 @@ for (const [host, event, want] of WRITES) {
     assert.equal(write(host, event, TEXT), want);
   });
 }
+
+test('a host hears text on exactly the events that write answers', () => {
+  for (const [host, event, want] of WRITES) assert.equal(hears(host, event), want !== '', `${host} ${event}`);
+  assert.deepEqual(HOSTS.map((host) => hears(host, 'UserPromptSubmit')), [true, true, false, true]);
+  assert.equal(hears('elsewhere' as Host, 'UserPromptSubmit'), false);
+  assert.equal(hears('cursor', 'constructor'), false);
+});
 
 test('an empty text always gives an empty string', () => {
   for (const [host, event] of WRITES) {

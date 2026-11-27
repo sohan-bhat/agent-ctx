@@ -3,6 +3,8 @@ import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import { Engine, type Caller } from '../../service/src/engine.ts';
+import { MAX, SAY, type Max } from '../../service/src/limits.ts';
 import { Store, type Sql } from '../../service/src/store.ts';
 
 const SCHEMA = 1;
@@ -12,12 +14,24 @@ const NEWER = 'This memory file has the format of a newer agent-ctx, so update a
 const STEPS: string[][] = [];
 const STATEMENTS_KEPT = 200;
 const LOCKED = 5;
+const OTHER = 'another agent';
+
+export const CAPS: Max = { ...MAX, perMinute: 100000, perDay: 100000, storedPerDay: 5000, storeBytes: 100 * 1024 * 1024 };
+
+const WORDS: [string, string][] = [
+  [SAY.day, 'The limit of 100,000 calls for today is reached. Calls are accepted again tomorrow.'],
+  [SAY.stored, '5,000 items were stored on this computer today. More can be stored tomorrow.'],
+  [SAY.agents, 'This computer already has 20 connected agents.'],
+  [SAY.full, 'The memory on this computer is full at 100 MB, so nothing new is stored.'],
+  [SAY.projects, 'This computer already has 200 projects with saved items.'],
+  ['Rule saved as pending. The person turns the rule on with Accept at the agent-ctx page.', 'Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules.'],
+];
 
 type Value = string | number | null;
 
 export class Refusal extends Error {}
 
-function folder(): string {
+export function folder(): string {
   return process.env.AGENT_CTX_HOME || join(homedir(), '.agent-ctx');
 }
 
@@ -125,6 +139,10 @@ export class Db implements Sql {
     this.statements.clear();
   }
 
+  patience(ms: number): void {
+    this.db.exec(`PRAGMA busy_timeout = ${Math.max(1, Math.floor(ms))}`);
+  }
+
   wal(): boolean {
     return (this.db.prepare('PRAGMA journal_mode = WAL').get() as { journal_mode: string }).journal_mode === 'wal';
   }
@@ -135,18 +153,21 @@ export class Db implements Sql {
   }
 }
 
-export function open(): Db {
+export function open(wait = BUSY_MS): Db {
   const dir = folder();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, 'memory.db');
   if (!existsSync(path)) closeSync(openSync(path, 'a', 0o600));
   const { DatabaseSync } = sqlite();
-  const until = Date.now() + BUSY_MS;
+  const until = Date.now() + wait;
   for (;;) {
-    const db = new Db(new DatabaseSync(path, { timeout: BUSY_MS }));
+    const db = new Db(new DatabaseSync(path, { timeout: Math.max(1, until - Date.now()) }));
     try {
       db.migrate();
-      if (db.wal()) return db;
+      if (db.wal()) {
+        db.patience(wait);
+        return db;
+      }
     } catch (e) {
       db.close();
       if (!locked(e) || Date.now() > until) throw e;
@@ -155,4 +176,40 @@ export function open(): Db {
     if (Date.now() > until) throw new Error('locked');
     pause(25);
   }
+}
+
+export function local(text: string): string {
+  let out = text;
+  for (const [from, to] of WORDS) if (out.includes(from)) out = out.split(from).join(to);
+  return out;
+}
+
+export function who(name: string | undefined): Caller {
+  const clean = (name ?? '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} ._-]+/gu, '').replace(/ +/g, ' ').trim().slice(0, 40).trim();
+  return { agent: clean || OTHER, grant: clean || OTHER, scopes: ['read', 'write'] };
+}
+
+export type Call = <T>(fn: (engine: Engine) => Promise<T>) => Promise<T>;
+
+export function caller(db: Db): Call {
+  let engine: Engine | null = null;
+  let seen = -1;
+  return <T>(fn: (engine: Engine) => Promise<T>) =>
+    db
+      .within(async () => {
+        const changes = db.changes();
+        if (!engine || changes !== seen) {
+          engine = new Engine(db, () => Date.now(), CAPS);
+          engine.limits.reserve = 0;
+          seen = changes;
+        }
+        const out = await fn(engine);
+        engine.limits.flush(Date.now(), true);
+        const text = (out as { text?: unknown } | null)?.text;
+        return typeof text === 'string' ? ({ ...out, text: local(text) } as T) : out;
+      })
+      .catch((e: unknown) => {
+        engine = null;
+        throw e;
+      });
 }

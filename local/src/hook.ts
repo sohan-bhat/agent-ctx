@@ -115,10 +115,19 @@ export function read(host: Host, stdin: string): EventArgs | null {
   return out;
 }
 
+function heard(host: Host, event: string): string | null {
+  const name = own(own(RULES, host) ?? {}, event)?.as ?? event;
+  return own(HEARD, host)?.includes(name) ? name : null;
+}
+
+export function hears(host: Host, event: string): boolean {
+  return heard(host, event) !== null;
+}
+
 export function write(host: Host, event: string, text: string): string {
   const rules = own(RULES, host) ?? {};
-  const name = own(rules, event)?.as ?? event;
-  if (!own(HEARD, host)?.includes(name)) return '';
+  const name = heard(host, event);
+  if (name === null) return '';
   const body = cut(text, LIMIT[host]);
   const bare = body.trim();
   if (!bare) return '';
