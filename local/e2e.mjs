@@ -437,7 +437,58 @@ async function speed() {
   return { pass: over.length === 0, evidence: `${PROGRAM ? 'each hook was run as one program without Node, ' : ''}median of ${RUNS} runs with ${cards} cards stored, in ms. ${Object.entries(med).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(', ')}. A finished tool is at ${beside('finished tool')} and a first prompt at ${beside('first prompt with recall')}.${why}` };
 }
 
-const PROOFS = { 1: ['Install', install], 2: ['Continue', proceed], 3: ['Rules', rules], 4: ['Safety', safety], 5: ['Sharing', sharing], 6: ['Removal', removal], speed: ['Speed', speed] };
+async function mirror() {
+  const [a, b] = [home('mirror-a'), home('mirror-b')];
+  const git = (...args) => spawnSync('/usr/bin/git', args, { env: { PATH: '/usr/bin:/bin', HOME: guard(a.HOME) }, encoding: 'utf8' }).stdout.trim();
+  const bare = join(TMP, 'mirror-remote.git');
+  git('init', '--bare', '-q', bare);
+  const cwd = project('kiln-glaze');
+  const ask = 'Glaze the kiln shelf with the cone 6 mix';
+  const lock = (where) => JSON.parse(rows(where.ctx, "SELECT v FROM meta WHERE k = 'mirror:lock'")[0]?.v ?? 'null');
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const synced = async (where, after) => {
+    for (let waited = 0; waited < 10000; waited += 50) {
+      const l = lock(where);
+      if (l?.done && l.at >= after && !alive(l.pid)) return { ...l, waited };
+      await new Promise((done) => setTimeout(done, 50));
+    }
+    return null;
+  };
+  const turn = (where) => {
+    where.copy = join(where.root, 'copy');
+    git('clone', '-q', bare, where.copy);
+    return program(['mirror', 'on', where.copy, '--yes'], where.env).out.trim().split('\n').pop();
+  };
+  const on = [turn(a), turn(b)];
+  const send = (where, event) => hook('claude-code', { cwd, ...event }, where.ctx, { HOME: where.HOME });
+  const started = Date.now();
+  const runs = [send(a, { hook_event_name: 'UserPromptSubmit', session_id: 'a-1', prompt: ask }), send(a, { hook_event_name: 'PostToolUse', session_id: 'a-1', tool_name: 'Write', tool_input: { file_path: join(cwd, 'glaze.md') } }), send(a, { hook_event_name: 'Stop', session_id: 'a-1', last_assistant_message: 'The shelf is glazed and the kiln is loaded.' })];
+  const first = await synced(a, started);
+  const later = Date.now();
+  runs.push(send(b, { hook_event_name: 'Stop', session_id: 'b-0', last_assistant_message: 'Ready.' }));
+  const second = await synced(b, later);
+  const next = send(b, { hook_event_name: 'UserPromptSubmit', session_id: 'b-1', prompt: 'continue' });
+  const there = rows(b.ctx, "SELECT kind, json_extract(origin, '$.agent') AS agent, json_extract(body, '$.goal') AS goal FROM items ORDER BY kind");
+  const file = join(b.copy, 'pages', 'kiln-glaze.md');
+  const page = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const commits = git('-C', bare, 'log', '--format=%s').split('\n').filter(Boolean);
+  const quiet = runs.every((r) => r.code === 0 && !r.err && !r.out);
+  const told = /\nHANDOFF from claude-code on \d{4}-\d{2}-\d{2}[^\n]*\n> goal: Glaze the kiln shelf with the cone 6 mix\n/.test(next.out);
+  const pass = !!first && !!second && quiet && told && there.length === 2 && there.every((i) => i.agent === 'claude-code' && i.goal === ask) && page.includes(`>   goal: ${ask}`) && commits.length === 2 && commits.every((c) => c === 'agent-ctx sync') && runs.every((r) => r.ms < 1000);
+  return {
+    pass,
+    evidence: `two temp homes, each with a clone of one bare repository, got "${on[0]}" and "${on[1]}" from mirror on. On computer A three real hook processes stored one session with nothing printed ${quiet}, and the Stop hook returned after ${runs[2].ms.toFixed(0)} ms while the sync that hook started ended ${first ? `${first.done - first.at} ms after the start, with no sync process alive ${first.waited} ms after the wait began` : 'never'}. One Stop hook on computer B started the sync there, which ended ${second ? `after ${second.done - second.at} ms` : 'never'}. Computer B now has ${there.map((i) => `a ${i.kind} from ${i.agent}`).join(' and ') || 'nothing'}, the next session on B got the handoff of A as text ${told}, the page ${relative(b.root, file)} has the card ${page.includes(`>   goal: ${ask}`)}, and the bare repository has ${commits.length} commits named ${[...new Set(commits)].map((c) => `"${c}"`).join(' and ')}, one from mirror on and one from the hook`,
+  };
+}
+
+const PROOFS = { 1: ['Install', install], 2: ['Continue', proceed], 3: ['Rules', rules], 4: ['Safety', safety], 5: ['Sharing', sharing], 6: ['Removal', removal], speed: ['Speed', speed], mirror: ['Mirror', mirror] };
 const asked = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(PROOFS);
 const unknown = asked.filter((name) => !Object.hasOwn(PROOFS, name));
 const plugin = PROGRAM ? asked.filter((name) => ['2', '3', '4'].includes(name)) : [];

@@ -30,6 +30,8 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 - A bare `agent-ctx` command is never printed. The command in every printed text is built by `typed` in local/src/db.ts.
 - A release is made from a tag of the form v1.2.3 that equals the version in package.json.
 - A hook is one short run of hook.mjs with no MCP library, or one run of the program with the word hook in the self contained form. Every run ends with exit 0 and an empty stderr, and the wait for the memory file ends after one second.
+- With a mirror on, one `agent-ctx sync` is started as a detached process on SessionStart and on Stop, at most once per 60 seconds, and the hook run ends at once. No other program is started from hook.mjs.
+- The memory file is never placed in a mirror. Every record read from a mirror counts as text written by an agent, so a rule from a mirror arrives as pending.
 - HOME and AGENT_CTX_HOME are set to a temp folder in every test and proof, and no `claude` command found on PATH is started by a test.
 - Never open or print the queries of core/test/corpus3.ts and core/test/corpus4.ts. Those sets stay blind, so recall settings are chosen on corpus2.ts alone.
 - A commit message is one line of at most six words.
@@ -40,7 +42,7 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 
     npm run typecheck
     npm test
-    node local/e2e.mjs 1 5 6 speed
+    node local/e2e.mjs 1 5 6 speed mirror
     npm --prefix service run typecheck
     npm --prefix service test
     node service/e2e/real.mjs
