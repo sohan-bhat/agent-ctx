@@ -15,9 +15,10 @@ const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
 const END = 18 * 60;
 const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Antigravity', 'Grok Build', 'Muse Code', 'Claude desktop'];
-const LEADS = ['Work started in', 'is continued in'];
-const SPOKEN = 'Work started in Claude Code is continued in Cursor.';
-const EDGE = [524, 518];
+const LEADS = ['Switching from', 'to'];
+const TAIL = 'requires no explanation.';
+const SPOKEN = 'Switching from Claude Code to Cursor requires no explanation.';
+const EDGE = [664, 656];
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
 const shots = process.env.SHOTS;
@@ -337,12 +338,16 @@ function seeded(seed) {
 
 const watch = (page) =>
   page.evaluate(
-    ([names, leads]) => {
-      const t = (window.__typed = { shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
+    ([names, leads, tail]) => {
+      const t = (window.__typed = { shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
       const p = document.querySelector('[data-site=typed]');
       const words = [];
+      let end = null;
       const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (leads.includes(n.textContent)) words.push(n);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (leads.includes(n.textContent)) words.push(n);
+        if (n.textContent.trim() === tail) end = n;
+      }
       const range = document.createRange();
       const look = () => {
         const fired = window.__timers?.last ?? {};
@@ -367,7 +372,12 @@ const watch = (page) =>
           range.selectNodeContents(n);
           t.lead[i].add(Math.round(range.getBoundingClientRect().left - at.left));
         });
-        if (carets[1]?.getBoundingClientRect().right > at.right + 0.5) t.out++;
+        if (end) {
+          range.selectNodeContents(end);
+          const last = range.getBoundingClientRect();
+          t.tail.add(Math.round(last.left - at.left));
+          if (last.right > at.right + 0.5) t.out++;
+        } else t.out++;
         spots.forEach((e, i) => {
           t.place[i].add(Math.round(box[i].left - at.left));
           if (t.keys[i].at(-1)?.[0] === e.textContent) return;
@@ -386,11 +396,11 @@ const watch = (page) =>
       setInterval(look, 50);
       look();
     },
-    [NAMES, LEADS],
+    [NAMES, LEADS, TAIL],
   );
 
 const typedOf = (page) =>
-  page.evaluate((leads) => {
+  page.evaluate(([leads, tail]) => {
     const t = window.__typed;
     const list = (v) => [...v];
     const p = document.querySelector('[data-site=typed]');
@@ -402,20 +412,25 @@ const typedOf = (page) =>
     const spots = [...p.querySelectorAll('[data-site=agent]')];
     const carets = [...p.querySelectorAll('.site-caret')].map((e) => e.getBoundingClientRect());
     const words = [];
+    let end = null;
     const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (leads.includes(n.textContent)) words.push(edge(n));
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (leads.includes(n.textContent)) words.push(edge(n));
+      if (n.textContent.trim() === tail) end = edge(n);
+    }
     const rows = spots.map((e, i) => {
       const r = e.getBoundingClientRect();
       const c = carets[i];
       const word = [...e.childNodes].find((n) => n.nodeType === 3);
-      return { top: r.top, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? edge(word).right : r.left) - 0.5 };
+      return { top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? edge(word).right : r.left) - 0.5 };
     });
-    const ends = [...words, ...spots.map((e) => e.getBoundingClientRect()), ...carets.slice(0, 1)].map((r) => r.right);
+    const ends = [...words, ...spots.map((e) => e.getBoundingClientRect()), ...carets].map((r) => r.right);
     return {
       ...t,
       asked: window.__timers?.asked ?? {},
       place: t.place.map(list),
       lead: t.lead.map(list),
+      tail: list(t.tail),
       tall: list(t.tall),
       top: list(t.top),
       drop: list(t.drop),
@@ -427,9 +442,11 @@ const typedOf = (page) =>
       em: parseFloat(getComputedStyle(p).fontSize),
       high: p.getBoundingClientRect().height,
       gap: words[1] && carets[0] ? words[1].left - carets[0].right : NaN,
-      last: !!carets[1] && carets[1].right >= Math.max(...ends) - 0.5,
+      space: end && carets[1] ? end.left - carets[1].right : NaN,
+      low: !!end && !!rows[1] && (end.top + end.bottom) / 2 > rows[1].top && (end.top + end.bottom) / 2 < rows[1].bottom,
+      last: !!end && end.right >= Math.max(...ends) - 0.5,
     };
-  }, LEADS);
+  }, [LEADS, TAIL]);
 
 function hand(log, asked) {
   const votes = {};
@@ -608,15 +625,16 @@ async function walk(b, site, w, h, scheme) {
     await waitFor(() => page.evaluate(() => window.__typed.shown.every((v) => v.length >= 2)), 15000);
     const typed = await typedOf(page);
     const level = typed.rows.length === 2 && Math.abs(typed.rows[0].top - typed.rows[1].top) < 1;
+    const spaced = (v) => v > 0.15 * typed.em && v < 0.45 * typed.em;
     if (wide) {
       check(`${tag} the typed sentence is one line`, typed.carets === 2 && level && Math.abs(typed.high - typed.line) < 1, `${Math.round(typed.high)} px tall with a line height of ${typed.line} px`);
-      check(`${tag} the first cursor stands between the first name and "is continued in" with one word space`, level && typed.rows[0].on && typed.rows[0].after && typed.gap > 0.15 * typed.em && typed.gap < 0.45 * typed.em, `${typed.gap.toFixed(1)} px from the first cursor to the next word`);
-      check(`${tag} the second cursor ends the line`, level && typed.rows[1].on && typed.rows[1].after && typed.last);
-    } else check(`${tag} the typed block has two lines and each line ends in a cursor`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top, `${typed.carets} cursors, ${typed.rows.length} names`);
+      check(`${tag} the first cursor stands between the first name and "to" with one word space`, level && typed.rows[0].on && typed.rows[0].after && spaced(typed.gap), `${typed.gap.toFixed(1)} px from the first cursor to the next word`);
+      check(`${tag} the second cursor stands between the second name and "requires no explanation." with one word space and those words end the line`, level && typed.rows[1].on && typed.rows[1].after && spaced(typed.space) && typed.low && typed.last, `${typed.space.toFixed(1)} px from the second cursor to the next word`);
+    } else check(`${tag} the typed block has two lines, each name is followed by a cursor and "requires no explanation." ends line two`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top && spaced(typed.space) && typed.low, `${typed.carets} cursors, ${typed.rows.length} names, ${typed.space.toFixed(1)} px from the second cursor to the next word`);
     check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.shown.every((v) => new Set(v).size >= 2), typed.shown.map((v) => v.join(', ')).join(' and '));
     check(`${tag} the two spots never show the same complete name at one moment`, typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
-    if (wide) check(`${tag} the typed line keeps one height, "Work started in" never moves and the words after the first name move sideways`, steady(typed) && typed.lead[1].length > 1, placed(typed));
-    else check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names ${typed.place.map((v) => v.join(' or ')).join(' and ')} px from the left, sentence at ${typed.under.join(' ')}`);
+    if (wide) check(`${tag} the typed line keeps one height, "Switching from" never moves and the words after the first name move sideways`, steady(typed) && typed.lead[1].length > 1 && typed.tail.length > 1, placed(typed));
+    else check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1) && typed.lead.every((v) => v.length === 1) && typed.tail.length > 1 && typed.out === 0, `heights ${typed.tall.join(' ')}, line ${typed.line}, names ${typed.place.map((v) => v.join(' or ')).join(' and ')} px from the left, sentence at ${typed.under.join(' ')}`);
     check(`${tag} the cursor that types stays lit`, typed.typing > 0 && typed.unlit === 0, `${typed.unlit} of ${typed.typing} moments with a dark cursor in a word`);
     const lined = await page.evaluate(() => {
       const p = document.querySelector('[data-site=typed]');
@@ -722,7 +740,7 @@ async function random(b, site) {
     const pauses = hands.flatMap((v) => v.pause);
     const share = [near(hands[0], hands[1], 40), near(hands[1], hands[0], 40)];
     check('with seed 1 the pauses differ from each other and the two spots start changes at different moments', ranged(pauses, [1500, 5000], pauses.length) && share.every((v) => v < 1 / 3), `pauses ${pauses.map((v) => Math.round(v)).join(' ')} ms, ${share.map((v) => Math.round(v * 100)).join(' and ')} percent of the starts near a start of the other spot`);
-    check('the typed line keeps one height and one top while both names change and "Work started in" never moves', steady(typed), placed(typed));
+    check('the typed line keeps one height and one top while both names change and "Switching from" never moves', steady(typed), placed(typed));
     const beats = typed.blink.map(rhythm);
     const both = [near(beats[0], beats[1], 40), near(beats[1], beats[0], 40)];
     check(
@@ -758,33 +776,46 @@ async function random(b, site) {
 }
 
 async function fit(b, site) {
-  for (const w of [1440, ...EDGE]) {
+  for (const [w, lines, where] of [[1440, 1, ''], [EDGE[0], 1, ', just above the switch'], [EDGE[1], 2, ', just below the switch'], [390, 2, ''], [360, 3, '']]) {
     const { ctx, page } = await context(b, { w, h: 800, scheme: 'dark', reduced: true });
     try {
       await page.goto(site.url);
       await ready(page);
-      const got = await page.evaluate((names) => {
-        const p = document.querySelector('[data-site=typed]');
-        const spots = [...p.querySelectorAll('[data-site=agent]')];
-        const end = p.querySelectorAll('.site-caret')[1];
-        const line = parseFloat(getComputedStyle(p).lineHeight);
-        const out = { room: p.getBoundingClientRect().width, lines: Math.round(p.getBoundingClientRect().height / line), wide: 0, pair: '', broken: 0 };
-        if (spots.length !== 2 || !end) return out;
-        for (const a of names)
-          for (const z of names) {
-            if (a === z) continue;
-            spots[0].firstChild.nodeValue = a;
-            spots[1].firstChild.nodeValue = z;
-            const at = p.getBoundingClientRect();
-            const size = end.getBoundingClientRect().right - at.left;
-            if (size > out.wide) Object.assign(out, { wide: size, pair: `${a} and ${z}` });
-            if (Math.round(at.height / line) !== 1 || size > at.width + 0.5 || Math.abs(spots[0].getBoundingClientRect().top - spots[1].getBoundingClientRect().top) >= 1) out.broken++;
-          }
-        return out;
-      }, NAMES);
-      const where = w === EDGE[0] ? ', just above the switch' : w === EDGE[1] ? ', just below the switch' : '';
-      if (w === EDGE[1]) check(`at ${w} px wide${where}, the typed block has two lines`, got.lines === 2 && got.broken === NAMES.length * (NAMES.length - 1), `${got.lines} lines in a column of ${got.room} px`);
-      else check(`at ${w} px wide${where}, every pair of two names fits on one line`, got.lines === 1 && got.wide > 0 && got.broken === 0, `the longest pair ${got.pair} ends at ${got.wide.toFixed(1)} px in a column of ${got.room} px, ${got.broken} pairs do not fit`);
+      const got = await page.evaluate(
+        ([names, tail]) => {
+          const p = document.querySelector('[data-site=typed]');
+          const spots = [...p.querySelectorAll('[data-site=agent]')];
+          const carets = [...p.querySelectorAll('.site-caret')];
+          const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          const range = document.createRange();
+          let end = null;
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.trim() === tail) end = n;
+          const line = parseFloat(getComputedStyle(p).lineHeight);
+          const out = { room: p.getBoundingClientRect().width, pairs: 0, fits: [0, 0, 0, 0], wide: 0, pair: '' };
+          if (spots.length !== 2 || carets.length !== 2 || !end) return out;
+          for (const a of names)
+            for (const z of names) {
+              if (a === z) continue;
+              spots[0].firstChild.nodeValue = a;
+              spots[1].firstChild.nodeValue = z;
+              range.selectNodeContents(end);
+              const at = p.getBoundingClientRect();
+              const last = range.getBoundingClientRect();
+              const size = Math.max(last.right, ...carets.map((c) => c.getBoundingClientRect().right)) - at.left;
+              const rows = new Set([...spots.map((e) => e.getBoundingClientRect().top), last.top].map((v) => Math.round((v - at.top) / line))).size;
+              out.pairs++;
+              if (size > out.wide) Object.assign(out, { wide: size, pair: `${a} and ${z}` });
+              if (size <= at.width + 0.5 && Math.round(at.height / line) === rows) out.fits[rows]++;
+            }
+          return out;
+        },
+        [NAMES, TAIL],
+      );
+      const all = NAMES.length * (NAMES.length - 1);
+      const told = `the longest line ends at ${got.wide.toFixed(1)} px with ${got.pair} in a column of ${got.room} px, ${got.fits.slice(1).join(' and ')} pairs fit on one, two and three lines`;
+      if (lines === 1) check(`at ${w} px wide${where}, every pair of two names fits on one line`, got.pairs === all && got.fits[1] === all, told);
+      else if (lines === 2) check(`at ${w} px wide${where}, the typed block has two lines and line two fits with every name`, got.pairs === all && got.fits[2] === all, told);
+      else check(`at ${w} px wide, the typed block has three lines and every line fits with every name`, got.pairs === all && got.fits[3] === all, told);
     } finally {
       await ctx.close();
     }
