@@ -159,6 +159,15 @@ describe('outgoing', () => {
     assert.equal(outgoing(items, [], T0, DESK).length, 0);
   });
 
+  test('an item with a missing field is still sent', () => {
+    const thin = { id: uid(16), project: PROJECT, kind: 'card', body: {}, created: T0 } as unknown as Item;
+    const recs = outgoing([thin], [], 0, DESK);
+    assert.equal(recs.length, 1);
+    assert.equal(goalOf(recs[0]?.item), '');
+    assert.deepEqual(recs[0]?.item?.origin, { agent: '', via: 'import', source: 'untrusted', at: T0 });
+    assert.deepEqual(parse(recs.map(line).join('\n')), { recs, bad: 0 });
+  });
+
   test('a bad device id is refused', () => {
     for (const device of BAD_DEVICES) assert.throws(() => outgoing([CARD], [], 0, device), TypeError);
   });

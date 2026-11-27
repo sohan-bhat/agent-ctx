@@ -22,7 +22,6 @@ const INDEX = 'pages/index.md';
 const RESERVED = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$/;
 const KINDS: Kind[] = ['card', 'handoff', 'rule', 'dropped'];
 const VIAS: Via[] = ['hook', 'tool', 'page', 'import'];
-const NEED: Record<Kind, string[]> = { card: ['goal'], handoff: ['goal', 'next'], rule: ['text'], dropped: ['label', 'text'] };
 
 function isObj(v: unknown): v is Obj {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -40,10 +39,13 @@ function needDevice(device: string): void {
   if (typeof device !== 'string' || !DEVICE.test(device)) throw new TypeError('A device id is 8 to 32 lower case letters, digits and hyphens.');
 }
 
-function asBody(kind: Kind, b: Obj): Body | null {
+function asBody(kind: Kind, b: Obj): Body {
   const out: Obj = {};
   const text = (...keys: string[]): void => {
     for (const k of keys) if (typeof b[k] === 'string') out[k] = b[k];
+  };
+  const must = (...keys: string[]): void => {
+    for (const k of keys) out[k] = typeof b[k] === 'string' ? b[k] : '';
   };
   const many = (...keys: string[]): void => {
     for (const k of keys) if (Array.isArray(b[k])) out[k] = (b[k] as unknown[]).filter((x) => typeof x === 'string');
@@ -55,36 +57,37 @@ function asBody(kind: Kind, b: Obj): Body | null {
       .map((x) => (typeof x[more] === 'string' ? { [need]: x[need], [more]: x[more] } : { [need]: x[need] }));
   };
   if (kind === 'card') {
-    text('goal');
+    must('goal');
     pairs('changed', 'path', 'what');
     pairs('decisions', 'what', 'why');
     many('commands', 'dead_ends', 'open', 'prompts');
     text('last');
   } else if (kind === 'handoff') {
-    text('goal', 'done', 'next');
+    must('goal');
+    text('done');
+    must('next');
     many('blockers', 'files');
     text('check', 'question', 'task');
   } else if (kind === 'rule') {
-    text('text');
-    out.words = typeof b.words === 'string' ? b.words : '';
+    must('text', 'words');
     out.scope = b.scope === 'all' ? 'all' : 'project';
     out.status = b.status === 'active' || b.status === 'off' ? b.status : 'pending';
     if (b.proof === 'hook' || b.proof === 'elicit' || b.proof === 'page') out.proof = b.proof;
   } else {
-    text('label', 'text');
+    must('label', 'text');
     out.size = typeof b.size === 'number' && Number.isFinite(b.size) ? b.size : 0;
   }
   if ((kind === 'card' || kind === 'handoff') && typeof b.auto === 'boolean') out.auto = b.auto;
-  return NEED[kind].every((k) => typeof out[k] === 'string') ? (out as unknown as Body) : null;
+  return out as unknown as Body;
 }
 
-function asOrigin(o: unknown, created: number): Origin | null {
-  if (!isObj(o) || !plain(o.agent)) return null;
-  const out: Obj = { agent: o.agent };
-  for (const k of ['model', 'machine', 'session']) if (plain(o[k])) out[k] = o[k];
-  out.via = VIAS.includes(o.via as Via) ? o.via : 'import';
-  out.source = o.source === 'person' || o.source === 'agent' ? o.source : 'untrusted';
-  out.at = isTime(o.at) ? o.at : created;
+function asOrigin(o: unknown, created: number): Origin {
+  const from = isObj(o) ? o : {};
+  const out: Obj = { agent: typeof from.agent === 'string' ? from.agent : '' };
+  for (const k of ['model', 'machine', 'session']) if (typeof from[k] === 'string') out[k] = from[k];
+  out.via = VIAS.includes(from.via as Via) ? from.via : 'import';
+  out.source = from.source === 'person' || from.source === 'agent' ? from.source : 'untrusted';
+  out.at = isTime(from.at) ? from.at : created;
   return out as unknown as Origin;
 }
 
@@ -92,11 +95,8 @@ function asItem(x: unknown): Item | null {
   if (!isObj(x) || typeof x.id !== 'string' || !ID.test(x.id) || !plain(x.project)) return null;
   if (!KINDS.includes(x.kind as Kind) || !isObj(x.body) || !isTime(x.created)) return null;
   const kind = x.kind as Kind;
-  const body = asBody(kind, x.body);
-  const origin = asOrigin(x.origin, x.created);
-  if (!body || !origin) return null;
   const flags = Array.isArray(x.flags) ? x.flags.filter((f): f is string => typeof f === 'string' && FLAG.test(f)) : [];
-  return { id: x.id, project: x.project, kind, body, origin, flags, held: x.held === true, pinned: x.pinned === true, folded: x.folded === true, created: x.created };
+  return { id: x.id, project: x.project, kind, body: asBody(kind, x.body), origin: asOrigin(x.origin, x.created), flags, held: x.held === true, pinned: x.pinned === true, folded: x.folded === true, created: x.created };
 }
 
 function check(x: unknown): Rec | null {
