@@ -691,7 +691,7 @@ async function chance(b, site, seed, changes) {
   await page.waitForSelector('[data-site=typed]');
   await watch(page);
   await ready(page);
-  await waitFor(() => page.evaluate((n) => window.__typed.shown.every((v) => v.length > n && new Set(v).size >= 3), changes), 150000, 500);
+  await waitFor(() => page.evaluate((n) => window.__typed.shown.every((v) => v.length > n && new Set(v).size >= 3), changes), 90000, 500);
   return { ctx, page, typed: await typedOf(page) };
 }
 
