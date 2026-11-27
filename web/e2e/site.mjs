@@ -14,7 +14,7 @@ const HOME = `https://github.com/${REPO}`;
 const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
 const END = 18 * 60;
-const NAMES = ['Cursor', 'Codex', 'Gemini CLI', 'Claude desktop'];
+const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Gemini CLI', 'Claude desktop'];
 const SPOKEN = 'Work started in Claude Code is continued in Cursor.';
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
@@ -311,15 +311,36 @@ async function walk(b, site, w, h, scheme) {
     await page.goto(site.url);
     await ready(page);
     await page.evaluate((names) => {
-      const seen = new Set();
-      const tall = new Set();
-      window.__typed = { seen, tall };
-      setInterval(() => {
-        const p = document.querySelector('[data-site=typed]');
-        const text = p?.querySelector('[data-site=agent]')?.textContent ?? '';
-        if (names.includes(text)) seen.add(text);
-        if (p) tall.add(Math.round(p.getBoundingClientRect().height));
-      }, 50);
+      const t = (window.__typed = { seen: [new Set(), new Set()], place: [new Set(), new Set()], tall: new Set(), under: new Set(), said: new Set(), apart: new Set(), pairs: 0, same: 0, typing: 0, both: 0, unlit: 0 });
+      const p = document.querySelector('[data-site=typed]');
+      const look = () => {
+        const at = p.getBoundingClientRect();
+        const spots = [...p.querySelectorAll('[data-site=agent]')];
+        const carets = [...p.querySelectorAll('.site-caret')];
+        const said = p.cloneNode(true);
+        for (const e of said.querySelectorAll('[aria-hidden]')) e.remove();
+        t.said.add(said.textContent.trim());
+        t.tall.add(Math.round(at.height));
+        t.under.add(document.querySelector('[data-site=line]')?.offsetTop);
+        if (spots.length !== 2 || carets.length !== 2) return;
+        const whole = spots.map((e) => names.includes(e.textContent));
+        spots.forEach((e, i) => {
+          const r = e.getBoundingClientRect();
+          t.place[i].add(`${Math.round(r.left - at.left)} ${Math.round(r.top - at.top)}`);
+          if (whole[i]) t.seen[i].add(e.textContent);
+          else if (getComputedStyle(carets[i]).animationName !== 'none') t.unlit++;
+        });
+        const mid = whole.filter((v) => !v).length;
+        if (!mid) t.pairs++;
+        if (!mid && spots[0].textContent === spots[1].textContent) t.same++;
+        if (mid) t.typing++;
+        if (mid === 2) t.both++;
+        const turn = carets.map((c) => c.getAnimations()[0]?.effect?.getComputedTiming().progress);
+        if (turn.every((v) => typeof v === 'number')) t.apart.add(Math.round(Math.abs(turn[0] - turn[1]) * 100));
+      };
+      new MutationObserver(look).observe(p, { subtree: true, childList: true, characterData: true, attributes: true });
+      setInterval(look, 50);
+      look();
     }, NAMES);
 
     const first = [await box(page, 'h1'), await box(page, '[data-site=typed]'), await box(page, '[data-site=line]'), await box(page, '[data-site=action] a >> nth=0'), await box(page, '[data-site=action] a >> nth=1')];
@@ -451,9 +472,30 @@ async function walk(b, site, w, h, scheme) {
     check(`${tag} a question mark stands only on the eight questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
     check(`${tag} no install line is shown`, !t.out.join('\n').includes('install.sh') && !(await page.locator('[data-site=install]').count()));
 
-    const typed = await page.evaluate(() => ({ seen: [...window.__typed.seen], tall: [...window.__typed.tall] }));
-    check(`${tag} the typed line shows at least two agent names over time and keeps one height`, typed.seen.length >= 2 && typed.tall.length === 1, `${typed.seen.join(', ')}, heights ${typed.tall.join(' ')}`);
-    check(`${tag} screen readers get the full sentence once and no live updates`, s.spoken === SPOKEN && !s.live, s.spoken);
+    await waitFor(() => page.evaluate(() => window.__typed.seen.every((v) => v.size >= 2)), 12000);
+    const typed = await page.evaluate(() => {
+      const t = window.__typed;
+      const list = (v) => [...v];
+      const p = document.querySelector('[data-site=typed]');
+      const spots = [...p.querySelectorAll('[data-site=agent]')];
+      const carets = [...p.querySelectorAll('.site-caret')].map((e) => e.getBoundingClientRect());
+      const rows = spots.map((e, i) => {
+        const r = e.getBoundingClientRect();
+        const c = carets[i];
+        const word = [...e.childNodes].find((n) => n.nodeType === 3);
+        const range = document.createRange();
+        if (word) range.selectNode(word);
+        return { top: r.top, bottom: r.bottom, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? range.getBoundingClientRect().right : r.left) - 0.5 };
+      });
+      return { ...t, seen: t.seen.map(list), place: t.place.map(list), tall: list(t.tall), under: list(t.under), said: list(t.said), apart: list(t.apart), carets: carets.length, rows, line: parseFloat(getComputedStyle(p).lineHeight) };
+    });
+    check(`${tag} the typed block has two lines and each line ends in a cursor of its own`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].bottom <= typed.rows[1].top + 1, `${typed.carets} cursors, ${typed.rows.length} names`);
+    check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.seen.every((v) => v.length >= 2), typed.seen.map((v) => v.join(', ')).join(' and '));
+    check(`${tag} the two spots never show the same complete name at one moment`, typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
+    check(`${tag} at most one spot is in the middle of a word at any moment`, typed.typing > 0 && typed.both === 0, `${typed.both} of ${typed.typing} moments in the middle of a word`);
+    check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names at ${typed.place.map((v) => v.join(' or ')).join(' and ')}, sentence at ${typed.under.join(' ')}`);
+    check(`${tag} the cursor that types stays lit and the idle cursors blink half a period apart`, typed.typing > 0 && typed.unlit === 0 && typed.apart.join() === '50', `${typed.unlit} of ${typed.typing} moments with a blinking cursor in a word, idle cursors ${typed.apart.join(' ')} percent of a period apart`);
+    check(`${tag} screen readers get one still sentence and no live updates while names change`, s.spoken === SPOKEN && typed.said.length === 1 && !s.live, typed.said.join(' | '));
 
     const axe = await new AxeBuilder({ page }).analyze();
     const hits = axe.violations.flatMap((v) => v.nodes.map((n) => `${v.id} ${n.target.join(' ')}`));
@@ -503,16 +545,16 @@ async function still(b, site) {
   try {
     await page.goto(site.url);
     await ready(page);
-    const name = () => page.locator('[data-site=agent]').textContent();
+    const names = async () => (await page.locator('[data-site=agent]').allTextContents()).join(' and ');
     const t0 = await readout(page);
-    const n0 = await name();
+    const n0 = await names();
     await page.waitForTimeout(4200);
     const t1 = await readout(page);
-    const n1 = await name();
-    const caret = await page.evaluate(() => getComputedStyle(document.querySelector('.site-caret')).animationName);
+    const n1 = await names();
+    const carets = await page.evaluate(() => [...document.querySelectorAll('.site-caret')].map((e) => getComputedStyle(e).animationName));
     const blocks = Number(await page.locator('[aria-roledescription=space]').getAttribute('data-blocks'));
     check('reduced motion leaves the demo still at the end of the day', t0 === END && t1 === END && blocks > 20 && !errors.length, `${clock(t0)} then ${clock(t1)}, ${blocks} blocks`);
-    check('reduced motion leaves the typed line still with Cursor', n0 === NAMES[0] && n1 === NAMES[0] && caret === 'none', `${n0} then ${n1}, caret animation ${caret}`);
+    check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === 'none'), `${n0} then ${n1}, cursor animations ${carets.join(' ')}`);
   } finally {
     await ctx.close();
   }
