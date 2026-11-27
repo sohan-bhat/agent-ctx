@@ -87,7 +87,21 @@
   grid-area: 1 / 1;
 }
 
-@container (min-width: 27.5em) {
+.site-typed [data-site='tail'] {
+  display: block;
+}
+
+@container (min-width: 19.6em) {
+  .site-typed [data-room]::before {
+    content: attr(data-room) attr(data-tail);
+  }
+
+  .site-typed [data-site='tail'] {
+    display: inline;
+  }
+}
+
+@container (min-width: 32.5em) {
   .site-typed [data-room] {
     display: inline;
     white-space: nowrap;

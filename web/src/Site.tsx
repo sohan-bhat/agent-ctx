@@ -31,7 +31,8 @@ const INSTALL = "curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh";
 const RATE = (DEMO_END - DEMO_START) / 30_000;
 const AGENTS = DEMO_AGENTS.map((a) => a.label);
 const NONE = new Set<string>();
-const LEADS = ["Work started in", "is continued in"];
+const LEADS = ["Switching from", "to"];
+const TAIL = "requires no explanation.";
 const NAMES = [
   "Claude Code",
   "Cursor",
@@ -241,13 +242,14 @@ function Typed() {
   return (
     <p className="site-typed" data-site="typed">
       <span className="sr-only">
-        {`${LEADS[0]} ${NAMES[0]} ${LEADS[1]} ${NAMES[1]}.`}
+        {`${LEADS[0]} ${NAMES[0]} ${LEADS[1]} ${NAMES[1]} ${TAIL}`}
       </span>
       {LEADS.map((lead, spot) => (
         <span
           key={lead}
           aria-hidden
           data-room={`${lead} ${NAMES[NAMES.length - 1]}`}
+          data-tail={spot ? ` ${TAIL}` : undefined}
         >
           <span>
             {spot ? " " : null}
@@ -256,6 +258,7 @@ function Typed() {
               {NAMES[spots[spot].name].slice(0, spots[spot].shown)}
             </span>
             <Caret blink={!still && idle(spots[spot])} />
+            {spot ? <span data-site="tail"> {TAIL}</span> : null}
           </span>
         </span>
       ))}
