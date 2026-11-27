@@ -39,11 +39,6 @@ const NAMES = [
   "Gemini CLI",
   "Claude desktop",
 ];
-const OPEN = [
-  [8, 12],
-  [13, 18],
-];
-const pct = (hours: number) => `${(hours / 24) * 100}%`;
 const PILL = "h-11 rounded-full px-5 text-[0.9375rem]";
 
 const FAQ = [
@@ -350,36 +345,6 @@ function Demo() {
   );
 }
 
-function Day() {
-  return (
-    <div
-      className="site-day"
-      data-site="day"
-      role="img"
-      aria-label="A background server is active through all 24 hours of a day, and agent-ctx is active only while an agent is open."
-    >
-      <p>A background server</p>
-      <svg className="site-bar-server" data-site="bar" width="100%" height="14">
-        <rect x="0" y="0" width="100%" height="100%" rx="3" />
-      </svg>
-      <p translate="no">agent-ctx</p>
-      <svg className="site-bar-ours" data-site="bar" width="100%" height="14">
-        <line x1="0" y1="50%" x2="100%" y2="50%" />
-        {OPEN.map(([from, to]) => (
-          <rect
-            key={from}
-            x={pct(from)}
-            y="0"
-            width={pct(to - from)}
-            height="100%"
-            rx="3"
-          />
-        ))}
-      </svg>
-    </div>
-  );
-}
-
 function Site() {
   return (
     <div className="site">
@@ -403,11 +368,10 @@ function Site() {
         <Demo />
         <section className="site-column site-faq" data-site="faq">
           <h2 id="faq">FAQ</h2>
-          {FAQ.map(([question, answer], i) => (
+          {FAQ.map(([question, answer]) => (
             <div key={question}>
               <h3>{question}</h3>
               <p>{answer}</p>
-              {i === 3 && <Day />}
             </div>
           ))}
         </section>

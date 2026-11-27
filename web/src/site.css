@@ -189,34 +189,6 @@
   text-wrap: pretty;
 }
 
-.site-day {
-  margin-top: 1.25rem;
-}
-
-.site-day p {
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  font-size: 1rem;
-}
-
-.site-day svg {
-  display: block;
-  overflow: visible;
-}
-
-.site-bar-server rect {
-  fill: var(--muted-foreground);
-}
-
-.site-bar-ours rect {
-  fill: var(--foreground);
-}
-
-.site-bar-ours line {
-  stroke: var(--input);
-  stroke-width: 1;
-}
-
 .site-foot {
   display: flex;
   flex-wrap: wrap;
