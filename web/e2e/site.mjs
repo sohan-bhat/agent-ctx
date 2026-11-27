@@ -15,7 +15,9 @@ const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
 const END = 18 * 60;
 const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Gemini CLI', 'Claude desktop'];
+const LEADS = ['Work started in', 'is continued in'];
 const SPOKEN = 'Work started in Claude Code is continued in Cursor.';
+const EDGE = [524, 518];
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
 const shots = process.env.SHOTS;
@@ -297,6 +299,172 @@ async function open(page, touch, spots) {
   return null;
 }
 
+function seeded(seed) {
+  const streams = new Map();
+  const timeout = window.setTimeout;
+  const timers = (window.__timers = { last: {}, asked: {} });
+  let chain = 0;
+  let chains = 0;
+  const stream = (n) => {
+    let a = (seed * 1000003 + n * 7919) >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+  window.setTimeout = (f, ms, ...rest) => {
+    if (typeof f !== 'function') return timeout(f, ms, ...rest);
+    const mine = chain || ++chains;
+    const due = performance.now() + ms;
+    (timers.asked[mine] ??= []).push(ms);
+    return timeout(() => {
+      chain = mine;
+      timers.last = { chain: mine, ms, due };
+      try {
+        f(...rest);
+      } finally {
+        chain = 0;
+      }
+    }, ms);
+  };
+  Math.random = () => {
+    if (!streams.has(chain)) streams.set(chain, stream(chain));
+    return streams.get(chain)();
+  };
+}
+
+const watch = (page) =>
+  page.evaluate(
+    ([names, leads]) => {
+      const t = (window.__typed = { shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
+      const p = document.querySelector('[data-site=typed]');
+      const words = [];
+      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (leads.includes(n.textContent)) words.push(n);
+      const range = document.createRange();
+      const look = () => {
+        const fired = window.__timers?.last ?? {};
+        const at = p.getBoundingClientRect();
+        const spots = [...p.querySelectorAll('[data-site=agent]')];
+        const carets = [...p.querySelectorAll('.site-caret')];
+        const said = p.cloneNode(true);
+        for (const e of said.querySelectorAll('[aria-hidden]')) e.remove();
+        t.said.add(said.textContent.trim());
+        t.tall.add(Math.round(at.height));
+        t.top.add(p.offsetTop);
+        t.under.add(document.querySelector('[data-site=line]')?.offsetTop);
+        carets.slice(0, 2).forEach((c, i) => {
+          const state = (c.hasAttribute('data-blink') ? 2 : 0) + (c.hasAttribute('data-off') ? 1 : 0);
+          if (t.blink[i].at(-1)?.[0] !== state) t.blink[i].push([state, fired.ms, fired.due]);
+        });
+        if (spots.length !== 2) return;
+        const whole = spots.map((e) => names.includes(e.textContent));
+        const box = spots.map((e) => e.getBoundingClientRect());
+        t.drop.add(Math.round(box[1].top - box[0].top));
+        words.forEach((n, i) => {
+          range.selectNodeContents(n);
+          t.lead[i].add(Math.round(range.getBoundingClientRect().left - at.left));
+        });
+        if (carets[1]?.getBoundingClientRect().right > at.right + 0.5) t.out++;
+        spots.forEach((e, i) => {
+          t.place[i].add(Math.round(box[i].left - at.left));
+          if (t.keys[i].at(-1)?.[0] === e.textContent) return;
+          t.keys[i].push([e.textContent, fired.chain, fired.due]);
+          if (whole[i]) t.shown[i].push(e.textContent);
+        });
+        if (whole.every(Boolean)) t.pairs++;
+        if (whole.every(Boolean) && spots[0].textContent === spots[1].textContent) t.same++;
+        whole.forEach((v, i) => {
+          if (v) return;
+          t.typing++;
+          if (!carets[i] || getComputedStyle(carets[i]).opacity !== '1') t.unlit++;
+        });
+      };
+      new MutationObserver(look).observe(p, { subtree: true, childList: true, characterData: true, attributes: true });
+      setInterval(look, 50);
+      look();
+    },
+    [NAMES, LEADS],
+  );
+
+const typedOf = (page) =>
+  page.evaluate((leads) => {
+    const t = window.__typed;
+    const list = (v) => [...v];
+    const p = document.querySelector('[data-site=typed]');
+    const range = document.createRange();
+    const edge = (node) => {
+      range.selectNodeContents(node);
+      return range.getBoundingClientRect();
+    };
+    const spots = [...p.querySelectorAll('[data-site=agent]')];
+    const carets = [...p.querySelectorAll('.site-caret')].map((e) => e.getBoundingClientRect());
+    const words = [];
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (leads.includes(n.textContent)) words.push(edge(n));
+    const rows = spots.map((e, i) => {
+      const r = e.getBoundingClientRect();
+      const c = carets[i];
+      const word = [...e.childNodes].find((n) => n.nodeType === 3);
+      return { top: r.top, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? edge(word).right : r.left) - 0.5 };
+    });
+    const ends = [...words, ...spots.map((e) => e.getBoundingClientRect()), ...carets.slice(0, 1)].map((r) => r.right);
+    return {
+      ...t,
+      asked: window.__timers?.asked ?? {},
+      place: t.place.map(list),
+      lead: t.lead.map(list),
+      tall: list(t.tall),
+      top: list(t.top),
+      drop: list(t.drop),
+      under: list(t.under),
+      said: list(t.said),
+      carets: carets.length,
+      rows,
+      line: parseFloat(getComputedStyle(p).lineHeight),
+      em: parseFloat(getComputedStyle(p).fontSize),
+      high: p.getBoundingClientRect().height,
+      gap: words[1] && carets[0] ? words[1].left - carets[0].right : NaN,
+      last: !!carets[1] && carets[1].right >= Math.max(...ends) - 0.5,
+    };
+  }, LEADS);
+
+function hand(log, asked) {
+  const votes = {};
+  for (const v of log.slice(1)) votes[v[1]] = (votes[v[1]] ?? 0) + 1;
+  const waits = asked[Object.keys(votes).sort((a, z) => votes[z] - votes[a])[0]] ?? [];
+  const out = { texts: log.map((v) => v[0]), type: [], erase: [], pause: [], starts: [] };
+  let steps = 0;
+  for (let k = 1; k < log.length; k++) {
+    for (let was = log[k - 1][0]; was !== log[k][0]; steps++) {
+      const next = log[k][0].startsWith(was) ? log[k][0].slice(0, was.length + 1) : was.slice(0, -1);
+      if (next.length < was.length) (NAMES.includes(was) ? out.pause : out.erase).push(waits[steps]);
+      else if (was) out.type.push(waits[steps]);
+      if (NAMES.includes(was)) out.starts.push(log[k][2]);
+      was = next;
+    }
+  }
+  return { ...out, lined: waits.length - steps >= 0 && waits.length - steps <= 1 };
+}
+
+function rhythm(log) {
+  const out = { on: [], off: [], starts: [] };
+  for (let k = 1; k < log.length; k++) {
+    if (log[k - 1][0] < 2 || log[k][0] < 2) continue;
+    (log[k][0] === 3 ? out.on : out.off).push(log[k][1]);
+    out.starts.push(log[k][2]);
+  }
+  return out;
+}
+
+const ranged = (list, [low, high], kinds) => list.length >= 6 && list.every((v) => v >= low && v <= high) && new Set(list.map((v) => Math.round(v))).size >= kinds;
+const near = (a, z, ms) => a.starts.filter((v) => z.starts.some((u) => Math.abs(u - v) <= ms)).length / Math.max(1, a.starts.length);
+const reach = (list) => (list.length ? `${list.length} times from ${Math.round(Math.min(...list))} to ${Math.round(Math.max(...list))} ms` : 'no times');
+const steady = (typed) => typed.tall.length === 1 && Math.abs(typed.tall[0] - typed.line) < 1 && typed.top.length === 1 && typed.under.length === 1 && typed.drop.join() === '0' && typed.lead[0].length === 1 && typed.place[0].length === 1 && typed.out === 0;
+const placed = (typed) => `heights ${typed.tall.join(' ')}, line ${typed.line}, tops ${typed.top.join(' ')}, "${LEADS[0]}" ${typed.lead[0].join(' or ')} px and "${LEADS[1]}" ${typed.lead[1].length} places from the left, ${typed.out} moments past the column, sentence at ${typed.under.join(' ')}`;
+
 async function walk(b, site, w, h, scheme) {
   const tag = `${scheme} ${w}x${h}`;
   const wide = w >= 1000;
@@ -307,39 +475,10 @@ async function walk(b, site, w, h, scheme) {
   page.on('request', (r) => asked.push(r.url()));
   const tap = (loc) => (touch ? loc.tap() : loc.click());
   try {
+    await ctx.addInitScript(seeded, 1);
     await page.goto(site.url);
     await ready(page);
-    await page.evaluate((names) => {
-      const t = (window.__typed = { seen: [new Set(), new Set()], place: [new Set(), new Set()], tall: new Set(), under: new Set(), said: new Set(), apart: new Set(), pairs: 0, same: 0, typing: 0, both: 0, unlit: 0 });
-      const p = document.querySelector('[data-site=typed]');
-      const look = () => {
-        const at = p.getBoundingClientRect();
-        const spots = [...p.querySelectorAll('[data-site=agent]')];
-        const carets = [...p.querySelectorAll('.site-caret')];
-        const said = p.cloneNode(true);
-        for (const e of said.querySelectorAll('[aria-hidden]')) e.remove();
-        t.said.add(said.textContent.trim());
-        t.tall.add(Math.round(at.height));
-        t.under.add(document.querySelector('[data-site=line]')?.offsetTop);
-        if (spots.length !== 2) return;
-        const whole = spots.map((e) => names.includes(e.textContent));
-        spots.forEach((e, i) => {
-          t.place[i].add(Math.round(e.getBoundingClientRect().left - at.left));
-          if (whole[i]) t.seen[i].add(e.textContent);
-          else if (!carets[i] || getComputedStyle(carets[i]).animationName !== 'none') t.unlit++;
-        });
-        const mid = whole.filter((v) => !v).length;
-        if (!mid) t.pairs++;
-        if (!mid && spots[0].textContent === spots[1].textContent) t.same++;
-        if (mid) t.typing++;
-        if (mid === 2) t.both++;
-        const turn = carets.map((c) => c.getAnimations()[0]?.effect?.getComputedTiming().progress);
-        if (turn.length === 2 && turn.every((v) => typeof v === 'number')) t.apart.add(Math.round(Math.abs(turn[0] - turn[1]) * 100));
-      };
-      new MutationObserver(look).observe(p, { subtree: true, childList: true, characterData: true, attributes: true });
-      setInterval(look, 50);
-      look();
-    }, NAMES);
+    await watch(page);
 
     const first = [await box(page, 'h1'), await box(page, '[data-site=typed]'), await box(page, '[data-site=line]'), await box(page, '[data-site=action] a >> nth=0'), await box(page, '[data-site=action] a >> nth=1')];
     check(`${tag} the name, the typed line, the sentence and both pills are inside the first screen`, first.every((r) => inside(r, w, h)), first.map(span).join(', '));
@@ -466,29 +605,19 @@ async function walk(b, site, w, h, scheme) {
     check(`${tag} a question mark stands only on the eight questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
     check(`${tag} no install line is shown`, !t.out.join('\n').includes('install.sh') && !(await page.locator('[data-site=install]').count()));
 
-    await waitFor(() => page.evaluate(() => window.__typed.seen.every((v) => v.size >= 2)), 12000);
-    const typed = await page.evaluate(() => {
-      const t = window.__typed;
-      const list = (v) => [...v];
-      const p = document.querySelector('[data-site=typed]');
-      const spots = [...p.querySelectorAll('[data-site=agent]')];
-      const carets = [...p.querySelectorAll('.site-caret')].map((e) => e.getBoundingClientRect());
-      const rows = spots.map((e, i) => {
-        const r = e.getBoundingClientRect();
-        const c = carets[i];
-        const word = [...e.childNodes].find((n) => n.nodeType === 3);
-        const range = document.createRange();
-        if (word) range.selectNode(word);
-        return { top: r.top, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? range.getBoundingClientRect().right : r.left) - 0.5 };
-      });
-      return { ...t, seen: t.seen.map(list), place: t.place.map(list), tall: list(t.tall), under: list(t.under), said: list(t.said), apart: list(t.apart), carets: carets.length, rows, line: parseFloat(getComputedStyle(p).lineHeight) };
-    });
-    check(`${tag} the typed block has two lines and each line ends in a cursor`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top, `${typed.carets} cursors, ${typed.rows.length} names`);
-    check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.seen.every((v) => v.length >= 2), typed.seen.map((v) => v.join(', ')).join(' and '));
+    await waitFor(() => page.evaluate(() => window.__typed.shown.every((v) => v.length >= 2)), 15000);
+    const typed = await typedOf(page);
+    const level = typed.rows.length === 2 && Math.abs(typed.rows[0].top - typed.rows[1].top) < 1;
+    if (wide) {
+      check(`${tag} the typed sentence is one line`, typed.carets === 2 && level && Math.abs(typed.high - typed.line) < 1, `${Math.round(typed.high)} px tall with a line height of ${typed.line} px`);
+      check(`${tag} the first cursor stands between the first name and "is continued in" with one word space`, level && typed.rows[0].on && typed.rows[0].after && typed.gap > 0.15 * typed.em && typed.gap < 0.45 * typed.em, `${typed.gap.toFixed(1)} px from the first cursor to the next word`);
+      check(`${tag} the second cursor ends the line`, level && typed.rows[1].on && typed.rows[1].after && typed.last);
+    } else check(`${tag} the typed block has two lines and each line ends in a cursor`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top, `${typed.carets} cursors, ${typed.rows.length} names`);
+    check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.shown.every((v) => new Set(v).size >= 2), typed.shown.map((v) => v.join(', ')).join(' and '));
     check(`${tag} the two spots never show the same complete name at one moment`, typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
-    check(`${tag} at most one spot is in the middle of a word at any moment`, typed.typing > 0 && typed.both === 0, `${typed.both} of ${typed.typing} moments in the middle of a word`);
-    check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names ${typed.place.map((v) => v.join(' or ')).join(' and ')} px from the left, sentence at ${typed.under.join(' ')}`);
-    check(`${tag} the cursor that types stays lit and the idle cursors blink half a period apart`, typed.typing > 0 && typed.unlit === 0 && typed.apart.join() === '50', `${typed.unlit} of ${typed.typing} moments with a blinking cursor in a word, idle cursors ${typed.apart.join(' ')} percent of a period apart`);
+    if (wide) check(`${tag} the typed line keeps one height, "Work started in" never moves and the words after the first name move sideways`, steady(typed) && typed.lead[1].length > 1, placed(typed));
+    else check(`${tag} the typed block stays two lines tall and no name and nothing under the block moves`, typed.tall.length === 1 && Math.abs(typed.tall[0] - 2 * typed.line) < 1 && typed.under.length === 1 && typed.place.every((v) => v.length === 1), `heights ${typed.tall.join(' ')}, line ${typed.line}, names ${typed.place.map((v) => v.join(' or ')).join(' and ')} px from the left, sentence at ${typed.under.join(' ')}`);
+    check(`${tag} the cursor that types stays lit`, typed.typing > 0 && typed.unlit === 0, `${typed.unlit} of ${typed.typing} moments with a dark cursor in a word`);
     check(`${tag} screen readers get one still sentence and no live updates while names change`, s.spoken === SPOKEN && typed.said.length === 1 && !s.live, typed.said.join(' | '));
 
     const axe = await new AxeBuilder({ page }).analyze();
@@ -539,18 +668,113 @@ async function still(b, site) {
   try {
     await page.goto(site.url);
     await ready(page);
+    await watch(page);
     const names = async () => (await page.locator('[data-site=agent]').allTextContents()).join(' and ');
     const t0 = await readout(page);
     const n0 = await names();
     await page.waitForTimeout(4200);
     const t1 = await readout(page);
     const n1 = await names();
-    const carets = await page.evaluate(() => [...document.querySelectorAll('.site-caret')].map((e) => getComputedStyle(e).animationName));
+    const carets = await page.evaluate(() => window.__typed.blink.map((v) => v.map((x) => x[0]).join(' ')));
     const blocks = Number(await page.locator('[aria-roledescription=space]').getAttribute('data-blocks'));
     check('reduced motion leaves the demo still at the end of the day', t0 === END && t1 === END && blocks > 20 && !errors.length, `${clock(t0)} then ${clock(t1)}, ${blocks} blocks`);
-    check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === 'none'), `${n0} then ${n1}, cursor animations ${carets.join(' ')}`);
+    check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, cursor states ${carets.join(' and ')}`);
   } finally {
     await ctx.close();
+  }
+}
+
+async function chance(b, site, seed, changes) {
+  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+  await ctx.addInitScript(seeded, seed);
+  await page.goto(site.url);
+  await page.waitForSelector('[data-site=typed]');
+  await watch(page);
+  await ready(page);
+  await waitFor(() => page.evaluate((n) => window.__typed.shown.every((v) => v.length > n && new Set(v).size >= 3), changes), 150000, 500);
+  return { ctx, page, typed: await typedOf(page) };
+}
+
+async function random(b, site) {
+  const one = await chance(b, site, 1, 4);
+  try {
+    const { page, typed } = one;
+    const hands = typed.keys.map((log) => hand(log, typed.asked));
+    const all = hands.flatMap((v) => v.texts);
+    const odd = all.filter((v) => !NAMES.some((n) => n.startsWith(v)));
+    check('with seed 1 every shown text is the start of one of the names', all.length > 40 && !odd.length, `${all.length} texts${odd.length ? `, odd ${odd.slice(0, 3).join(' | ')}` : ''}`);
+    check('with seed 1 the two complete names are never the same at one moment', typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
+    check('with seed 1 the page starts with Claude Code and Cursor and each spot shows at least three different names in four changes', typed.shown.every((v, i) => v[0] === NAMES[i] && v.length > 4 && new Set(v).size >= 3), typed.shown.map((v) => v.join(', ')).join(' and '));
+    check('with seed 1 the key delays of each spot have at least four different lengths inside the ranges', hands.every((v) => v.lined && ranged(v.type, [60, 170], 4) && ranged(v.erase, [30, 80], 4)), hands.map((v, i) => `spot ${i + 1} types ${reach(v.type)} and deletes ${reach(v.erase)}`).join(', '));
+    const pauses = hands.flatMap((v) => v.pause);
+    const share = [near(hands[0], hands[1], 40), near(hands[1], hands[0], 40)];
+    check('with seed 1 the pauses differ from each other and the two spots start changes at different moments', ranged(pauses, [1500, 5000], pauses.length) && share.every((v) => v < 1 / 3), `pauses ${pauses.map((v) => Math.round(v)).join(' ')} ms, ${share.map((v) => Math.round(v * 100)).join(' and ')} percent of the starts near a start of the other spot`);
+    check('the typed line keeps one height and one top while both names change and "Work started in" never moves', steady(typed), placed(typed));
+    const beats = typed.blink.map(rhythm);
+    const both = [near(beats[0], beats[1], 40), near(beats[1], beats[0], 40)];
+    check(
+      'each idle cursor blinks in a random rhythm and the two cursors do not toggle together',
+      beats.every((v) => ranged(v.on, [350, 900], 3) && ranged(v.off, [200, 550], 3)) && both.every((v) => v < 1 / 3),
+      beats.map((v, i) => `cursor ${i + 1} on ${reach(v.on)} and off ${reach(v.off)}, ${Math.round(both[i] * 100)} percent of ${v.starts.length} toggles near a toggle of the other cursor`).join(', '),
+    );
+    const state = () => page.evaluate(() => [...document.querySelectorAll('[data-site=agent]')].map((e) => e.textContent).join(' and ') + window.__typed.blink.map((v) => ` ${v.length}`).join(''));
+    const hide = (hidden) =>
+      page.evaluate((v) => {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => v });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, hidden);
+    await hide(true);
+    await page.waitForTimeout(300);
+    const dark = await state();
+    await page.waitForTimeout(3000);
+    const kept = await state();
+    await hide(false);
+    await page.waitForTimeout(6000);
+    const woke = await state();
+    check('no name changes and no cursor blinks while the page is hidden, and both go on afterwards', kept === dark && woke !== kept, `${dark} then ${kept} then ${woke}`);
+    const two = await chance(b, site, 2, 3);
+    try {
+      const order = (v) => v.shown.map((names) => names.slice(0, 4).join(' > ')).join(' and ');
+      check('with seed 2 the order of names differs from the order with seed 1', order(two.typed) !== order(typed), `${order(typed)} against ${order(two.typed)}`);
+    } finally {
+      await two.ctx.close();
+    }
+  } finally {
+    await one.ctx.close();
+  }
+}
+
+async function fit(b, site) {
+  for (const w of [1440, ...EDGE]) {
+    const { ctx, page } = await context(b, { w, h: 800, scheme: 'dark', reduced: true });
+    try {
+      await page.goto(site.url);
+      await ready(page);
+      const got = await page.evaluate((names) => {
+        const p = document.querySelector('[data-site=typed]');
+        const spots = [...p.querySelectorAll('[data-site=agent]')];
+        const end = p.querySelectorAll('.site-caret')[1];
+        const line = parseFloat(getComputedStyle(p).lineHeight);
+        const out = { room: p.getBoundingClientRect().width, lines: Math.round(p.getBoundingClientRect().height / line), wide: 0, pair: '', broken: 0 };
+        if (spots.length !== 2 || !end) return out;
+        for (const a of names)
+          for (const z of names) {
+            if (a === z) continue;
+            spots[0].firstChild.nodeValue = a;
+            spots[1].firstChild.nodeValue = z;
+            const at = p.getBoundingClientRect();
+            const size = end.getBoundingClientRect().right - at.left;
+            if (size > out.wide) Object.assign(out, { wide: size, pair: `${a} and ${z}` });
+            if (Math.round(at.height / line) !== 1 || size > at.width + 0.5 || Math.abs(spots[0].getBoundingClientRect().top - spots[1].getBoundingClientRect().top) >= 1) out.broken++;
+          }
+        return out;
+      }, NAMES);
+      const where = w === EDGE[0] ? ', just above the switch' : w === EDGE[1] ? ', just below the switch' : '';
+      if (w === EDGE[1]) check(`at ${w} px wide${where}, the typed block has two lines`, got.lines === 2 && got.broken === 20, `${got.lines} lines in a column of ${got.room} px`);
+      else check(`at ${w} px wide${where}, every pair of two names fits on one line`, got.lines === 1 && got.wide > 0 && got.broken === 0, `the longest pair ${got.pair} ends at ${got.wide.toFixed(1)} px in a column of ${got.room} px, ${got.broken} pairs do not fit`);
+    } finally {
+      await ctx.close();
+    }
   }
 }
 
@@ -610,6 +834,8 @@ try {
   for (const scheme of schemes) for (const [w, h] of sizes) await run(`${scheme} ${w}x${h} walk`, () => walk(b, plain, w, h, scheme));
   for (const [w, h] of sizes) await run(`released ${w}x${h} walk`, () => released(b, later, w, h));
   await run('reduced motion walk', () => still(b, plain));
+  await run('random typing walk', () => random(b, plain));
+  await run('switch point walk', () => fit(b, plain));
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });
     for (const scheme of schemes) for (const [w, h] of sizes) await shoot(b, plain, w, h, scheme);
