@@ -99,7 +99,7 @@ test('the Claude Code README says what leaves the machine and how to remove the 
     const text = readFileSync(join(dir, 'claude-code', 'README.md'), 'utf8');
     const words = text.replace(/^#.*$/m, '').split(/\s+/).filter(Boolean);
     assert.ok(words.length >= 40 && words.length <= 60, String(words.length));
-    assert.equal(/[\u2013\u2014;()]|\w: /.test(text), false, text);
+    assert.equal(/[\u2013\u2014;()]|\w: |\bit(?:s|self|'s)?\b/i.test(text), false, text);
     for (const need of ['prompts', 'file paths', 'commands', 'reply', 'tool output', '/plugin uninstall agent-ctx']) assert.ok(text.includes(need), need);
   });
 });
@@ -414,7 +414,7 @@ const COPY = [
   'docs/format.md',
   'docs/cost.md',
   'docs/vendors.md',
-  'service/plugins/claude-code/README.md',
+  'plugins/claude-code/README.md',
   'service/plugins/codex/README.md',
 ];
 

@@ -292,3 +292,65 @@ test('nothing is written under the real home folder', () => {
   assert.throws(() => envOf({ HOME: userInfo().homedir, AGENT_CTX_HOME: where.AGENT_CTX_HOME }), /outside the temp folder/);
   if (!REAL_BEFORE) assert.equal(existsSync(REAL), false, `${REAL} appeared during the tests`);
 });
+
+const PLUGIN = join(ROOT, 'plugins', 'claude-code');
+const HOSTED = join(ROOT, 'service', 'plugins', 'claude-code');
+const COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs" --agent claude-code';
+const SERVER = { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/scripts/agent-ctx.mjs', 'mcp', '--agent', 'claude-code'] };
+
+interface Hook { type?: string; command?: string; timeout?: number }
+interface Group { matcher?: string; hooks: Hook[] }
+
+const json = <T>(...path: string[]): T => JSON.parse(readFileSync(join(...path), 'utf8')) as T;
+const groups = (folder: string): [string, Group][] => Object.entries(json<{ hooks: Record<string, Group[]> }>(folder, 'hooks', 'hooks.json').hooks).flatMap(([event, list]) => list.map((g): [string, Group] => [event, g]));
+
+test('the plugin declares one stdio server that runs the main file with the label claude-code', () => {
+  const manifest = json<{ name: string; version: string; mcpServers: Json }>(PLUGIN, '.claude-plugin', 'plugin.json');
+  assert.deepEqual(manifest.mcpServers, { 'agent-ctx': SERVER });
+  assert.deepEqual([manifest.name, manifest.version], ['agent-ctx', json<{ version: string }>(ROOT, 'package.json').version]);
+  assert.equal(/https?:|privacy/i.test(JSON.stringify(manifest)), false);
+  const market = json<{ plugins: { name: string; source: string }[] }>(ROOT, '.claude-plugin', 'marketplace.json');
+  assert.deepEqual(market.plugins.map((p) => [p.name, p.source]), [['agent-ctx', './plugins/claude-code']]);
+  assert.equal(/hosted/i.test(JSON.stringify(market)), false);
+  assert.ok(readFileSync(join(PLUGIN, '.claude-plugin', 'icon.png')).equals(readFileSync(join(HOSTED, '.claude-plugin', 'icon.png'))));
+});
+
+test('every plugin hook is a command that runs the hook file on the events and matchers of the hosted plugin', () => {
+  const shape = (folder: string) => groups(folder).map(([event, g]) => [event, g.matcher ?? '', g.hooks.map((h) => h.timeout)]);
+  assert.deepEqual(shape(PLUGIN), shape(HOSTED));
+  assert.equal(groups(PLUGIN).length, 9);
+  for (const [event, g] of groups(PLUGIN)) {
+    for (const h of g.hooks) assert.deepEqual(h, { type: 'command', command: COMMAND, timeout: h.timeout }, event);
+  }
+});
+
+void plain('the plugin commands store an event and open the memory when run the way Claude Code runs them', { skip: process.platform === 'win32', timeout: 120000 }, async () => {
+  const where = place();
+  const env = { ...envOf(where), PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, CLAUDE_PLUGIN_ROOT: PLUGIN };
+  const input = JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's-1', cwd: KILN, prompt: 'Glaze the kiln shelf with the cone 6 mix' });
+  const r = spawnSync('/bin/sh', ['-c', groups(PLUGIN)[0][1].hooks[0].command as string], { env, input, encoding: 'utf8' });
+  assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', '']);
+  assert.deepEqual(rows<{ t: string; text: string }>(where, 'SELECT t, text FROM events'), [{ t: 'prompt', text: 'Glaze the kiln shelf with the cone 6 mix' }]);
+  const child = spawn(SERVER.command, SERVER.args.map((a) => a.replace('${CLAUDE_PLUGIN_ROOT}', PLUGIN)), { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  started.push(child);
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'local-test', version: '1.0.0' } } })}\n`);
+  const first = await new Promise<string>((done) => child.stdout.once('data', (d) => done(String(d))));
+  assert.equal((JSON.parse(first.split('\n')[0]) as { result: { instructions: string } }).result.instructions, INSTRUCTIONS);
+  child.stdin.end();
+  assert.equal(await new Promise((done) => child.on('exit', done)), 0);
+  assert.deepEqual(rows<{ id: string }>(where, 'SELECT id FROM agents'), [{ id: 'claude-code' }]);
+});
+
+test('the plugin note says what is saved, that everything saved stays on this computer and how to remove the plugin in 40 to 60 plain words', () => {
+  const text = readFileSync(join(PLUGIN, 'README.md'), 'utf8');
+  const words = text.replace(/^#.*$/m, '').split(/\s+/).filter(Boolean);
+  assert.ok(words.length >= 40 && words.length <= 60, String(words.length));
+  assert.equal(/\b(it|its|itself|it's|they|them)\b|[—–;:()]| - /i.exec(text), null);
+  for (const need of ['prompts', 'working folder', 'file paths', 'commands', 'reply', 'compaction summaries', 'secrets removed', 'tool output are never saved', 'everything saved stays on this computer', '/plugin uninstall agent-ctx']) assert.ok(text.includes(need), need);
+  assert.equal(/server|account|hosted|sent/i.exec(text), null);
+});
+
+test('the plugin folder holds the manifest, the icon, the note, the hooks file and the three built files', () => {
+  const files = readdirSync(PLUGIN, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => join(e.parentPath, e.name).slice(PLUGIN.length + 1));
+  assert.deepEqual(files.sort(), ['.claude-plugin/icon.png', '.claude-plugin/plugin.json', 'README.md', 'hooks/hooks.json', ...BUILT.map((name) => `scripts/${name}`)].sort());
+});

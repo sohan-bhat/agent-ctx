@@ -3,12 +3,12 @@
   "owner": {
     "name": "agent-ctx"
   },
-  "description": "One hosted memory shared by the agents a person uses",
+  "description": "One memory on this computer shared by the agents a person uses",
   "plugins": [
     {
       "name": "agent-ctx",
       "source": "./plugins/claude-code",
-      "description": "Shared memory across agents from different vendors"
+      "description": "One memory on this computer, shared by Claude Code and your other agents"
     }
   ]
 }

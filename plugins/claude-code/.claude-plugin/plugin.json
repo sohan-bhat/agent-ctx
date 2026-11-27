@@ -1,0 +1,15 @@
+{
+  "name": "agent-ctx",
+  "version": "0.2.0",
+  "description": "One memory on this computer, shared by Claude Code and your other agents",
+  "author": {
+    "name": "agent-ctx"
+  },
+  "license": "MIT",
+  "mcpServers": {
+    "agent-ctx": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/agent-ctx.mjs", "mcp", "--agent", "claude-code"]
+    }
+  }
+}
