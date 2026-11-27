@@ -8,6 +8,7 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
 
     core            shared TypeScript with no runtime dependencies
     service         the Cloudflare Worker, one private store per person, with the runtime scripts in service/e2e
+    local           the program for one computer, with one SQLite file under the home folder and the built file in local/dist
     web             the page
     plugins         JSON only plugins, with the origin set in place by plugins/stamp.mjs
     .claude-plugin  the marketplace entry for the Claude Code plugin
@@ -26,6 +27,8 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
 - A plugin contains JSON only, and no script is placed on a person's machine.
 - Never open or print the queries of core/test/corpus3.ts and core/test/corpus4.ts. Those sets stay blind, so recall settings are chosen on corpus2.ts alone.
 - A commit message is one line of at most six words.
+- The memory rules are in service/src/engine.ts and the tool definitions in service/src/mcp.ts. Both files are shared by the Worker and the local program, so no import from Cloudflare is allowed in either file.
+- After any change under core/src, service/src or local/src, run `npm run build` and commit local/dist/agent-ctx.js. The root test stays red while the committed file differs from a fresh build.
 
 ## Before a push
 
