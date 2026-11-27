@@ -356,3 +356,129 @@ export const THIRD = {
     q3('it', 'chat', 'Ciao, mi senti?'),
   ],
 };
+
+const KEYS4: Record<Five, string> = {
+  es: 'github.com/acme/inmobiliaria',
+  de: 'github.com/acme/werkstatt',
+  fr: 'github.com/acme/covoiturage',
+  pt: 'github.com/acme/farmacia',
+  it: 'github.com/acme/vigneto',
+};
+const NOW4 = Date.parse('2026-11-27T09:00:00Z');
+let k4 = 0;
+
+function c4(id: string, lang: Five, goal: string, what: string, why: string, path: string): Item {
+  const at = NOW4 - (++k4 % 30) * DAY - k4 * 3600000;
+  const body: CardBody = { goal, decisions: [{ what, why }], changed: [{ path }] };
+  return { id, project: KEYS4[lang], kind: 'card', body, origin: { agent: AGENTS[k4 % AGENTS.length], via: 'tool', source: 'agent', at, session: `${id}-s` }, flags: [], held: false, pinned: false, folded: false, created: at };
+}
+
+const q4 = (lang: Five, kind: 'answer' | 'chat', text: string, ...want: string[]) => ({ q: text, project: KEYS4[lang], kind, lang, want });
+
+export const FOURTH = {
+  now: NOW4,
+  langs: FIVE,
+  projects: FIVE.map((l) => ({ key: KEYS4[l], names: [] as string[] })),
+  items: [
+    c4('es-41', 'es', 'Columna precio_m2 en la tabla anuncios', 'crear la columna sin DEFAULT y rellenarla por lotes de 5000 filas', 'el ALTER TABLE con DEFAULT bloqueaba la tabla anuncios varios minutos en producción', 'db/migrations/20261103_precio_m2.sql'),
+    c4('es-42', 'es', 'Índice para filtrar anuncios por barrio', 'crear un índice compuesto sobre barrio y fecha_publicacion en la tabla anuncios con CREATE INDEX CONCURRENTLY', 'EXPLAIN ANALYZE marcaba 4 segundos en el listado por barrio', 'db/migrations/20261110_idx_barrio.sql'),
+    c4('es-43', 'es', 'Límite de conexiones a Postgres', 'bajar el pool a 10 conexiones por instancia y poner PgBouncer delante', 'en horas punta la API devolvía el error too many clients already', 'src/db/pool.ts'),
+    c4('es-44', 'es', 'Inicio de sesión con Google para los agentes', 'pasar el flujo OAuth a PKCE y guardar el state en una cookie firmada', 'en Safari se perdía el state y el login acababa en invalid_state', 'src/auth/google.ts'),
+    c4('es-45', 'es', 'Sesiones que caducaban a mitad del trabajo', 'renovar el JWT con un refresh token cada 15 minutos mientras la pestaña siga abierta', 'los agentes perdían el anuncio que estaban redactando cuando caducaba la sesión', 'src/auth/refresh.ts'),
+    c4('es-46', 'es', 'Bloqueo del acceso tras contraseñas incorrectas', 'bloquear 10 minutos después de cinco intentos fallidos, contando por IP y por email', 'hubo un ataque de fuerza bruta contra el formulario de acceso', 'src/auth/intentos.ts'),
+    c4('es-47', 'es', 'Imagen de Docker más ligera', 'build multi-stage con node:22-alpine copiando solo dist y las dependencias de producción', 'la imagen pesaba 1,4 GB y el despliegue superaba el tiempo límite', 'Dockerfile'),
+    c4('es-48', 'es', 'Arranque seguro tras cada despliegue', 'validar las variables de entorno con zod al arrancar y salir si falta DATABASE_URL', 'un despliegue arrancó sin DATABASE_URL y todas las páginas daban 500', 'src/config/env.ts'),
+    c4('es-49', 'es', 'Tests de fechas inestables en GitHub Actions', 'fijar TZ=UTC en el workflow y congelar el reloj con vi.useFakeTimers', 'los tests de fecha de publicación fallaban solo de madrugada', '.github/workflows/ci.yml'),
+    c4('es-50', 'es', 'Galería de fotos descuadrada en el móvil', 'fijar aspect-ratio 4/3 en las miniaturas con object-fit cover', 'las fotos verticales sacaban el precio fuera de la tarjeta en pantallas pequeñas', 'src/components/Galeria.tsx'),
+
+    c4('de-41', 'de', 'Teilepreise vom Großhändler zwischenspeichern', 'die Preisliste fünf Minuten in Redis halten und beim nächtlichen Import über das Key-Präfix leeren', 'jede Angebotsseite rief die API des Großhändlers neu auf', 'src/cache/teile.ts'),
+    c4('de-42', 'de', 'Kalender zeigt nach dem Umbuchen alte Termine', 'den Cache-Eintrag des Tages nach jeder Umbuchung löschen statt auf die TTL zu warten', 'Kunden kamen zur alten Uhrzeit in die Werkstatt', 'src/termine/umbuchen.ts'),
+    c4('de-43', 'de', 'Redis läuft voll', 'maxmemory-policy auf allkeys-lru stellen und Sitzungen mit eigener TTL ablegen', 'Redis meldete OOM command not allowed und der Checkout brach ab', 'infra/redis.conf'),
+    c4('de-44', 'de', 'Rechnungen im Hintergrund erstellen', 'das PDF der Rechnung in einer BullMQ-Queue erzeugen statt im Request', 'der Request lief nach 30 Sekunden in einen Timeout', 'src/jobs/rechnung-pdf.ts'),
+    c4('de-45', 'de', 'Fehlgeschlagene Jobs erneut versuchen', 'drei Versuche mit exponentiellem Backoff, danach in eine Dead-Letter-Queue', 'SMS an Kunden gingen verloren, wenn der Anbieter kurz ausfiel', 'src/jobs/retry.ts'),
+    c4('de-46', 'de', 'Terminerinnerung nur einmal senden', 'die jobId aus Termin-ID und Datum bilden, damit BullMQ Duplikate verwirft', 'nach einem Neustart des Workers bekamen Kunden die SMS zweimal', 'src/jobs/erinnerung.ts'),
+    c4('de-47', 'de', 'Strukturierte Logs mit pino', 'console.log durch pino ersetzen und jede Zeile als JSON mit requestId schreiben', 'in Grafana Loki ließ sich ein Fehler keinem Auftrag zuordnen', 'src/log/logger.ts'),
+    c4('de-48', 'de', 'Kennzeichen und Telefonnummern aus den Logs fernhalten', 'beide Felder über die redact-Option von pino maskieren', 'bei einer Prüfung standen Kennzeichen im Klartext in den Logs', 'src/log/redact.ts'),
+    c4('de-49', 'de', 'Weniger Logs in Produktion', 'LOG_LEVEL über eine Umgebungsvariable steuern und in Produktion auf warn setzen', 'die Debug-Ausgaben kosteten über 200 Euro Speicher im Monat', 'src/config/log-level.ts'),
+    c4('de-50', 'de', 'Flaky Playwright-Test der Terminbuchung', 'auf die Antwort von /api/slots warten statt auf ein festes waitForTimeout', 'der Test schlug in der CI etwa jedes fünfte Mal fehl', 'e2e/buchung.spec.ts'),
+
+    c4('fr-41', 'fr', 'Alléger le bundle principal', 'découper les routes avec import() dynamique et mettre maplibre-gl dans un chunk séparé', "le bundle dépassait 2 Mo et l'accueil mettait 6 secondes à s'afficher sur mobile", 'vite.config.ts'),
+    c4('fr-42', 'fr', "Clés d'API exposées côté client", 'ne garder dans le build que les variables préfixées VITE_ et sortir la clé secrète Stripe du front', 'la clé secrète apparaissait dans le JavaScript envoyé au navigateur', '.env.production'),
+    c4('fr-43', 'fr', 'Source maps envoyées à Sentry', 'générer les source maps en mode hidden et les téléverser pendant le build', 'les erreurs dans Sentry pointaient vers du code minifié illisible', 'scripts/upload-sourcemaps.mjs'),
+    c4('fr-44', 'fr', "Passage à la nouvelle version de l'API Stripe", 'épingler la version 2026-09-30 dans le client et adapter les champs de PaymentIntent', 'le webhook recevait des objets sans le champ charges', 'src/paiement/stripe.ts'),
+    c4('fr-45', 'fr', 'Webhooks Stripe reçus en double', "enregistrer l'id de chaque événement et ignorer ceux déjà traités", 'certains conducteurs étaient payés deux fois pour le même trajet', 'src/paiement/webhook.ts'),
+    c4('fr-46', 'fr', 'Remboursement quand le conducteur annule', 'déclencher un refund Stripe automatique et prévenir le passager par e-mail', 'les passagers devaient écrire au support pour être remboursés', 'src/paiement/remboursement.ts'),
+    c4('fr-47', 'fr', 'Recherche des trajets proches du passager', 'utiliser ST_DWithin avec un index GiST sur le point de départ', 'la liste des trajets proches calculait la distance pour toute la table', 'db/migrations/0042_gist_depart.sql'),
+    c4('fr-48', 'fr', 'Pagination de la liste des trajets', 'remplacer OFFSET par une pagination par curseur sur date_depart et id', 'au-delà de la page 50 chaque page prenait plus de 3 secondes', 'src/trajets/liste.ts'),
+    c4('fr-49', 'fr', 'Requête N+1 sur les avis des conducteurs', "charger tous les avis en une seule requête avec IN au lieu d'une requête par conducteur", "le profil d'un conducteur déclenchait 120 requêtes SQL", 'src/conducteurs/avis.ts'),
+    c4('fr-50', 'fr', 'Mise à jour de date-fns en v4', 'passer aux imports nommés et donner le fuseau Europe/Paris explicitement', "après npm update les heures de départ s'affichaient avec une heure de décalage", 'src/utils/dates.ts'),
+
+    c4('pt-41', 'pt', 'Baixa de estoque fora do caixa', 'publicar um evento no RabbitMQ a cada venda e atualizar o estoque num consumidor', 'o caixa travava esperando o sistema de estoque responder', 'src/estoque/consumidor.ts'),
+    c4('pt-42', 'pt', 'Mensagens presas na fila do RabbitMQ', 'prefetch de 20 e ack manual só depois de gravar no banco', 'quando o consumidor caía as mensagens ficavam sem ack até reiniciar o broker', 'src/fila/config.ts'),
+    c4('pt-43', 'pt', 'Ordem das mensagens de reposição', 'uma fila por loja com um único consumidor', 'a reposição chegava antes da venda e o estoque ficava negativo', 'src/fila/lojas.ts'),
+    c4('pt-44', 'pt', 'Atualização do Node 18 para o 22', 'trocar node-sass por sass e gerar o package-lock.json de novo', 'o build quebrava no node-gyp com o Node 22', 'package.json'),
+    c4('pt-45', 'pt', 'Alerta de vulnerabilidade no axios', 'subir o axios para 1.8 e rodar npm audit no CI', 'o Dependabot abriu um alerta crítico de SSRF', 'package-lock.json'),
+    c4('pt-46', 'pt', 'Menos PRs de atualização', 'configurar o Renovate para agrupar as dependências de dev num PR por semana', 'chegavam 30 PRs por semana e ninguém revisava', 'renovate.json'),
+    c4('pt-47', 'pt', 'Login por código SMS para os balconistas', 'gerar um código de 6 dígitos que vale 5 minutos', 'as senhas ficavam anotadas e eram compartilhadas no balcão', 'src/auth/sms.ts'),
+    c4('pt-48', 'pt', 'Erro 401 depois do deploy', 'aceitar a chave antiga do JWT por 24 horas junto com a nova', 'na troca da chave todos os usuários foram deslogados', 'src/auth/chaves.ts'),
+    c4('pt-49', 'pt', 'Permissões de gerente e balconista', 'checar o papel do usuário num middleware antes das rotas de /admin', 'um balconista conseguiu abrir o relatório de faturamento', 'src/auth/papeis.ts'),
+    c4('pt-50', 'pt', 'Tabela de estoque estourando no tablet', 'trocar a tabela por uma lista abaixo de 768px com nome, quantidade e validade', 'no tablet do balcão a coluna de validade sumia da tela', 'src/components/TabelaEstoque.tsx'),
+
+    c4('it-41', 'it', 'Deploy bloccato su Kubernetes', 'aggiungere una readinessProbe su /healthz con 20 secondi di attesa iniziale', 'i pod venivano uccisi prima di finire le migrazioni e il rollout restava in CrashLoopBackOff', 'k8s/deployment.yaml'),
+    c4('it-42', 'it', 'Rollback automatico del deploy', 'lanciare kubectl rollout undo quando lo smoke test fallisce nella pipeline', "un deploy rotto è rimasto in produzione per un'ora di notte", '.github/workflows/deploy.yml'),
+    c4('it-43', 'it', 'Cache della build nella pipeline', "salvare la cache di pnpm e dei layer Docker tra un job e l'altro", 'ogni deploy durava 18 minuti', '.github/workflows/build.yml'),
+    c4('it-44', 'it', 'Ricerca dei vini per annata', 'aggiungere un indice su annata e denominazione nella tabella vini', 'lo slow query log mostrava scansioni complete da 2 secondi', 'db/migrations/2026_10_indice_annata.sql'),
+    c4('it-45', 'it', 'Conteggi dei filtri del catalogo', 'precalcolare ogni notte i conteggi per regione invece di un COUNT a ogni richiesta', 'la pagina del catalogo andava in timeout il venerdì sera', 'src/catalogo/conteggi.ts'),
+    c4('it-46', 'it', 'Deadlock sugli ordini durante le promozioni', 'aggiornare le righe di magazzino sempre in ordine di id dentro la transazione', 'MySQL rispondeva Deadlock found when trying to get lock', 'src/ordini/magazzino.ts'),
+    c4('it-47', 'it', 'Carrello che copre il pulsante di pagamento su iPhone', 'usare env(safe-area-inset-bottom) nel footer fisso del carrello', 'su iPhone la barra di Safari nascondeva il pulsante Paga', 'src/components/CarrelloFooter.tsx'),
+    c4('it-48', 'it', 'Foto delle etichette sgranate', 'servire le immagini in AVIF con srcset a tre larghezze', 'sugli schermi retina le etichette sembravano sfocate', 'src/components/FotoBottiglia.tsx'),
+    c4('it-49', 'it', 'Barra laterale che salta al caricamento', 'riservare lo spazio della barra con una griglia CSS prima che arrivino i dati', 'il layout shift faceva cliccare la categoria sbagliata', 'src/layout/Sidebar.tsx'),
+    c4('it-50', 'it', 'Log degli errori di pagamento', 'mandare a Sentry gli errori di Nexi con il codice esito ma senza il numero della carta', 'il supporto non capiva perché i pagamenti venivano rifiutati', 'src/pagamenti/log.ts'),
+  ],
+  queries: [
+    q4('es', 'answer', 'qué cambios hicimos en la tabla anuncios últimamente?', 'es-41', 'es-42'),
+    q4('es', 'answer', 'otra vez too many clients en postgres, que tocamos', 'es-43'),
+    q4('es', 'answer', 'revisa por qué el login con Google peta en Safari', 'es-44'),
+    q4('es', 'answer', 'por que caducan las sesiones tan rapido?', 'es-45'),
+    q4('es', 'answer', 'por qué tarda tanto el deploy? la imagen docker es enorme', 'es-47'),
+    q4('es', 'answer', 'arregla el test que falla de noche en GitHub Actions', 'es-49'),
+    q4('es', 'chat', 'genial, gracias por echarme una mano'),
+    q4('es', 'chat', 'puedes traducir los textos de la web al catalan?'),
+
+    q4('de', 'answer', 'wie lange cachen wir die preisliste in redis?', 'de-41'),
+    q4('de', 'answer', 'schau mal, warum umgebuchte termine im kalender falsch stehen', 'de-42'),
+    q4('de', 'answer', 'OOM command not allowed beim checkout, was machen wir', 'de-43'),
+    q4('de', 'answer', 'warum kommen SMS bei kunden doppelt oder gar nicht an', 'de-45', 'de-46'),
+    q4('de', 'answer', 'wo wird eigentlich das pdf fur rechnungen gebaut', 'de-44'),
+    q4('de', 'answer', 'wie finde ich in loki alle logs zu einem auftrag', 'de-47'),
+    q4('de', 'chat', 'super, vielen dank dafür'),
+    q4('de', 'chat', 'kannst du mir einen regex für postleitzahlen schreiben'),
+
+    q4('fr', 'answer', "le bundle est trop gros, on l'a découpé comment ?", 'fr-41'),
+    q4('fr', 'answer', 'les stack traces dans sentry sont illisibles, tu regardes ?', 'fr-43'),
+    q4('fr', 'answer', "j'ai plus le champ charges dans PaymentIntent, c'est normal ?", 'fr-44'),
+    q4('fr', 'answer', 'pourquoi des conducteurs ont ete payes deux fois ?', 'fr-45'),
+    q4('fr', 'answer', "la liste des trajets rame, qu'est-ce qu'on a deja optimise ?", 'fr-47', 'fr-48'),
+    q4('fr', 'answer', 'regarde pourquoi le profil conducteur envoie des centaines de requêtes', 'fr-49'),
+    q4('fr', 'chat', 'top, merci beaucoup pour ca'),
+    q4('fr', 'chat', "tu peux m'expliquer comment marche un rebase interactif ?"),
+
+    q4('pt', 'answer', 'por que o caixa nao espera mais pelo estoque?', 'pt-41'),
+    q4('pt', 'answer', 'olha o prefetch do consumidor, tá travando a fila', 'pt-42'),
+    q4('pt', 'answer', 'estoque ficando negativo de novo, qual a causa?', 'pt-43'),
+    q4('pt', 'answer', 'por que tiramos o node-sass do projeto?', 'pt-44'),
+    q4('pt', 'answer', 'quem cuida das atualizacoes de dependencias, dependabot ou renovate?', 'pt-45', 'pt-46'),
+    q4('pt', 'answer', 'deu 401 pra todo mundo depois do deploy, sabe por que?', 'pt-48'),
+    q4('pt', 'chat', 'show de bola, brigado'),
+    q4('pt', 'chat', 'consegue gerar um dockerfile pra esse projeto?'),
+
+    q4('it', 'answer', 'perche i pod vanno in CrashLoopBackOff al deploy?', 'it-41'),
+    q4('it', 'answer', "c'e un modo per annullare da solo un deploy rotto?", 'it-42'),
+    q4('it', 'answer', 'la pipeline ci mette una vita, come la velocizziamo?', 'it-43'),
+    q4('it', 'answer', 'perche il catalogo dei vini e cosi lento?', 'it-44', 'it-45'),
+    q4('it', 'answer', 'guarda il deadlock di MySQL durante le promo', 'it-46'),
+    q4('it', 'answer', "sull'iphone non riesco a premere paga, sistemalo", 'it-47'),
+    q4('it', 'chat', "ottimo lavoro, grazie dell'aiuto"),
+    q4('it', 'chat', "mi scrivi un'email di benvenuto per i nuovi clienti?"),
+  ],
+};
