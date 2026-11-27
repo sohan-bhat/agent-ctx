@@ -409,10 +409,7 @@ function Site() {
         <div className="site-column site-head" data-site="column">
           <h1 translate="no">agent-ctx</h1>
           <Typed />
-          <p data-site="line">
-            One memory is shared by every coding agent and stays on your own
-            computer.
-          </p>
+          <p data-site="line">Local memory shared by your coding agents.</p>
           <Action />
         </div>
         <Demo />
