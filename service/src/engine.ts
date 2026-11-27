@@ -56,6 +56,7 @@ export interface CheckpointArgs extends Where { goal?: string; changed?: string[
 export interface HandoffArgs extends Where { goal?: string; done?: string; next?: string; blockers?: string[]; files?: string[]; check?: string; question?: string; task?: string; key?: string }
 export interface RuleArgs extends Where { text: string; words: string; scope: 'project' | 'all'; key?: string }
 export interface EventArgs { host?: string; event?: string; session?: string; cwd?: string; prompt?: string; tool?: string; file?: string; command?: string; message?: string; summary?: string; reason?: string; source?: string; model?: string }
+export type Part = 'store' | 'recall';
 export type ItemView = Item & { line?: string };
 export interface Space { projects: { key: string; name: string; items: number }[]; agents: AgentRow[]; items: ItemView[]; queue: string[]; reads: ReadRow[]; now: number }
 export interface Me { bytes: number; max: number; callsToday: number; storedToday: number }
@@ -801,7 +802,7 @@ export class Engine {
     });
   }
 
-  async event(c: Caller, a: EventArgs): Promise<Result> {
+  async event(c: Caller, a: EventArgs, part?: Part): Promise<Result> {
     return this.measure(async () => {
       const now = this.now();
       const stop = await this.gate(c, now, 'write', a);
@@ -810,7 +811,7 @@ export class Engine {
       const host = val(a.host) ?? '';
       const asks = name === 'UserPromptSubmit' || name === 'SessionStart';
       try {
-        return { ok: true, text: this.onEvent(c, a, name, host, now) };
+        return { ok: true, text: this.onEvent(c, a, name, host, now, part) };
       } catch {
         return { ok: true, text: asks ? hookOutput(host, name, FAILED) : '' };
       }
@@ -884,7 +885,7 @@ export class Engine {
     return row;
   }
 
-  private onEvent(c: Caller, a: EventArgs, name: string, host: string, now: number): string {
+  private onEvent(c: Caller, a: EventArgs, name: string, host: string, now: number, part?: Part): string {
     const sid = val(a.session);
     if (!sid || sid.length > ID_MAX) return '';
     const tool = val(a.tool);
@@ -904,12 +905,14 @@ export class Engine {
       if (stripped.trim().length < 15) {
         if (!first || !stripped.trim() || /^[/!#]/.test(stripped.trim())) return '';
       } else {
-        const row = this.addEvent(s, 'prompt', now, { text: stripped, limit: stripped.length <= PROMPT_LONG ? undefined : PROMPT_KEPT });
-        if (!row) return '';
-        kept = row.text ?? undefined;
+        if (part !== 'recall') {
+          const row = this.addEvent(s, 'prompt', now, { text: stripped, limit: stripped.length <= PROMPT_LONG ? undefined : PROMPT_KEPT });
+          if (!row) return '';
+          kept = row.text ?? undefined;
+        }
         if (quietPrompt(stripped)) return '';
       }
-      if (!reads) return '';
+      if (!reads || part === 'store') return '';
       const putBack = this.queued(s.project);
       const query = first ? undefined : (kept ?? cleanText(stripped).text);
       const res = this.memory({ project: s.project, reader, grant: c.grant, agent: c.agent, query, first, once: true, putBack, now });

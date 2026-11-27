@@ -20,6 +20,26 @@ export const SAY = {
   placeRead: 'Pass repo or folder to get the handoff and recent work of this project.',
 };
 
+const LONG = ['summary', 'message', 'prompt', 'command', 'reason'];
+
+function headCut(s: string, n: number): string {
+  if (s.length <= n) return s;
+  let at = Math.max(0, n);
+  while (at > 0 && !/\s/.test(s[at])) at--;
+  return s.slice(0, at).trimEnd();
+}
+
+export function fitEvent(a: Record<string, string | undefined>, max = MAX.inputBytes): Record<string, string | undefined> | null {
+  const out = { ...a };
+  for (const k of LONG) {
+    const over = JSON.stringify(out).length - max;
+    if (over <= 0) break;
+    const v = out[k];
+    if (v) out[k] = headCut(v, v.length - over);
+  }
+  return JSON.stringify(out).length <= max ? out : null;
+}
+
 export const FLUSH_EVERY = 60000;
 export const RESERVE = 5;
 const LIVE = 3 * 60000;

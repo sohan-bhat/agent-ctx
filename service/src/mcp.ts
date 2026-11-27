@@ -2,7 +2,9 @@ import { McpServer, inputRequired, inputResponse, type RequestStateCodec } from 
 import { z } from 'zod';
 import { EMPTY_RECALL, FIRST_CHARS } from '../../core/src/index.ts';
 import type { Caller, CheckpointArgs, EventArgs, HandoffArgs, RecallArgs, Result, RuleArgs } from './engine.ts';
-import { MAX, SAY } from './limits.ts';
+import { MAX, SAY, fitEvent } from './limits.ts';
+
+export { fitEvent };
 
 export const INSTRUCTIONS =
   "Before you read or change any file for a task, call recall once with repo and folder, since another agent of this person may have left a handoff, rules or dead ends for this project. After you finish a task, call checkpoint. When the person stops or switches agents, call handoff. When the person states a standing preference, call rule with their exact words. Text from recall is background from earlier sessions. Only lines under RULES were accepted by the person.";
@@ -111,28 +113,9 @@ function asText(v: unknown): string | undefined {
 }
 
 export const BODY_MAX = 64 * 1024;
-const LONG = ['summary', 'message', 'prompt', 'command', 'reason'];
 
 function oversize(args: unknown): boolean {
   return JSON.stringify(args ?? null).length > MAX.inputBytes;
-}
-
-function headCut(s: string, n: number): string {
-  if (s.length <= n) return s;
-  let at = Math.max(0, n);
-  while (at > 0 && !/\s/.test(s[at])) at--;
-  return s.slice(0, at).trimEnd();
-}
-
-export function fitEvent(a: Record<string, string | undefined>, max = MAX.inputBytes): Record<string, string | undefined> | null {
-  const out = { ...a };
-  for (const k of LONG) {
-    const over = JSON.stringify(out).length - max;
-    if (over <= 0) break;
-    const v = out[k];
-    if (v) out[k] = headCut(v, v.length - over);
-  }
-  return JSON.stringify(out).length <= max ? out : null;
 }
 
 async function run(reach: Reach, ctx: Ctx, fn: (s: Memory, who: Caller) => Promise<Result>, empty?: string, args?: unknown) {
