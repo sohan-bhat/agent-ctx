@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { describe, test, type TestContext } from 'node:test';
+import { read } from '../src/hook.ts';
 import { apply, connected, detect, plan, unplan, type Agent, type Change, type Paths } from '../src/install.ts';
 
 type Files = Record<string, unknown>;
@@ -145,7 +146,7 @@ function suite(kit: Kit): void {
       const before = tree(p.home);
       connect(agent, p);
       if (stale) connect(agent, { ...p, app: MOVED });
-      const changes = disconnect(agent, p);
+      const changes = disconnect(agent, p).filter((change) => !change.folder);
       assert.equal(changes.length, count);
       assert.deepEqual(tree(p.home), before);
       for (const change of changes) {
@@ -217,10 +218,38 @@ describe('detect', () => {
     assert.deepEqual(detect(p), ['claude-code', 'cursor', 'codex', 'gemini', 'claude-desktop']);
   });
 
+  test('a home with all eight lists every agent', (t) => {
+    const p = make(t);
+    for (const folder of ['.claude', '.cursor', '.codex', '.gemini/antigravity-cli', '.grok', '.config/muse', 'Library/Application Support/Claude']) fs.mkdirSync(join(p.home, folder), { recursive: true });
+    put(join(p.home, '.gemini/settings.json'), {});
+    assert.deepEqual(detect(p), ['claude-code', 'cursor', 'codex', 'gemini', 'antigravity', 'grok', 'muse', 'claude-desktop']);
+  });
+
+  test('Antigravity, Grok Build and Muse Code are judged by the folders of each product', (t) => {
+    const rows: [string, Agent[]][] = [
+      ['.gemini/settings.json', ['gemini']],
+      ['.gemini/antigravity-cli/settings.json', ['antigravity']],
+      ['.gemini/antigravity/brain/note.md', ['antigravity']],
+      ['.gemini/config/config.json', ['antigravity']],
+      ['.gemini/GEMINI.md', []],
+      ['.gemini/skills/review/SKILL.md', []],
+      ['.local/bin/agy', []],
+      ['.grok/config.toml', ['grok']],
+      ['.config/grok/config.toml', []],
+      ['.config/muse/settings.json', ['muse']],
+      ['.muse/hooks.json', []],
+    ];
+    for (const [file, want] of rows) {
+      const p = make(t);
+      put(join(p.home, file), {});
+      assert.deepEqual(detect(p), want, file);
+    }
+  });
+
   test('each agent is judged by the folder or file of that product', (t) => {
     const rows: [string, Paths['platform'], Agent[]][] = [
       ['.claude.json', 'darwin', ['claude-code']],
-      ['.gemini/config/mcp_config.json', 'darwin', []],
+      ['.gemini/config/mcp_config.json', 'darwin', ['antigravity']],
       ['.config/Claude/claude_desktop_config.json', 'linux', ['claude-desktop']],
       ['.config/Claude/claude_desktop_config.json', 'darwin', []],
       ['AppData/Roaming/Claude/claude_desktop_config.json', 'win32', ['claude-desktop']],
@@ -531,6 +560,171 @@ describe('codex', () => {
   });
 });
 
+const MCP = '.gemini/config/mcp_config.json';
+const STEPS = '.gemini/config/hooks.json';
+const KEPT = 'write_to_file|replace_file_content|multi_replace_file_content|run_command';
+const LINTER = { PostToolUse: [{ matcher: 'run_command', hooks: [{ type: 'command', command: './scripts/lint.sh', timeout: 10 }] }] };
+const agyServer = (p: Paths): unknown => ({ command: p.node, args: [p.app, 'mcp', '--agent', 'antigravity'] });
+const agyHooks = (lead: string): unknown => {
+  const at = (event: string): unknown => ({ type: 'command', command: `${lead} --agent antigravity --event ${event}` });
+  return { PreInvocation: [at('PreInvocation')], PostToolUse: [{ matcher: KEPT, hooks: [at('PostToolUse')] }], Stop: [at('Stop')] };
+};
+const antigravityKit: Kit = {
+  agent: 'antigravity',
+  seed: { [MCP]: { mcpServers: { files: FILES } }, [STEPS]: { 'my-linter-hook': LINTER } },
+  broken: { [MCP]: '{ "mcpServers": {', [STEPS]: '{ "my-linter-hook": {}, }' },
+  ours: (p, shown = beside(p.app)) => ({ [MCP]: { mcpServers: { 'agent-ctx': agyServer(p) } }, [STEPS]: { 'agent-ctx': agyHooks(`${p.node} ${shown}`) } }),
+  both: (p) => ({ [MCP]: { mcpServers: { files: FILES, 'agent-ctx': agyServer(p) } }, [STEPS]: { 'my-linter-hook': LINTER, 'agent-ctx': agyHooks(`${p.node} ${beside(p.app)}`) } }),
+};
+
+describe('antigravity', () => {
+  suite(antigravityKit);
+
+  test('a home with Antigravity alone gets no Gemini CLI file', (t) => {
+    const p = make(t);
+    put(join(p.home, '.gemini/antigravity-cli/settings.json'), { colorScheme: 'terminal' });
+    const found = detect(p);
+    assert.deepEqual(found, ['antigravity']);
+    for (const agent of found) connect(agent, p);
+    assert.deepEqual(Object.keys(tree(p.home)).sort(), ['.gemini/antigravity-cli/settings.json', STEPS, MCP]);
+    assert.equal(fs.existsSync(join(p.home, SETTINGS)), false);
+    put(join(p.home, SETTINGS), { theme: 'plain' });
+    assert.deepEqual(detect(p), ['gemini', 'antigravity']);
+  });
+
+  test('antigravity loses the config folder made for the two files and keeps a folder with any other file', (t) => {
+    const folder = (p: Paths): string => join(p.home, '.gemini', 'config');
+    const p = make(t);
+    connect('antigravity', p);
+    const changes = disconnect('antigravity', p);
+    assert.deepEqual(changes.map((change) => [change.file, !!change.folder]), [[join(p.home, MCP), false], [join(p.home, STEPS), false], [folder(p), true]]);
+    assert.equal(changes[2].what, `The folder ${folder(p)} is removed, because no file is left in the folder.`);
+    assert.equal(fs.existsSync(folder(p)), false);
+    assert.equal(fs.existsSync(join(p.home, '.gemini')), true);
+    for (const other of ['config.json', 'mcp_config.json', 'hooks.json']) {
+      const q = make(t);
+      const kept = other === 'config.json' ? { userSettings: { enableAdc: false } } : antigravityKit.seed[join('.gemini/config', other)];
+      put(join(folder(q), other), kept);
+      connect('antigravity', q);
+      assert.equal(disconnect('antigravity', q).some((change) => change.folder), false, other);
+      assert.deepEqual(look(join(folder(q), other)), kept, other);
+    }
+  });
+
+  test('every event of the antigravity entry and every tool of the matcher is read by the hook', (t) => {
+    const p = make(t);
+    connect('antigravity', p);
+    const entry = (look(join(p.home, STEPS)) as Record<string, Record<string, { matcher?: string; command?: string; hooks?: { command: string }[] }[]>>)['agent-ctx'];
+    const stdin = (tool: string): string => JSON.stringify({ conversationId: 'v-1', workspacePaths: ['/work/app'], lastUserInput: 'Add the gust filter', toolCall: { name: tool, args: { TargetFile: '/work/app/a.ts', CommandLine: 'npm test' } } });
+    assert.deepEqual(Object.keys(entry), ['PreInvocation', 'PostToolUse', 'Stop']);
+    for (const [event, items] of Object.entries(entry)) {
+      for (const item of items) {
+        const commands = item.hooks ? item.hooks.map((hook) => hook.command) : [item.command ?? ''];
+        assert.deepEqual(commands, [`${NODE} ${beside(APP)} --agent antigravity --event ${event}`], event);
+        for (const tool of (item.matcher ?? 'run_command').split('|')) assert.equal(read('antigravity', stdin(tool), event)?.host, 'antigravity', `${event} ${tool}`);
+      }
+    }
+    assert.deepEqual(entry.PostToolUse.map((item) => item.matcher), [KEPT]);
+    for (const tool of ['view_file', 'list_dir', 'grep_search']) assert.equal(read('antigravity', stdin(tool), 'PostToolUse'), null, tool);
+  });
+
+  test('antigravity replaces a hook of the same name and keeps extra keys of a stdio entry', (t) => {
+    const p = make(t);
+    put(join(p.home, MCP), { mcpServers: { 'agent-ctx': { command: 'node', args: ['/old/agent-ctx.js'], timeoutSeconds: 600 } } });
+    put(join(p.home, STEPS), { 'agent-ctx': { enabled: false, SessionStart: [{ type: 'command', command: 'node /old/hook.mjs --agent antigravity --event SessionStart' }] }, reminder: { PreInvocation: [{ type: 'command', command: './scripts/reminder.sh' }] } });
+    connect('antigravity', p);
+    assert.deepEqual(look(join(p.home, MCP)), { mcpServers: { 'agent-ctx': { ...(agyServer(p) as object), timeoutSeconds: 600 } } });
+    assert.deepEqual(look(join(p.home, STEPS)), { 'agent-ctx': agyHooks(`${NODE} ${beside(APP)}`), reminder: { PreInvocation: [{ type: 'command', command: './scripts/reminder.sh' }] } });
+    assert.deepEqual(Object.keys(look(join(p.home, STEPS)) as object), ['agent-ctx', 'reminder']);
+    assert.deepEqual(plan('antigravity', p), []);
+  });
+});
+
+const GROK = '.grok/config.toml';
+const GROK_TOML = '[models]\ndefault = "grok-4"\n\n[mcp_servers.files]\ncommand = "npx"\nargs = ["-y", "files-server"]\n';
+const grokTable = (p: Paths): string => `[mcp_servers.agent-ctx]\ncommand = "${p.node}"\nargs = ["${p.app}", "mcp", "--agent", "grok"]\n`;
+const grokKit: Kit = {
+  agent: 'grok',
+  seed: { [GROK]: GROK_TOML },
+  broken: { [GROK]: '[mcp_servers]\nagent-ctx = { command = "node" }\n' },
+  ours: (p) => ({ [GROK]: grokTable(p) }),
+  both: (p) => ({ [GROK]: `${GROK_TOML}\n${grokTable(p)}` }),
+};
+
+describe('grok', () => {
+  suite(grokKit);
+
+  test('grok keeps every byte outside the one table and gets no hook file', (t) => {
+    const p = make(t);
+    const rest = '# my models\n[models]\ndefault = "grok-4"   # fast\n\n[mcp_servers.linear]\nurl = "https://mcp.linear.invalid/mcp"\nheaders = { "x-mcp-session-id" = "{{session_id}}" }\n\n[permission]\nallow = ["Bash(npm test)"]\n';
+    put(join(p.home, GROK), rest);
+    put(join(p.home, '.grok/hooks/guard.json'), { hooks: { PreToolUse: [GUARD] } });
+    const before = tree(p.home);
+    assert.deepEqual(connect('grok', p).map((change) => change.file), [join(p.home, GROK)]);
+    assert.equal(text(join(p.home, GROK)), `${rest}\n${grokTable(p)}`);
+    assert.deepEqual(Object.keys(tree(p.home)), Object.keys(before));
+    assert.deepEqual(plan('grok', p), []);
+    disconnect('grok', p);
+    assert.deepEqual(tree(p.home), before);
+  });
+});
+
+const MUSE = '.config/muse/settings.json';
+const WEB = { web_fetch: { enabled: false } };
+const TOOLS = { transport: 'stdio', ...FILES };
+const museServer = (p: Paths): unknown => ({ transport: 'stdio', command: p.node, args: [p.app, 'mcp', '--agent', 'muse'], mode: 'optional' });
+const museKit: Kit = {
+  agent: 'muse',
+  seed: { [MUSE]: { schema_version: 1, tools: WEB, mcp_servers: { files: TOOLS } } },
+  broken: { [MUSE]: '{ "schema_version": 1, }\n' },
+  ours: (p) => ({ [MUSE]: { schema_version: 1, mcp_servers: { 'agent-ctx': museServer(p) } } }),
+  both: (p) => ({ [MUSE]: { schema_version: 1, tools: WEB, mcp_servers: { files: TOOLS, 'agent-ctx': museServer(p) } } }),
+};
+
+describe('muse', () => {
+  suite(museKit);
+
+  test('muse adds the schema version to a file without the key and takes the key out again', (t) => {
+    for (const value of [{}, { tools: WEB }, { mcp_servers: {} }]) {
+      const p = make(t);
+      put(join(p.home, MUSE), value);
+      connect('muse', p);
+      assert.deepEqual(look(join(p.home, MUSE)), { schema_version: 1, ...value, mcp_servers: { 'agent-ctx': museServer(p) } });
+      assert.equal(Object.keys(look(join(p.home, MUSE)) as object)[0], 'schema_version');
+      disconnect('muse', p);
+      assert.deepEqual(look(join(p.home, MUSE)), value);
+    }
+    const p = make(t);
+    put(join(p.home, MUSE), { schema_version: 1 });
+    connect('muse', p);
+    disconnect('muse', p);
+    assert.deepEqual(look(join(p.home, MUSE)), { schema_version: 1 });
+  });
+
+  test('muse leaves a file with another schema version alone', (t) => {
+    for (const version of [2, '1', null]) {
+      const p = make(t);
+      put(join(p.home, MUSE), { schema_version: version, mcp_servers: {} });
+      const before = tree(p.home);
+      const changes = plan('muse', p);
+      assert.equal(changes.length, 1);
+      assert.equal(changes[0].after, changes[0].before);
+      assert.match(changes[0].what, / has an unexpected layout and was left alone\. To connect by hand, add "agent-ctx": \{"transport":"stdio",.*"mode":"optional"\} under mcp_servers\.$/);
+      apply(changes);
+      assert.deepEqual(tree(p.home), before);
+      assert.deepEqual(unplan('muse', p), []);
+    }
+  });
+
+  test('muse keeps extra keys of a stdio entry and writes the entry as optional', (t) => {
+    const p = make(t);
+    put(join(p.home, MUSE), { schema_version: 1, mcp_servers: { 'agent-ctx': { transport: 'stdio', command: 'node', args: ['/old/agent-ctx.js'], env: { LEVEL: 'debug' }, mode: 'required' } } });
+    connect('muse', p);
+    assert.deepEqual(look(join(p.home, MUSE)), { schema_version: 1, mcp_servers: { 'agent-ctx': { ...(museServer(p) as object), env: { LEVEL: 'debug' } } } });
+    assert.equal(fs.existsSync(join(p.home, '.muse')), false);
+  });
+});
+
 describe('files', () => {
   test('apply stops before any write when a file changed after the plan', (t) => {
     const p = make(t);
@@ -641,7 +835,7 @@ describe('files', () => {
 
   test('every line for a person is one line without the banned words and marks', (t) => {
     const lines: string[] = [];
-    for (const kit of [desktopKit, cursorKit, geminiKit, codexKit]) {
+    for (const kit of [desktopKit, cursorKit, geminiKit, codexKit, antigravityKit, grokKit, museKit]) {
       const p = make(t);
       for (const [file, value] of Object.entries(kit.broken)) put(join(p.home, file), value);
       lines.push(...plan(kit.agent, p).map((change) => change.what), ...unplan(kit.agent, p).map((change) => change.what));
@@ -676,7 +870,7 @@ describe('guard', () => {
     env('APPDATA', undefined, () => {
       for (const seeded of [false, true]) {
         for (const platform of ['darwin', 'linux', 'win32'] as const) {
-          for (const kit of [desktopKit, cursorKit, geminiKit, codexKit]) {
+          for (const kit of [desktopKit, cursorKit, geminiKit, codexKit, antigravityKit, grokKit, museKit]) {
             const q = { ...p, platform };
             if (seeded) seed(kit, q);
             detect(q);
@@ -729,6 +923,46 @@ describe('one program', () => {
     for (const agent of OTHERS) assert.deepEqual([plan(agent, p), connected(agent, p)], [[], true], agent);
     for (const agent of OTHERS) disconnect(agent, p);
     assert.deepEqual(tree(p.home), {});
+  });
+
+  test('one program is the command of every server and hook of the three newer agents', (t) => {
+    const p = one(t);
+    const newer: Agent[] = ['antigravity', 'grok', 'muse'];
+    for (const agent of newer) connect(agent, p);
+    check(p, {
+      [MCP]: { mcpServers: { 'agent-ctx': server('antigravity') } },
+      [STEPS]: { 'agent-ctx': agyHooks(`${ONE} hook`) },
+      [MUSE]: { schema_version: 1, mcp_servers: { 'agent-ctx': { transport: 'stdio', ...server('muse'), mode: 'optional' } } },
+    });
+    assert.equal(text(join(p.home, GROK)), `[mcp_servers.agent-ctx]\ncommand = "${ONE}"\nargs = ["mcp", "--agent", "grok"]\n`);
+    for (const body of Object.values(tree(p.home))) assert.equal(/node|\.mjs/.test(body), false, body);
+    for (const agent of newer) assert.deepEqual([plan(agent, p), connected(agent, p)], [[], true], agent);
+    for (const agent of newer) disconnect(agent, p);
+    assert.deepEqual(tree(p.home), {});
+    assert.equal(fs.existsSync(join(p.home, '.gemini', 'config')), false);
+  });
+
+  test('a move between the script form and one program replaces every entry of the three newer agents', (t) => {
+    const newer: Agent[] = ['antigravity', 'grok', 'muse'];
+    for (const first of ['script', 'program']) {
+      const home = make(t);
+      const script = { ...home, app: MOVED };
+      const program = { ...home, app: ONE, node: '' };
+      const [from, to] = first === 'script' ? [script, program] : [program, script];
+      for (const agent of newer) connect(agent, from);
+      for (const agent of newer) {
+        const changes = connect(agent, to);
+        assert.equal(changes.length, agent === 'antigravity' ? 2 : 1, agent);
+        for (const change of changes) assert.equal(change.what.endsWith(` updated in ${change.file} for the program path ${to.app}.`), true, change.what);
+        assert.deepEqual(plan(agent, to), [], agent);
+      }
+      const all = Object.values(tree(home.home)).join('\n');
+      assert.equal(all.includes(first === 'script' ? 'hook.mjs' : `${ONE} hook`), false, all);
+      assert.equal(all.split(first === 'script' ? `${ONE} hook` : beside(MOVED)).length - 1, 3, all);
+      assert.equal(all.split(to.app).length - 1, first === 'script' ? 6 : 3, all);
+      for (const agent of newer) disconnect(agent, from);
+      assert.deepEqual(tree(home.home), {});
+    }
   });
 
   test('a move between the script form and one program replaces every entry of the other form', (t) => {
