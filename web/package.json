@@ -5,6 +5,8 @@
   "scripts": {
     "build": "vite build",
     "build:site": "vite build --mode site",
+    "build:local": "vite build --mode page",
+    "pack": "vite build --mode page && node pack.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "dev": "vite --mode mock",
     "preview": "vite preview"

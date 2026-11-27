@@ -5,3 +5,4 @@ dist/
 .wrangler/
 out/
 web/dist-site/
+web/dist-local/

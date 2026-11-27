@@ -1,4 +1,5 @@
 import type { CardBody, DroppedBody, HandoffBody, Item as Stored, Kind, Origin, RuleBody } from '@core/model.ts';
+import { transport as local } from '@/lib/local';
 
 export type { CardBody, DroppedBody, HandoffBody, Kind, Origin, RuleBody };
 
@@ -192,7 +193,7 @@ const http: Transport = {
   hint: () => {},
 };
 
-const load: Promise<Transport> = import.meta.env.MODE === 'mock' ? import('@/mock').then((m) => m.transport) : Promise.resolve(http);
+const load: Promise<Transport> = import.meta.env.MODE === 'mock' ? import('@/mock').then((m) => m.transport) : Promise.resolve(import.meta.env.MODE === 'page' ? local : http);
 
 export const api = {
   me: () => load.then((t) => t.me()),
