@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -17,6 +18,8 @@ const START = 8 * 60;
 const END = 18 * 60;
 const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Antigravity', 'Grok Build', 'Muse Code', 'Claude desktop'];
 const LEADS = ['Switching from', 'to'];
+const MARK = 'M0 0L5 0L5 3L3 3L3 13L5 13L5 16L0 16ZM6 6L10 6L10 10L6 10ZM8 0L12.243 0L20.243 8L12.243 16L8 16L16 8Z';
+const LOCKUP = '163099391999c215';
 const TAIL = 'requires no explanation.';
 const SPOKEN = 'Switching from Claude Code to Cursor requires no explanation.';
 const EDGE = [664, 656];
@@ -674,6 +677,8 @@ async function walk(b, site, w, h, scheme) {
       const p = document.querySelector('[data-site=typed]');
       return [p, ...p.querySelectorAll('*')].filter((e) => getComputedStyle(e).textDecorationLine !== 'none').length;
     });
+    const inked = await page.evaluate(() => ({ text: getComputedStyle(document.body).color, logo: [...new Set([...document.querySelectorAll('[data-site=logo] path')].map((e) => getComputedStyle(e).fill))] }));
+    check(`${tag} the logo has the foreground colour of the page`, inked.logo.length === 1 && inked.logo[0] === inked.text, `logo ${inked.logo.join(' ') || 'missing'}, text ${inked.text}`);
     check(`${tag} no word of the typed sentence has an underline`, underlined === 0, `${underlined} underlined parts`);
     check(`${tag} screen readers get one still sentence and no live updates while names change`, s.spoken === SPOKEN && typed.said.length === 1 && !s.live, typed.said.join(' | '));
 
@@ -734,6 +739,8 @@ async function still(b, site) {
   const { ctx, page, errors } = await context(b, { w: 1440, h: 900, scheme: 'dark', reduced: true });
   try {
     await page.goto(site.url);
+    const drawn = () => page.evaluate(() => [...document.querySelectorAll('[data-site=logo] path')].map((e) => `${e.getAnimations().length} ${getComputedStyle(e).fillOpacity} ${getComputedStyle(e).stroke}`));
+    const early = await drawn();
     await ready(page);
     await watch(page);
     const names = async () => (await page.locator('[data-site=agent]').allTextContents()).join(' and ');
@@ -745,6 +752,8 @@ async function still(b, site) {
     const carets = await page.evaluate(() => window.__typed.blink.map((v) => v.map((x) => x[0]).join(' ')));
     const blocks = Number(await page.locator('[aria-roledescription=space]').getAttribute('data-blocks'));
     check('reduced motion leaves the demo still at the end of the day', t0 === END && t1 === END && blocks > 20 && !errors.length, `${clock(t0)} then ${clock(t1)}, ${blocks} blocks`);
+    const late = await drawn();
+    check('reduced motion leaves the logo still and filled at the start and later', early.length === 12 && [...early, ...late].every((v) => v === '0 1 none'), [...new Set([...early, ...late])].join(' | ') || 'no logo');
     check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, cursor states ${carets.join(' and ')}`);
   } finally {
     await ctx.close();
@@ -858,6 +867,84 @@ async function fit(b, site) {
   }
 }
 
+function frozen() {
+  const logo = (window.__logo = { held: [], tops: new Set(), frames: 0 });
+  const look = () => {
+    const paths = [...document.querySelectorAll('[data-site=logo] path')];
+    if (!paths.length || logo.held.length) return;
+    logo.held = paths.flatMap((e) => e.getAnimations());
+    for (const a of logo.held) {
+      a.pause();
+      a.currentTime = 0;
+    }
+    const tick = () => {
+      const typed = document.querySelector('[data-site=typed]');
+      if (typed) logo.tops.add(Math.round(typed.getBoundingClientRect().top * 100) / 100);
+      logo.frames++;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  };
+  new MutationObserver(look).observe(document, { subtree: true, childList: true });
+}
+
+async function logo(b, site) {
+  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+  try {
+    await ctx.addInitScript(frozen);
+    await page.goto(site.url, { waitUntil: 'commit' });
+    await waitFor(() => page.evaluate(() => (window.__logo?.held.length ?? 0) > 0).catch(() => false), 8000);
+    const read = (seek) =>
+      page.evaluate((to) => {
+        const paths = [...document.querySelectorAll('[data-site=logo] path')];
+        const held = window.__logo?.held ?? [];
+        if (to !== null)
+          for (const a of held) {
+            a.currentTime = to;
+            if (to === 0) a.play();
+          }
+        const runs = paths.flatMap((e) => e.getAnimations());
+        return {
+          held: held.length,
+          end: Math.max(0, ...runs.map((a) => Number(a.effect.getComputedTiming().endTime) || 0)),
+          going: runs.filter((a) => a.playState === 'running').map((a) => a.animationName),
+          tops: [...(window.__logo?.tops ?? [])],
+          frames: window.__logo?.frames ?? 0,
+          shapes: paths.map((e) => {
+            const c = getComputedStyle(e);
+            return { fill: Number(c.fillOpacity), line: c.stroke === 'none' ? 0 : Number(c.strokeOpacity), dash: parseFloat(c.strokeDashoffset) || 0 };
+          }),
+        };
+      }, seek ?? null);
+    const early = await read(300);
+    const held = await page.evaluate(() => {
+      const h1 = document.querySelector('h1');
+      const parts = (name) => [...(h1?.querySelectorAll(`svg [data-part=${name}]`) ?? [])];
+      return { text: h1?.textContent.trim() ?? '', drawings: h1?.querySelectorAll('svg').length ?? 0, hidden: h1?.querySelector('svg')?.getAttribute('aria-hidden') ?? '', mark: parts('mark').map((e) => e.getAttribute('d')), word: parts('word').map((e) => e.getAttribute('d')), unit: [...parts('mark'), ...parts('word')].every((e) => e.getAttribute('pathLength') === '1') };
+    });
+    const sum = crypto.createHash('sha256').update(`${held.mark.join('')}|${held.word.join('')}`).digest('hex').slice(0, 16);
+    check('the h1 holds one SVG with the three mark shapes and the nine wordmark shapes of the lockup and still reads agent-ctx', held.text === 'agent-ctx' && held.drawings === 1 && held.hidden === 'true' && held.mark.length === 3 && held.word.length === 9 && held.unit && sum === LOCKUP, `${held.drawings} drawings, ${held.mark.length} and ${held.word.length} shapes, sum ${sum}, text ${held.text}`);
+    check('a sample at 0.3 s of the drawing shows a shape with a part of the outline and no shape with a fill', early.held === 12 && early.shapes.some((v) => v.line > 0 && v.dash > 0 && v.dash < 1) && early.shapes.every((v) => v.fill === 0), early.shapes.map((v) => `${v.fill} ${v.dash.toFixed(2)}`).join(', '));
+    const start = await read(0);
+    await page.waitForTimeout(2150);
+    const rest = await read();
+    check('about 2 s after the drawing starts every shape is filled, no stroke is left and the drawing ended within 1.6 s', rest.shapes.length === 12 && rest.shapes.every((v) => v.fill === 1 && v.line === 0) && !rest.going.length && start.going.length === 12 && start.end > 600 && start.end <= 1600, `the drawing ends at ${Math.round(start.end)} ms, ${rest.shapes.filter((v) => v.fill === 1 && v.line === 0).length} of ${rest.shapes.length} shapes at rest`);
+    check('the top of the typed sentence never moves from the first sight of the logo until 2 s after the drawing', rest.frames > 60 && rest.tops.length === 1, `${rest.tops.join(' and ')} px in ${rest.frames} frames`);
+    const at = await box(page, '[data-site=logo]');
+    await page.mouse.move((at?.x ?? 0) + (at?.width ?? 0) / 2, (at?.y ?? 0) + (at?.height ?? 0) / 2);
+    await page.waitForTimeout(150);
+    const over = await read();
+    await page.waitForTimeout(900);
+    const done = await read();
+    await page.mouse.move(1400, 500);
+    await page.waitForTimeout(300);
+    const left = await read();
+    check('a pointer over the logo undraws and redraws the logo within about 0.8 s and the drawing on load is not played again', over.going.length === 12 && over.going.every((v) => v === 'site-logo-redraw') && over.end > 500 && over.end <= 850 && !done.going.length && !left.going.length && left.shapes.every((v) => v.fill === 1 && v.line === 0), `${over.going.length} shapes redraw until ${Math.round(over.end)} ms, ${left.going.length} animations after the pointer left`);
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function shoot(b, site, w, h, scheme, name = '') {
   const { ctx, page, touch } = await context(b, { w, h, scheme, dpr: 2, reduced: true });
   try {
@@ -886,6 +973,10 @@ function built(dir) {
   const far = [...`${html}\n${css}`.matchAll(/(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"')]*/gi)].map((m) => m[0]);
   check(`every asset address in the built page starts with ${BASE}`, refs.length >= 4 && !off.length && !far.length, `${refs.length} addresses${off.length || far.length ? `, off ${[...off, ...far].slice(0, 3).join(' ')}` : ''}`);
   const holds = all.filter((f) => /\.(?:html|js|css)$/.test(f) && /install\.sh|setup\.md|Set up agent-ctx/.test(fs.readFileSync(f, 'utf8')));
+  const icon = /<link rel="icon"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? '';
+  const file = path.join(dir, decodeURIComponent(icon.slice(BASE.length).split('?')[0]));
+  const tile = icon.startsWith(BASE) && fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file, 'utf8') : '';
+  check('the favicon link ends in a versioned SVG that holds the mark for a light and a dark tab', /favicon-[\w-]{6,}\.svg$|\.svg\?v=\w+$/.test(icon) && tile.includes(`d="${MARK}"`) && /prefers-color-scheme:\s*dark/.test(tile), icon);
   check('the built page holds no setup prompt without VITE_RELEASED', !holds.length, holds.map((f) => path.basename(f)).join(' '));
   const bytes = all.reduce((a, f) => a + fs.statSync(f).size, 0);
   console.log(`NOTE the built page is ${(bytes / 1024).toFixed(0)} kB in ${all.length} files`);
@@ -916,6 +1007,7 @@ try {
   await run('reduced motion walk', () => still(b, plain));
   await run('random typing walk', () => random(b, plain));
   await run('switch point walk', () => fit(b, plain));
+  await run('logo walk', () => logo(b, plain));
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });
     for (const scheme of schemes) for (const [w, h] of sizes) await shoot(b, plain, w, h, scheme);
