@@ -1,6 +1,6 @@
 {
   "name": "agent-ctx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One memory on this computer, shared by Claude Code and your other agents",
   "author": {
     "name": "agent-ctx"
