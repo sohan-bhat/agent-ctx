@@ -314,3 +314,66 @@ test('in a project of italian cards the plural and the singular of a noun give o
   assert.deepEqual(tokens('piatto piatti', ['es']), ['piatto', 'piatti']);
   assert.deepEqual(tokens('data cache tokens', ['it']), ['data', 'cach', 'token']);
 });
+
+const CODE_TERMS: Record<string, string> = {
+  javascript: 'break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof new null return super switch this throw true try typeof var void while with yield let static await async of from get set undefined require module exports prototype constructor arguments es',
+  typescript: 'any unknown never number string boolean symbol bigint object type interface namespace declare readonly keyof infer is abstract implements private protected public satisfies override accessor',
+  python: 'and as assert def del elif except global lambda nonlocal not or pass raise none self cls print len range dict list tuple str int float bool bytes open isinstance super init main',
+  go: 'chan defer fallthrough func go goto map package select struct nil make append cap copy panic recover iota byte rune error fmt strings strconv context errors',
+  rust: 'crate dyn extern fn impl loop match mod move mut pub ref trait unsafe use where box macro vec option result some ok err usize isize std alloc mir hir rustc clippy rustfmt',
+  sql: 'insert into update create table drop alter index join inner outer left right full on group by order having limit offset union all distinct exists when then end values primary key foreign references check unique view trigger begin commit rollback grant revoke cascade constraint column schema serial varchar text integer date timestamp',
+  shell: 'fi esac until done echo printf read cd ls cp mv rm mkdir rmdir touch cat less head tail grep sed awk find xargs sort uniq wc tee cut tr diff patch tar gzip zip unzip curl wget ssh scp rsync chmod chown sudo su kill ps top htop df du mount ln alias unset exit eval exec trap env pwd whoami cron crontab systemctl journalctl man vi vim nano ed cmake gcc clang ld',
+  idents: 'bin dir num tmp src lib arg args argv argc buf ctx cfg conf req res resp msg obj arr idx val ptr fd cb db io ui ux id ids uid gid pid tid url uri ip os pkg cmd opt opts util utils app api sdk cli gui ini log logs min max avg sum cnt pos abs ret dst dest impl spec doc docs dev prod mock stub seed temp cache net http fs dom svg png jpg gif css html xml json yaml toml csv md sh bash zsh',
+  tools: 'vite immer redis nginx docker stripe react vue angular svelte next nuxt remix astro webpack rollup esbuild babel jest vitest mocha chai cypress playwright puppeteer eslint prettier node deno bun npm yarn pnpm git github gitlab bitbucket jira slack discord notion figma sentry datadog grafana prometheus kibana elasticsearch kafka rabbitmq celery postgres postgresql mysql sqlite mongo mongodb cassandra supabase firebase prisma drizzle sequelize knex typeorm express fastify koa nest hono django flask fastapi rails laravel spring gradle maven cargo rustup tokio serde axum actix pandas numpy scipy torch pytorch tensorflow keras jupyter conda pip poetry pytest kubernetes kubectl helm terraform ansible vagrant consul vault nomad heroku vercel netlify cloudflare wrangler okta twilio sendgrid mailgun shopify paypal plaid openai anthropic claude gemini llama mistral ollama huggingface langchain zod lodash axios dayjs luxon rxjs redux zustand mobx jotai tailwind bootstrap sass postcss storybook electron tauri expo flutter dart kotlin swift xcode android ios linux ubuntu debian alpine macos windows chrome firefox safari webkit chromium vscode neovim tmux homebrew brew jq ffmpeg nix bazel turbo lerna graphql apollo trpc grpc protobuf swagger openapi postman minio presto spark hadoop airflow dbt snowflake bigquery',
+  cloud: 'aws gcp azure s3 ec2 iam rds sqs sns ses ecs eks ecr lambda dynamodb kinesis athena cognito cloudfront gke gcs pubsub firestore aks eu us uk ap region zone',
+  protocol: 'rest tcp udp dns tls ssl ftp sftp smtp imap mqtt amqp websocket webhook oauth jwt saml sso mfa totp otp cors csrf xss cdn vpn vpc nat lan wan ipv4 ipv6 mtls hsts dkim spf dmarc ca crt pem csr rsa aes des sha md5 hmac utf8 ascii unicode base64 bom crlf eol tel mailto',
+  hardware: 'cpu gpu ram ssd hdd numa simd raid iot mutex futex mmap fork pipe signal socket epoll syscall errno stdin stdout stderr malloc sem',
+  ai: 'ai ia ml llm nlp gpt rag model dataset tensor epoch batch layer embedding vector prompt agent ensemble inference training eval benchmark gradient',
+  css: 'font grid flex block inline margin padding border color background display position absolute relative fixed sticky width height top bottom center align justify content items wrap gap overflow hidden visible opacity transform transition animation hover focus active before after auto inherit initial unset solid dashed dotted bold italic normal sans serif mono monospace cursor pointer outline shadow radius scale rotate translate filter blur media print screen ease linear px em rem vh vw',
+  html: 'abbr address article aside audio base blockquote body br button canvas caption code col colgroup data datalist dd details dialog div dl dt embed fieldset figure footer form head header hr iframe img input ins kbd label legend li link main mark menu meta meter nav noscript ol optgroup output param picture pre progress samp script section slot small source span strong style sub summary sup tbody td template textarea tfoot th thead time title track ul video wbr',
+  git: 'clone push pull fetch merge rebase stash tag branch checkout switch restore reset revert blame bisect cherry pick status add remote origin master hook show log',
+  patterns: 'mvc mvvm orm dto dao di ioc dry solid crud',
+  flags: 'verbose quiet force fast watch debug strict silent',
+  plans: 'free pro team enterprise solo starter basic premium plus business',
+  pages: 'home about pricing blog legal privacy terms contact support careers login signup dashboard settings profile account billing',
+  slang: 'algo repo config staging infra perf regex deps auth admin todo fixme hack',
+  web3: 'ton eth btc nft dao defi wallet chain',
+  social: 'meme emoji sticker avatar feed post story',
+  licenses: 'mit apache gpl lgpl bsd mpl isc',
+  math: 'sin cos tan exp sqrt floor ceil round pow',
+  scripting: 'php isset foreach puts elsif unless rescue ensure die warn chomp',
+  java: 'java jar war jvm jdk jre servlet throws final',
+  domains: 'com org co',
+  security: 'dos ddos mitm sqli rce',
+  devops: 'ci cd devops sre qa uat nas san',
+  editing: 'comment review lint snippet',
+  functional: 'pure immutable closure monad curry thunk',
+  maps: 'poi geo lat lng gps tile',
+  timezones: 'utc gmt est pst cet cest jst ist',
+  dates: 'mon tue wed thu fri sat sun jan feb mar apr jun jul aug sep oct nov dec',
+  boards: 'arduino uno esp32 raspberry stm32',
+};
+
+const CODE = new Set(Object.values(CODE_TERMS).flatMap((s) => s.split(' ')));
+
+const ALLOWED: Record<(typeof LANGS)[number], Record<string, string>> = {
+  es: { del: 'of the, Python del is rarer', su: 'his or her, the su command is rarer', sin: 'without, the sine function is rarer', tan: 'so, the tangent function is rarer', todo: 'all, a TODO marker is rarer', es: 'is, the ECMAScript short name is rarer' },
+  de: { des: 'of the, the DES cipher is rare', mit: 'with, the MIT license is rarer', man: 'one, man pages are rarer', du: 'you, the du command is rarer', ins: 'into the, the ins tag is rare', die: 'the, a die call is rare', war: 'was, a war file is rare', es: 'it, the ECMAScript short name is rarer', ist: 'is, the India time zone is rare' },
+  fr: { comment: 'how, a code comment is commentaire', des: 'of the, the DES cipher is rare', du: 'of the, the du command is rarer', ses: 'his or her, the mail service is rarer', plus: 'more, the plus plan is rarer', sans: 'without, the sans font is rarer', ca: 'that, a certificate authority is rarer', est: 'is, the US time zone is rarer', cet: 'this, the time zone is rarer', mon: 'my, the Monday short form is rarer' },
+  pt: { os: 'the, the os module is rarer', em: 'in, the em unit is rarer', todo: 'all, a TODO marker is rarer', com: 'with, the com domain is rarer', dos: 'of the, a dos attack is rarer', nas: 'in the, a nas drive is rarer' },
+  it: { di: 'of, dependency injection is rarer', su: 'on, the su command is rarer', del: 'of the, Python del is rarer', ed: 'and, the ed editor is rare', ci: 'us or there, CI is rarer', poi: 'then, a map point is rarer', uno: 'one, the Arduino board is rarer' },
+};
+
+test('the code and tool fixture holds at least 400 plain lowercase terms and no safe list word', () => {
+  assert.ok(CODE.size >= 400, String(CODE.size));
+  for (const w of CODE) assert.match(w, /^[a-z][a-z0-9]*$/, w);
+  for (const l of LANGS) assert.deepEqual(STOP_LISTS[l].filter((w) => CODE.has(w)), [], l);
+});
+
+test('the lists for an established language share only a short allow list with code and tool terms', () => {
+  for (const l of LANGS) {
+    const extra = FULL_LISTS[l].filter((w) => !STOP_LISTS[l].includes(w));
+    assert.deepEqual(extra.filter((w) => CODE.has(w)).sort(), Object.keys(ALLOWED[l]).sort(), l);
+    assert.ok(Object.keys(ALLOWED[l]).length <= 12, l);
+  }
+});
