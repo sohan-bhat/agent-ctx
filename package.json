@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.16"
   },
   "bin": {
     "agent-ctx": "plugins/claude-code/scripts/agent-ctx.mjs"

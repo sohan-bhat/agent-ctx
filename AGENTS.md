@@ -4,36 +4,40 @@ This file is guidance for agents and people who change this repository.
 
 ## What agent-ctx is
 
-agent-ctx is one hosted memory shared by agent products of different vendors.
+agent-ctx is one memory on a person's computer, shared by agent products of different vendors. A hosted mode with one private store per person is optional and lies under service.
 
     core            shared TypeScript with no runtime dependencies
-    service         the Cloudflare Worker, one private store per person, with the runtime scripts in service/e2e
-    local           the program for one computer, with one SQLite file under the home folder and the built file in local/dist
-    web             the page
-    plugins         JSON only plugins, with the origin set in place by plugins/stamp.mjs
+    local           the program for one computer, with one SQLite file under the home folder
+    plugins         the Claude Code plugin, with the two built program files in plugins/claude-code/scripts
     .claude-plugin  the marketplace entry for the Claude Code plugin
+    service         the optional Cloudflare Worker, with the runtime scripts in service/e2e and the JSON only plugins of the hosted mode in service/plugins
+    web             the page of the hosted mode
     docs            format.md, cost.md and vendors.md
 
 ## Rules
 
-- Use npm only, with Node 22 or newer.
+- Use npm only, with Node 22.16 or newer.
 - Write no code comments.
 - Begin every fix with a test that fails, and give every new test one mutation under which that test fails.
 - A fake key or webhook address in a test is built by joining string pieces, because a push that contains a lookalike is blocked by GitHub.
 - Export only the handler and the object classes from the entry file service/src/index.ts. Every other export is read as a handler by the runtime and the Worker does not start.
 - No rule is made active by anything a model can send. One sign in is shared by a hook and a model, so text from a hook counts as written by an agent.
+- On one computer a rule is accepted only with `agent-ctx rules accept ID` by a person at a terminal. That command is out of reach for every hook and every tool call.
 - The person id is taken only from the verified token or the signed cookie.
 - Redaction is applied to the whole text before any cut, and every call over 8 KB is refused before any pattern is run.
-- A plugin contains JSON only, and no script is placed on a person's machine.
+- A plugin under service/plugins contains JSON only. The local plugin contains the built files of plugins/claude-code/scripts and no other script.
+- A hook is one short run of hook.mjs with no MCP library. Every run ends with exit 0 and an empty stderr, and the wait for the memory file ends after one second.
+- HOME and AGENT_CTX_HOME are set to a temp folder in every test and proof, and no `claude` command found on PATH is started by a test.
 - Never open or print the queries of core/test/corpus3.ts and core/test/corpus4.ts. Those sets stay blind, so recall settings are chosen on corpus2.ts alone.
 - A commit message is one line of at most six words.
 - The memory rules are in service/src/engine.ts and the tool definitions in service/src/mcp.ts. Both files are shared by the Worker and the local program, so no import from Cloudflare is allowed in either file.
-- After any change under core/src, service/src or local/src, run `npm run build` and commit local/dist/agent-ctx.js. The root test stays red while the committed file differs from a fresh build.
+- After any change under core/src, service/src or local/src, run `npm run build` and commit plugins/claude-code/scripts. The root test stays red while a committed file there differs from a fresh build.
 
 ## Before a push
 
     npm run typecheck
     npm test
+    node local/e2e.mjs 1 5 6 speed
     npm --prefix service run typecheck
     npm --prefix service test
     node service/e2e/real.mjs
@@ -42,6 +46,8 @@ agent-ctx is one hosted memory shared by agent products of different vendors.
     node web/e2e/run.mjs
     node web/e2e/consent.mjs
     node web/e2e/real.mjs
+
+Run `node local/e2e.mjs` with no argument before a release. In proofs 2, 3 and 4 the real Claude Code program is started with haiku, at a cost of a few cents.
 
 The conformance step consists of the official MCP conformance suite, with both requirement sets 2025-11-25 and 2026-07-28 and the authorization server scenarios, run against the real local runtime. Every possible failure of this step is listed with a reason in service/conformance-baseline.yml. Never add a real fault there.
 
