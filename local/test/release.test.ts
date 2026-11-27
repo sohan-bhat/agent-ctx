@@ -148,7 +148,7 @@ test('the release workflow builds four programs on native runners with one pinne
   assert.deepEqual(text.match(/contents: \w+/g), ['contents: read', 'contents: write']);
   const said = [...text.matchAll(/(?:echo "|console\.log\(')([A-Z][^"\n]*?\.)["']/g)].map((m) => m[1]);
   assert.match(text, /working-directory: \$\{\{ runner\.temp \}\}\/planted\n\s+run: \|\n\s+export HOME="\$RUNNER_TEMP\/smoke\/home"\n.*hook --agent claude-code\n\s+if \[ -e ran\.txt \] \|\| \[ -e memory \] /);
-  assert.equal(said.length, 7, said.join('\n'));
+  assert.equal(said.length, 6, said.join('\n'));
   for (const line of said) assert.equal(BANNED.exec(line.replace(/' \+ [\w.]+ \+ '/g, 'N')), null, line);
 });
 
