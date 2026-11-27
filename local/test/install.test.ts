@@ -611,6 +611,22 @@ describe('files', () => {
     }
   });
 
+  test('a file with numbers that a rewrite would change is left alone', (t) => {
+    const rows: [Agent, string, unknown, boolean][] = [
+      ['claude-desktop', DESKTOP, '{"mcpServers": {}, "serial": 12345678901234567890}\n', true],
+      ['gemini', SETTINGS, '{"limit": 1e999}\n', true],
+      ['cursor', '.cursor/mcp.json', { mcpServers: { '8080': FILES, files: FILES } }, true],
+      ['claude-desktop', DESKTOP, '{"serial": 1234567890123456, "ratio": 0.12345678901234567890, "note": "12345678901234567890"}\n', false],
+    ];
+    for (const [agent, file, value, left] of rows) {
+      const p = make(t);
+      put(join(p.home, file), value);
+      const change = plan(agent, p).find((one) => one.file === join(p.home, file));
+      assert.equal(change?.after === change?.before, left, file);
+      assert.equal(/ has numbers unsafe for a rewrite and was left alone\. To connect by hand, add /.test(change?.what ?? ''), left, change?.what);
+    }
+  });
+
   test('every line for a person is one line without the banned words and marks', (t) => {
     const lines: string[] = [];
     for (const kit of [desktopKit, cursorKit, geminiKit, codexKit]) {

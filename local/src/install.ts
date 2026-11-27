@@ -20,10 +20,15 @@ const MARK = /"agent-ctx"\s*:|hook --agent|^\s*\[\s*mcp_servers\s*\.\s*["']?agen
 const LAYOUT = 'has an unexpected layout';
 const LINK = 'is a link to a place outside the home folder';
 const UNSAFE = `has ${NAME} in a form unsafe for a text edit`;
+const NUMBERS = 'has numbers unsafe for a rewrite';
 
 class Odd extends Error {}
 
 const isObj = (value: unknown): value is Obj => typeof value === 'object' && value !== null && !Array.isArray(value);
+const risky = (value: unknown): boolean =>
+  typeof value === 'number' ? !Number.isFinite(value)
+  : Array.isArray(value) ? value.some(risky)
+  : isObj(value) && Object.entries(value).some(([name, inner]) => /^(0|[1-9]\d*)$/.test(name) || risky(inner));
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 const read = (file: string): string | null => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null);
 const drop = (doc: Obj, key: string): Obj => Object.fromEntries(Object.entries(doc).filter(([name]) => name !== key));
@@ -44,6 +49,8 @@ function strict(text: string): Obj {
   const doc = loose(text);
   if (doc === undefined) throw new Odd('is not strict JSON');
   if (!isObj(doc)) throw new Odd(LAYOUT);
+  const wide = text.replace(/"(?:[^"\\]|\\.)*"/g, '').match(/(?<![\d.eE+-])-?\d{16,}(?![\d.eE])/g) ?? [];
+  if (risky(doc) || wide.some((digits) => !Number.isSafeInteger(Number(digits)))) throw new Odd(NUMBERS);
   return doc;
 }
 
