@@ -9,7 +9,8 @@ import { browser, context, drag, engine, labels, overflow, press, ready, touchDr
 
 const BASE = '/agent-ctx/';
 const REPO = /REPO = '([^']+)'/.exec(fs.readFileSync(path.join(web, 'src', 'agents.ts'), 'utf8'))[1];
-const LINE = 'curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh';
+const GUIDE = 'https://sohanbhat.me/agent-ctx/setup.md';
+const LINE = `Set up agent-ctx on this computer. Read ${GUIDE} and follow the steps.`;
 const HOME = `https://github.com/${REPO}`;
 const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
@@ -653,7 +654,7 @@ async function walk(b, site, w, h, scheme) {
     const bad = faults(t.out);
     check(`${tag} the wording rules hold in every text node`, t.out.length > 40 && !bad.length, bad.slice(0, 4).join(' | '));
     check(`${tag} a question mark stands only on the eight questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
-    check(`${tag} no install line is shown`, !t.out.join('\n').includes('install.sh') && !(await page.locator('[data-site=install]').count()));
+    check(`${tag} no setup prompt is shown`, !t.out.join('\n').includes('setup.md') && !(await page.locator('[data-site=install]').count()));
 
     await waitFor(() => page.evaluate(() => window.__typed.shown.every((v) => v.length >= 2)), 15000);
     const typed = await typedOf(page);
@@ -696,20 +697,30 @@ async function released(b, site, w, h) {
   try {
     await page.goto(site.url);
     await ready(page);
-    const code = page.locator('[data-site=install]');
     const copy = page.locator('[data-site=action]').getByRole('button', { name: 'Copy' });
-    const shown = ((await code.textContent().catch(() => '')) ?? '').trim();
+    const pill = await page.evaluate(() => {
+      const e = document.querySelector('[data-site=install]');
+      if (!e) return { text: '', said: '', title: '', room: 0, need: 1, flow: '', cut: '', mono: false };
+      const said = e.cloneNode(true);
+      for (const x of said.querySelectorAll('[aria-hidden]')) x.remove();
+      e.scrollLeft = 80;
+      const part = [...e.querySelectorAll('*')].find((x) => getComputedStyle(x).textOverflow === 'ellipsis') ?? e;
+      return { text: e.textContent, said: said.textContent.trim(), title: e.getAttribute('title') ?? '', room: e.clientWidth, need: e.scrollWidth, moved: e.scrollLeft, flow: getComputedStyle(e).overflowX, cut: `${getComputedStyle(part).textOverflow} ${getComputedStyle(part).whiteSpace}`, high: e.getBoundingClientRect().height, mono: /mono/i.test(getComputedStyle(e).fontFamily) };
+    });
     const s = await shape(page);
     check(
-      `${tag} the install line with Copy and the plain pill to GitHub are inside the first screen`,
-      shown === LINE && inside(await box(page, '[data-site=install]'), w, h) && inside(await copy.boundingBox().catch(() => null), w, h) && s.pills.length === 1 && s.pills[0].join() === ['View on GitHub', HOME, 'outline'].join() && inside(await box(page, '[data-site=action] a'), w, h),
-      shown,
+      `${tag} the prompt pill with Copy and the plain pill to GitHub are inside the first screen`,
+      inside(await box(page, '[data-site=install]'), w, h) && inside(await copy.boundingBox().catch(() => null), w, h) && s.pills.length === 1 && s.pills[0].join() === ['View on GitHub', HOME, 'outline'].join() && inside(await box(page, '[data-site=action] a'), w, h),
+      `pill ${span(await box(page, '[data-site=install]'))}, Copy ${span(await copy.boundingBox().catch(() => null))}, link ${span(await box(page, '[data-site=action] a'))}`,
     );
+    check(`${tag} the pill shows the start of the prompt in the console font behind a sign that is hidden from a screen reader`, /^>\s*Set up agent-ctx/.test(pill.text) && pill.said === LINE && pill.title === LINE && pill.mono, pill.text);
+    check(`${tag} the link inside the prompt is ${GUIDE}`, (pill.said.match(/https?:\/\/\S+/g) ?? []).join() === GUIDE, (pill.said.match(/https?:\/\/\S+/g) ?? []).join(' '));
+    check(`${tag} the pill never scrolls, never wraps and has no scroll width beyond the pill`, pill.room > 100 && pill.need <= pill.room && pill.moved === 0 && pill.flow !== 'auto' && pill.flow !== 'scroll' && pill.cut === 'ellipsis nowrap' && pill.high < 50, `${pill.need} px of content in ${pill.room} px, ${pill.cut}, ${Math.round(pill.high ?? 0)} px tall`);
     if (touch) await copy.tap().catch(() => {});
     else await copy.click().catch(() => {});
     const done = await waitFor(() => page.locator('[data-site=action]').getByRole('button', { name: 'Copied' }).count(), 2000);
     const held = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
-    check(`${tag} Copy puts the install line on the clipboard`, !!done && held === LINE, held);
+    check(`${tag} Copy puts the prompt without the leading sign on the clipboard`, !!done && held === LINE, held);
     const o = await across(page, w);
     const t = await texts(page);
     const bad = faults(t.out);
@@ -874,8 +885,8 @@ function built(dir) {
   const off = refs.filter((r) => !r.startsWith(BASE));
   const far = [...`${html}\n${css}`.matchAll(/(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"')]*/gi)].map((m) => m[0]);
   check(`every asset address in the built page starts with ${BASE}`, refs.length >= 4 && !off.length && !far.length, `${refs.length} addresses${off.length || far.length ? `, off ${[...off, ...far].slice(0, 3).join(' ')}` : ''}`);
-  const holds = all.filter((f) => /\.(?:html|js|css)$/.test(f) && fs.readFileSync(f, 'utf8').includes('install.sh | sh'));
-  check('the built page holds no install line without VITE_RELEASED', !holds.length, holds.map((f) => path.basename(f)).join(' '));
+  const holds = all.filter((f) => /\.(?:html|js|css)$/.test(f) && /install\.sh|setup\.md|Set up agent-ctx/.test(fs.readFileSync(f, 'utf8')));
+  check('the built page holds no setup prompt without VITE_RELEASED', !holds.length, holds.map((f) => path.basename(f)).join(' '));
   const bytes = all.reduce((a, f) => a + fs.statSync(f).size, 0);
   console.log(`NOTE the built page is ${(bytes / 1024).toFixed(0)} kB in ${all.length} files`);
 }
