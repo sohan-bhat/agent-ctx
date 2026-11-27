@@ -53,7 +53,7 @@ function redact(text) {
   let out = text;
   for (const re of PATTERNS) out = out.replace(re, DROPPED);
   out = out.replace(AUTH, (m, key, sep, scheme, ws, val2) => dropped(val2) ? m : `${key}${sep}${scheme}${ws}${DROPPED}`);
-  out = out.replace(NAMED, (m, name, sep, val2) => {
+  out = out.replace(NAMED2, (m, name, sep, val2) => {
     if (dropped(val2) || PLAIN.test(val2) || SCHEME.test(val2) || !secretName(name)) return m;
     return `${name}${sep}${DROPPED}`;
   });
@@ -73,7 +73,7 @@ function redact(text) {
 function hasSecret(text) {
   return redact(text) !== text;
 }
-var PATTERNS, DROPPED, AUTH, NAMED, SPACED, OPAQUE, SECRET_WORDS, KEY_KINDS, PLAIN, SCHEME;
+var PATTERNS, DROPPED, AUTH, NAMED2, SPACED, OPAQUE, SECRET_WORDS, KEY_KINDS, PLAIN, SCHEME;
 var init_redact = __esm({
   "core/src/redact.ts"() {
     "use strict";
@@ -101,7 +101,7 @@ var init_redact = __esm({
     ];
     DROPPED = "[secret dropped]";
     AUTH = /(?<![A-Za-z0-9_-])((?:proxy-)?authorization)(["'`]?\s*(?:[:=]\s*)?["'`]?)(bearer|basic|token|digest|negotiate)(\s+)([^\s"'`,;]+)/gi;
-    NAMED = /(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})(["'`]?[ \t]*[:=][ \t]*["'`]?)([^\s"'`,;]{6,})/g;
+    NAMED2 = /(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})(["'`]?[ \t]*[:=][ \t]*["'`]?)([^\s"'`,;]{6,})/g;
     SPACED = /\b(bearer|token|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey|secret|client[_-]?secret|password|passwd|pwd|private[_-]?key)\b(\s+)([^\s"'`,;]{6,})/gi;
     OPAQUE = /(?<![A-Za-z0-9+/=_.-])[A-Za-z0-9+/=_.-]{32,}(?![A-Za-z0-9+/=_.-])/g;
     SECRET_WORDS = ["password", "passwd", "pwd", "pass", "secret", "token", "apikey", "credential", "credentials", "bearer", "authorization"];
@@ -1708,8 +1708,8 @@ function oneLine(s) {
 }
 function foldCard(item) {
   const b = item.body;
-  const { agent: agent2, via, source, at: at2 } = item.origin;
-  return { ...item, body: { goal: cut2(oneLine(b.goal), 120) }, origin: { agent: agent2, via, source, at: at2 }, folded: true };
+  const { agent, via, source, at: at2 } = item.origin;
+  return { ...item, body: { goal: cut2(oneLine(b.goal), 120) }, origin: { agent, via, source, at: at2 }, folded: true };
 }
 function month(ms) {
   const d = new Date(ms);
@@ -2083,7 +2083,7 @@ function fitEvent(a, max = MAX.inputBytes) {
 function dayOf(now) {
   return new Date(now).toISOString().slice(0, 10);
 }
-function blank() {
+function blank2() {
   return { minute: 0, minuteN: 0, day: "", dayN: 0, storedDay: "", storedN: 0, bytes: 0, extra: 0, folded: -1, maintained: 0, paused: null, live: [], marks: [], savedAt: 0 };
 }
 function limiterFor(e, path) {
@@ -2158,11 +2158,11 @@ var init_limits = __esm({
         this.store = store;
       }
       state() {
-        if (!this.hot) this.hot = { ...blank(), ...this.store.meta("hot", {}) };
+        if (!this.hot) this.hot = { ...blank2(), ...this.store.meta("hot", {}) };
         return this.hot;
       }
       reset() {
-        this.hot = blank();
+        this.hot = blank2();
         this.dirty = false;
         this.paid = null;
       }
@@ -2697,10 +2697,10 @@ var init_engine = __esm({
         }
         const n = this.store.q("SELECT COUNT(*) AS n FROM agents WHERE last >= ?", now - AGENT_LIVE)[0]?.n ?? 0;
         if (n >= this.limits.max.agents) return { ok: false, text: SAY.agents };
-        const agent2 = { id: label2, label: label2, first: now, last: now };
-        this.store.q("INSERT INTO agents(id, label, first, last) VALUES(?, ?, ?, ?)", agent2.id, agent2.label, agent2.first, agent2.last);
+        const agent = { id: label2, label: label2, first: now, last: now };
+        this.store.q("INSERT INTO agents(id, label, first, last) VALUES(?, ?, ?, ?)", agent.id, agent.label, agent.first, agent.last);
         this.agentLast.set(label2, now);
-        this.push({ type: "agent", agent: agent2 });
+        this.push({ type: "agent", agent });
         return null;
       }
       project(w, now) {
@@ -3062,8 +3062,8 @@ var init_engine = __esm({
 
 ${SAY.placeRead}` : SAY.placeRead, noProject: true };
       }
-      lastGoal(project, agent2) {
-        const hit = this.pool(project).find((i) => (i.kind === "card" || i.kind === "handoff") && i.origin?.agent === agent2 && !i.folded && typeof i.body.goal === "string" && i.body.goal.trim());
+      lastGoal(project, agent) {
+        const hit = this.pool(project).find((i) => (i.kind === "card" || i.kind === "handoff") && i.origin?.agent === agent && !i.folded && typeof i.body.goal === "string" && i.body.goal.trim());
         return hit ? hit.body.goal : null;
       }
       promptGoal(grant, project, folder2, now) {
@@ -3877,16 +3877,20 @@ var BOOK = { take: { file: "tool_input.notebook_path" } };
 var RUN = { take: { command: "tool_input.command" } };
 var SOURCE = { take: { source: "source" } };
 var BROKE = { as: "StopFailure", take: { reason: "status" } };
+var PLACED = { take: { file: "toolCall.args.TargetFile" } };
+var TYPED = { take: { command: "toolCall.args.CommandLine" } };
+var NAMED = "toolCall.name";
 var KEPT = { Write: FILE, Edit: FILE, MultiEdit: FILE, NotebookEdit: BOOK, Bash: RUN };
 var PROMPT = { as: "UserPromptSubmit", take: { prompt: "prompt" } };
 var STOP = { as: "Stop", take: { message: "last_assistant_message" } };
-var tools = (cases, as = "PostToolUse") => ({ as, by: "tool_name", take: { tool: "tool_name" }, cases });
+var tools = (cases, as = "PostToolUse", name = "tool_name") => ({ as, by: name, take: { tool: name }, cases });
 var SESSION = { session: "session_id", cwd: "cwd" };
 var BASE = {
   "claude-code": SESSION,
   codex: SESSION,
   cursor: { session: "conversation_id|session_id", cwd: "cwd|workspace_roots.0", model: "model" },
-  gemini: SESSION
+  gemini: SESSION,
+  antigravity: { session: "conversationId", cwd: "workspacePaths.0", model: "modelName" }
 };
 var RULES = {
   "claude-code": {
@@ -3914,19 +3918,29 @@ var RULES = {
     BeforeAgent: PROMPT,
     AfterTool: tools({ write_file: FILE, replace: FILE, run_shell_command: RUN }),
     AfterAgent: { as: "Stop", take: { message: "prompt_response" } }
+  },
+  antigravity: {
+    PreInvocation: { as: "UserPromptSubmit", take: { prompt: "lastUserInput" } },
+    PostToolUse: tools({ write_to_file: PLACED, replace_file_content: PLACED, multi_replace_file_content: PLACED, run_command: TYPED }, "PostToolUse", NAMED),
+    PostToolUseFailure: tools({ run_command: TYPED }, "PostToolUseFailure", NAMED),
+    Stop: { as: "Stop" },
+    StopFailure: { as: "StopFailure", take: { reason: "terminationReason" } }
   }
 };
 var HEARD = {
   "claude-code": ["UserPromptSubmit", "SessionStart"],
   codex: ["UserPromptSubmit"],
   cursor: ["SessionStart", "PostToolUse"],
-  gemini: ["UserPromptSubmit"]
+  gemini: ["UserPromptSubmit"],
+  antigravity: ["UserPromptSubmit"]
 };
 var SIGNS = {
   cursor: ["CURSOR_VERSION", "CURSOR_PROJECT_DIR", "CURSOR_USER_EMAIL"],
-  devin: ["DEVIN_PROJECT_DIR"]
+  devin: ["DEVIN_PROJECT_DIR"],
+  grok: ["GROK_HOOK_EVENT", "GROK_HOOK_NAME", "GROK_SESSION_ID", "GROK_WORKSPACE_ROOT"],
+  muse: ["MUSE_SESSION_ID", "MUSE_THREAD_ID"]
 };
-var LIMIT = { "claude-code": 1e4, codex: 7500, cursor: 7500, gemini: 7500 };
+var LIMIT = { "claude-code": 1e4, codex: 7500, cursor: 7500, gemini: 7500, antigravity: 7500 };
 function own(table, key) {
   return key !== void 0 && Object.hasOwn(table, key) ? table[key] : void 0;
 }
@@ -3950,14 +3964,25 @@ function fits(host, env) {
   if (host === "cursor" && !set("CURSOR_VERSION")) return false;
   return !Object.entries(SIGNS).some(([product, names]) => product !== host && names.some(set));
 }
-function read(host, stdin) {
+function repeats(host) {
+  return host === "antigravity";
+}
+function blank(host) {
+  return host === "antigravity" ? "{}" : "";
+}
+function called(host, from, event) {
+  if (host !== "antigravity") return at(from, "hook_event_name");
+  if (typeof from !== "object" || from === null || Array.isArray(from)) return void 0;
+  return event && at(from, "error") ? `${event}Failure` : event;
+}
+function read(host, stdin, event) {
   let from;
   try {
     from = JSON.parse(stdin);
   } catch {
     return null;
   }
-  const rule = own(own(RULES, host) ?? {}, at(from, "hook_event_name"));
+  const rule = own(own(RULES, host) ?? {}, called(host, from, event));
   if (!rule) return null;
   const pick = rule.by ? own(rule.cases ?? {}, at(from, rule.by)) : void 0;
   if (rule.by && !pick && !rule.open) return null;
@@ -3985,6 +4010,7 @@ function write(host, event, text) {
   const bare2 = body.trim();
   if (!bare2) return "";
   if (host === "cursor") return JSON.stringify({ additional_context: body });
+  if (host === "antigravity") return JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: body } }] });
   const native = Object.keys(rules).find((key) => rules[key]?.as === name) ?? name;
   const framed = JSON.stringify({ hookSpecificOutput: { hookEventName: native, additionalContext: body } });
   if (host === "gemini") return framed;
@@ -3996,6 +4022,7 @@ var WAIT = 1e3;
 var GIVE_UP = 3e3;
 var ASKED = 30 * 6e4;
 var ASKED_CHARS = 800;
+var SAID = 7 * 864e5;
 var ID_MAX2 = 200;
 var CHUNK = 65536;
 var FRAME = "claude-code";
@@ -4003,11 +4030,12 @@ var MAIN = "agent-ctx.mjs";
 var KICK = 6e4;
 var MIRROR = "mirror";
 var KICKED = "mirror:kick";
-function agent(args) {
-  const joined = args.find((a) => a.startsWith("--agent="));
-  if (joined) return joined.slice(8);
-  const at2 = args.indexOf("--agent");
-  return at2 >= 0 ? args[at2 + 1] : void 0;
+var ARGS = process.argv.slice(2);
+function option(name) {
+  const joined = ARGS.find((a) => a.startsWith(`${name}=`));
+  if (joined) return joined.slice(name.length + 1);
+  const at2 = ARGS.indexOf(name);
+  return at2 >= 0 ? ARGS[at2 + 1] : void 0;
 }
 function stream() {
   return new Promise((done) => {
@@ -4046,9 +4074,9 @@ async function sync() {
 }
 async function run() {
   const started = Date.now();
-  const host = agent(process.argv.slice(2));
+  const host = option("--agent");
   if (!host || !fits(host, process.env)) return "";
-  const a = read(host, await input());
+  const a = read(host, await input(), option("--event"));
   if (!a?.event) return "";
   const event = a.event;
   const [{ clean: clean2, stripOwn: stripOwn2, stripPrivate: stripPrivate2 }, { fitEvent: fitEvent2 }, { caller: caller2, local: local2, open: open2, who: who2 }] = await Promise.all([Promise.resolve().then(() => (init_src(), src_exports)), Promise.resolve().then(() => (init_limits(), limits_exports)), Promise.resolve().then(() => (init_db(), db_exports))]);
@@ -4062,15 +4090,24 @@ async function run() {
         const fit2 = fitEvent2({ ...args, host: FRAME });
         return fit2 ? local2(plain((await engine.event(c, fit2, part)).text)) : "";
       };
-      const late = !hears(host, "UserPromptSubmit") && !!a.session && a.session.length <= ID_MAX2;
+      const known2 = !!a.session && a.session.length <= ID_MAX2;
+      const late = !hears(host, "UserPromptSubmit") && known2;
       const key = `asked:${a.session}`;
       const now = Date.now();
+      const words2 = () => clean2(stripOwn2(stripPrivate2(a.prompt ?? "")), ASKED_CHARS);
+      const note = (prefix, age) => {
+        for (const row of engine.store.q("SELECT k, v FROM meta WHERE k >= ? AND k < ?", `${prefix}:`, `${prefix};`)) {
+          if (now - JSON.parse(row.v).at > age) engine.store.dropMeta(row.k);
+        }
+        if (a.prompt) engine.store.setMeta(`${prefix}:${a.session}`, { at: now, prompt: words2() });
+      };
+      if (event === "UserPromptSubmit" && repeats(host) && known2 && a.prompt) {
+        if (engine.store.meta(`said:${a.session}`, null)?.prompt === words2()) return "";
+        note("said", SAID);
+      }
       if (event === "UserPromptSubmit" && late) {
         await send(a, "store");
-        for (const row of engine.store.q("SELECT k, v FROM meta WHERE k >= 'asked:' AND k < 'asked;'")) {
-          if (now - JSON.parse(row.v).at > ASKED) engine.store.dropMeta(row.k);
-        }
-        if (a.prompt) engine.store.setMeta(key, { at: now, prompt: clean2(stripOwn2(stripPrivate2(a.prompt)), ASKED_CHARS) });
+        note("asked", ASKED);
         return "";
       }
       let text = "";
@@ -4093,14 +4130,15 @@ async function run() {
     if (due) await sync().catch(() => void 0);
   }
 }
+var printed = false;
+function end(out = "") {
+  const text = printed ? "" : out || blank(option("--agent"));
+  printed = true;
+  if (text) process.stdout.write(text, () => process.exit(0));
+  else process.exit(0);
+}
 process.emitWarning = () => void 0;
-process.on("uncaughtException", () => process.exit(0));
-process.on("unhandledRejection", () => process.exit(0));
-setTimeout(() => process.exit(0), GIVE_UP).unref();
-run().then(
-  (out) => {
-    if (out) process.stdout.write(out, () => process.exit(0));
-    else process.exit(0);
-  },
-  () => process.exit(0)
-);
+process.on("uncaughtException", () => end());
+process.on("unhandledRejection", () => end());
+setTimeout(end, GIVE_UP).unref();
+run().then(end, () => end());
