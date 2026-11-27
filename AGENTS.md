@@ -16,7 +16,7 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 
 ## Rules
 
-- Use npm only, with Node 22.16 or newer.
+- Use npm only, with Node 22.16 or newer. Bun at one pinned version is used only in .github/workflows/release.yml, where the built file is compiled into one program.
 - Write no code comments.
 - Begin every fix with a test that fails, and give every new test one mutation under which that test fails.
 - A fake key or webhook address in a test is built by joining string pieces, because a push that contains a lookalike is blocked by GitHub.
@@ -26,7 +26,10 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 - The person id is taken only from the verified token or the signed cookie.
 - Redaction is applied to the whole text before any cut, and every call over 8 KB is refused before any pattern is run.
 - A plugin under service/plugins contains JSON only. The local plugin contains the built files of plugins/claude-code/scripts and no other script.
-- A hook is one short run of hook.mjs with no MCP library. Every run ends with exit 0 and an empty stderr, and the wait for the memory file ends after one second.
+- The program has two forms. The script form is the built files run by Node, and the self contained form is one compiled program with no Node, in which `PROGRAM` of local/src/db.ts is the path of the running file.
+- No printed text names a bare `agent-ctx` command. Every such text takes the command from `typed` in local/src/db.ts.
+- A release is made from a tag of the form v1.2.3 that equals the version in package.json.
+- A hook is one short run of hook.mjs with no MCP library, or one run of the program with the word hook in the self contained form. Every run ends with exit 0 and an empty stderr, and the wait for the memory file ends after one second.
 - HOME and AGENT_CTX_HOME are set to a temp folder in every test and proof, and no `claude` command found on PATH is started by a test.
 - Never open or print the queries of core/test/corpus3.ts and core/test/corpus4.ts. Those sets stay blind, so recall settings are chosen on corpus2.ts alone.
 - A commit message is one line of at most six words.

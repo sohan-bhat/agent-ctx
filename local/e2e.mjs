@@ -241,7 +241,7 @@ async function install() {
   const calls = readFileSync(where.log, 'utf8').trim().split('\n');
   const want = PROGRAM ? `mcp add --scope user agent-ctx -- ${join(app, 'agent-ctx')} mcp --agent claude-code` : 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
   const pass = first.code === 0 && second.code === 0 && same && inApp && bare && calls.length === 1 && calls[0] === want && second.out.includes('already connected, so nothing was changed.');
-  const form = PROGRAM ? `one program of ${statSync(PROGRAM).size.toLocaleString('en-US')} bytes ran with no node on PATH, and no written command names node or a script ${bare}. ` : '';
+  const form = PROGRAM ? `with one program of ${statSync(PROGRAM).size.toLocaleString('en-US')} bytes and no node on PATH, every written command is free of node and of script files ${bare}. ` : '';
   return { pass, evidence: `${form}the stub got "claude ${calls.join(' | ')}", ${written.length} files were written for ${PROGRAM ? 'Claude Code, ' : ''}Cursor, Codex and Gemini CLI, all ${paths.length} program paths lie in ${relative(TMP, app)}, and the second run printed "${second.out.trim().split('\n').pop()}" with every file unchanged ${same}` };
 }
 
@@ -434,7 +434,7 @@ async function speed() {
   const beside = (name) => `${Math.abs(Math.round(med[name] - med['bare node']))} ms ${med[name] < med['bare node'] ? 'under' : 'above'} bare node`;
   const fresh = PROGRAM ? '' : ` In a fresh process about ${Math.round(med['tool outside the kept list'] - med['bare node'])} ms go to starting the hook file, and the engine with the safety patterns is then loaded and used for the first time.`;
   const why = over.length ? ` Over the target of ${TARGET_MS} ms are ${over.join(', ')}.${fresh} For a prompt with a query the stored cards are read and ranked with no process kept alive, and at the end of a turn one card and one handoff are rebuilt and cleaned.` : '';
-  return { pass: over.length === 0, evidence: `${PROGRAM ? 'every hook ran through one program without Node, ' : ''}median of ${RUNS} runs with ${cards} cards stored, in ms. ${Object.entries(med).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(', ')}. A finished tool takes ${beside('finished tool')} and a first prompt ${beside('first prompt with recall')}.${why}` };
+  return { pass: over.length === 0, evidence: `${PROGRAM ? 'each hook was run as one program without Node, ' : ''}median of ${RUNS} runs with ${cards} cards stored, in ms. ${Object.entries(med).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(', ')}. A finished tool is at ${beside('finished tool')} and a first prompt at ${beside('first prompt with recall')}.${why}` };
 }
 
 const PROOFS = { 1: ['Install', install], 2: ['Continue', proceed], 3: ['Rules', rules], 4: ['Safety', safety], 5: ['Sharing', sharing], 6: ['Removal', removal], speed: ['Speed', speed] };
@@ -443,7 +443,7 @@ const unknown = asked.filter((name) => !Object.hasOwn(PROOFS, name));
 const plugin = PROGRAM ? asked.filter((name) => ['2', '3', '4'].includes(name)) : [];
 
 if (unknown.length || plugin.length) {
-  console.log(plugin.length ? 'Proofs 2, 3 and 4 run the plugin through Node, so give any of 1, 5, 6 and speed together with E2E_PROGRAM.' : `Give any of ${Object.keys(PROOFS).join(', ')}, or nothing for all. The real Claude Code program is run with haiku in proofs 2, 3 and 4, at a cost of a few cents.`);
+  console.log(plugin.length ? 'In proofs 2, 3 and 4 the plugin is run through Node, so give any of 1, 5, 6 and speed together with E2E_PROGRAM.' : `Give any of ${Object.keys(PROOFS).join(', ')}, or nothing for all. The real Claude Code program is run with haiku in proofs 2, 3 and 4, at a cost of a few cents.`);
   rmSync(TMP, { recursive: true, force: true });
   process.exit(1);
 }
