@@ -84,7 +84,7 @@ test('the hook file holds no MCP library and no way to accept a rule, and the ma
   const text = readFileSync(HOOK, 'utf8');
   for (const word of ['modelcontextprotocol', 'zod', 'McpServer', '.setRule(', 'rules accept']) assert.equal(text.includes(word), false, word);
   assert.deepEqual([text.split('node:child_process').length, text.split('spawn(').length], [2, 2]);
-  assert.ok(text.includes('spawn(process.execPath, [fileURLToPath(new URL(MAIN, import.meta.url)), "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();'));
+  assert.ok(text.includes('spawn(process.execPath, [...whole ? [] : [fileURLToPath(new URL(MAIN, import.meta.url))], "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();'));
   assert.ok(statSync(HOOK).size < 250 * 1024, String(statSync(HOOK).size));
   assert.ok(readFileSync(MAIN, 'utf8').includes('McpServer'));
   const where = place(TMP);

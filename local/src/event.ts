@@ -59,7 +59,8 @@ function plain(text: string): string {
 
 async function sync(): Promise<void> {
   const [{ spawn }, { fileURLToPath }] = await Promise.all([import('node:child_process'), import('node:url')]);
-  spawn(process.execPath, [fileURLToPath(new URL(MAIN, import.meta.url)), 'sync'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  const whole = (globalThis as { Bun?: { isStandaloneExecutable?: boolean } }).Bun?.isStandaloneExecutable;
+  spawn(process.execPath, [...(whole ? [] : [fileURLToPath(new URL(MAIN, import.meta.url))]), 'sync'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
 async function run(): Promise<string> {

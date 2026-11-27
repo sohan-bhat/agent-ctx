@@ -4035,7 +4035,8 @@ function plain(text2) {
 }
 async function sync() {
   const [{ spawn }, { fileURLToPath: fileURLToPath2 }] = await Promise.all([import("node:child_process"), import("node:url")]);
-  spawn(process.execPath, [fileURLToPath2(new URL(MAIN, import.meta.url)), "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  const whole = globalThis.Bun?.isStandaloneExecutable;
+  spawn(process.execPath, [...whole ? [] : [fileURLToPath2(new URL(MAIN, import.meta.url))], "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
 }
 async function run() {
   const started = Date.now();
@@ -21543,15 +21544,15 @@ var init_errors2 = __esm({
       if (_installedErrorProtos.has(proto))
         return;
       _installedErrorProtos.add(proto);
-      _lazyMethod(proto, "format", (self2) => (mapper) => formatError(self2, mapper));
-      _lazyMethod(proto, "flatten", (self2) => (mapper) => flattenError(self2, mapper));
-      _lazyMethod(proto, "addIssue", (self2) => (issue2) => {
-        self2.issues.push(issue2);
-        self2.message = JSON.stringify(self2.issues, jsonStringifyReplacer, 2);
+      _lazyMethod(proto, "format", (self) => (mapper) => formatError(self, mapper));
+      _lazyMethod(proto, "flatten", (self) => (mapper) => flattenError(self, mapper));
+      _lazyMethod(proto, "addIssue", (self) => (issue2) => {
+        self.issues.push(issue2);
+        self.message = JSON.stringify(self.issues, jsonStringifyReplacer, 2);
       });
-      _lazyMethod(proto, "addIssues", (self2) => (issues2) => {
-        self2.issues.push(...issues2);
-        self2.message = JSON.stringify(self2.issues, jsonStringifyReplacer, 2);
+      _lazyMethod(proto, "addIssues", (self) => (issues2) => {
+        self.issues.push(...issues2);
+        self.message = JSON.stringify(self.issues, jsonStringifyReplacer, 2);
       });
       Object.defineProperty(proto, "isEmpty", {
         configurable: true,
@@ -22915,7 +22916,7 @@ var init_schemas2 = __esm({
       $ZodObjectJIT.init(inst, def);
       ZodType.init(inst, def);
       inst._zod.processJSONSchema = (ctx, json3, params) => objectProcessor(inst, ctx, json3, params);
-      util_exports.installLazyProp(inst, "shape", (self2) => self2._zod.def.shape, false);
+      util_exports.installLazyProp(inst, "shape", (self) => self._zod.def.shape, false);
     }, {
       keyof() {
         return _enum2(Object.keys(this._zod.def.shape));
@@ -31231,10 +31232,10 @@ var init_ajvProvider_DyjnscPj = __esm({
       }
       exports.alwaysValidSchema = alwaysValidSchema;
       function checkUnknownRules(it, schema = it.schema) {
-        const { opts, self: self2 } = it;
+        const { opts, self } = it;
         if (!opts.strictSchema) return;
         if (typeof schema === "boolean") return;
-        const rules2 = self2.RULES.keywords;
+        const rules2 = self.RULES.keywords;
         for (const key2 in schema) if (!rules2[key2]) checkStrictMode(it, `unknown keyword: "${key2}"`);
       }
       exports.checkUnknownRules = checkUnknownRules;
@@ -31566,8 +31567,8 @@ var init_ajvProvider_DyjnscPj = __esm({
     require_applicability = /* @__PURE__ */ __commonJSMin(((exports) => {
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.shouldUseRule = exports.shouldUseGroup = exports.schemaHasRulesForType = void 0;
-      function schemaHasRulesForType({ schema, self: self2 }, type) {
-        const group = self2.RULES.types[type];
+      function schemaHasRulesForType({ schema, self }, type) {
+        const group = self.RULES.types[type];
         return group && group !== true && shouldUseGroup(schema, group);
       }
       exports.schemaHasRulesForType = schemaHasRulesForType;
@@ -31980,14 +31981,14 @@ var init_ajvProvider_DyjnscPj = __esm({
         return !schemaType.length || schemaType.some((st) => st === "array" ? Array.isArray(schema) : st === "object" ? schema && typeof schema == "object" && !Array.isArray(schema) : typeof schema == st || allowUndefined && typeof schema == "undefined");
       }
       exports.validSchemaType = validSchemaType;
-      function validateKeywordUsage({ schema, opts, self: self2, errSchemaPath }, def, keyword) {
+      function validateKeywordUsage({ schema, opts, self, errSchemaPath }, def, keyword) {
         if (Array.isArray(def.keyword) ? !def.keyword.includes(keyword) : def.keyword !== keyword) throw new Error("ajv implementation error");
         const deps = def.dependencies;
         if (deps === null || deps === void 0 ? void 0 : deps.some((kwd) => !Object.prototype.hasOwnProperty.call(schema, kwd))) throw new Error(`parent schema must have dependencies of ${keyword}: ${deps.join(",")}`);
         if (def.validateSchema) {
           if (!def.validateSchema(schema[keyword])) {
-            const msg = `keyword "${keyword}" value is invalid at path "${errSchemaPath}": ` + self2.errorsText(def.validateSchema.errors);
-            if (opts.validateSchema === "log") self2.logger.error(msg);
+            const msg = `keyword "${keyword}" value is invalid at path "${errSchemaPath}": ` + self.errorsText(def.validateSchema.errors);
+            if (opts.validateSchema === "log") self.logger.error(msg);
             else throw new Error(msg);
           }
         }
@@ -32371,9 +32372,9 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         (0, boolSchema_1.boolOrEmptySchema)(it, valid);
       }
-      function schemaCxtHasRules({ schema, self: self2 }) {
+      function schemaCxtHasRules({ schema, self }) {
         if (typeof schema == "boolean") return !schema;
-        for (const key2 in schema) if (self2.RULES.all[key2]) return true;
+        for (const key2 in schema) if (self.RULES.all[key2]) return true;
         return false;
       }
       function isSchemaObj(it) {
@@ -32398,8 +32399,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         schemaKeywords(it, types, !(0, dataType_1.coerceAndCheckDataType)(it, types), errsCount);
       }
       function checkRefsAndKeywords(it) {
-        const { schema, errSchemaPath, opts, self: self2 } = it;
-        if (schema.$ref && opts.ignoreKeywordsWithRef && (0, util_1.schemaHasRulesButRef)(schema, self2.RULES)) self2.logger.warn(`$ref: keywords ignored in schema at path "${errSchemaPath}"`);
+        const { schema, errSchemaPath, opts, self } = it;
+        if (schema.$ref && opts.ignoreKeywordsWithRef && (0, util_1.schemaHasRulesButRef)(schema, self.RULES)) self.logger.warn(`$ref: keywords ignored in schema at path "${errSchemaPath}"`);
       }
       function checkNoDefault(it) {
         const { schema, opts } = it;
@@ -32435,8 +32436,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         if (items instanceof codegen_1.Name) gen.assign((0, codegen_1._)`${evaluated}.items`, items);
       }
       function schemaKeywords(it, types, typeErrors, errsCount) {
-        const { gen, schema, data, allErrors, opts, self: self2 } = it;
-        const { RULES: RULES2 } = self2;
+        const { gen, schema, data, allErrors, opts, self } = it;
+        const { RULES: RULES2 } = self;
         if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES2))) {
           gen.block(() => keywordCode(it, "$ref", RULES2.all.$ref.definition));
           return;
@@ -34458,10 +34459,10 @@ var init_ajvProvider_DyjnscPj = __esm({
         schemaType: "string",
         code(cxt) {
           const { gen, schema: $ref, it } = cxt;
-          const { baseId, schemaEnv: env, validateName, opts, self: self2 } = it;
+          const { baseId, schemaEnv: env, validateName, opts, self } = it;
           const { root } = env;
           if (($ref === "#" || $ref === "#/") && baseId === root.baseId) return callRootRef();
-          const schOrEnv = compile_1.resolveRef.call(self2, root, baseId, $ref);
+          const schOrEnv = compile_1.resolveRef.call(self, root, baseId, $ref);
           if (schOrEnv === void 0) throw new ref_error_1.default(it.opts.uriResolver, baseId, $ref);
           if (schOrEnv instanceof compile_1.SchemaEnv) return callValidate(schOrEnv);
           return inlineRefSchema(schOrEnv);
@@ -35721,13 +35722,13 @@ var init_ajvProvider_DyjnscPj = __esm({
         },
         code(cxt, ruleType) {
           const { gen, data, $data, schema, schemaCode, it } = cxt;
-          const { opts, errSchemaPath, schemaEnv, self: self2 } = it;
+          const { opts, errSchemaPath, schemaEnv, self } = it;
           if (!opts.validateFormats) return;
           if ($data) validate$DataFormat();
           else validateFormat();
           function validate$DataFormat() {
             const fmts = gen.scopeValue("formats", {
-              ref: self2.formats,
+              ref: self.formats,
               code: opts.code.formats
             });
             const fDef = gen.const("fDef", (0, codegen_1._)`${fmts}[${schemaCode}]`);
@@ -35746,7 +35747,7 @@ var init_ajvProvider_DyjnscPj = __esm({
             }
           }
           function validateFormat() {
-            const formatDef = self2.formats[schema];
+            const formatDef = self.formats[schema];
             if (!formatDef) {
               unknownFormat();
               return;
@@ -35756,7 +35757,7 @@ var init_ajvProvider_DyjnscPj = __esm({
             if (fmtType === ruleType) cxt.pass(validCondition());
             function unknownFormat() {
               if (opts.strictSchema === false) {
-                self2.logger.warn(unknownMsg());
+                self.logger.warn(unknownMsg());
                 return;
               }
               throw new Error(unknownMsg());
@@ -36182,9 +36183,9 @@ var init_ajvProvider_DyjnscPj = __esm({
       }
       exports.dynamicAnchor = dynamicAnchor;
       function _getValidate(cxt) {
-        const { schemaEnv, schema, self: self2 } = cxt.it;
+        const { schemaEnv, schema, self } = cxt.it;
         const { root, baseId, localRefs, meta: meta3 } = schemaEnv.root;
-        const { schemaId } = self2.opts;
+        const { schemaId } = self.opts;
         const sch = new compile_1.SchemaEnv({
           schema,
           schemaId,
@@ -36193,7 +36194,7 @@ var init_ajvProvider_DyjnscPj = __esm({
           localRefs,
           meta: meta3
         });
-        compile_1.compileSchema.call(self2, sch);
+        compile_1.compileSchema.call(self, sch);
         return (0, ref_1.getValidate)(cxt, sch);
       }
       exports.default = def;
@@ -37493,14 +37494,14 @@ var init_ajvProvider_DyjnscPj = __esm({
         error: error62,
         code(cxt) {
           const { gen, data, schemaCode, keyword, it } = cxt;
-          const { opts, self: self2 } = it;
+          const { opts, self } = it;
           if (!opts.validateFormats) return;
-          const fCxt = new ajv_1.KeywordCxt(it, self2.RULES.all.format.definition, "format");
+          const fCxt = new ajv_1.KeywordCxt(it, self.RULES.all.format.definition, "format");
           if (fCxt.$data) validate$DataFormat();
           else validateFormat();
           function validate$DataFormat() {
             const fmts = gen.scopeValue("formats", {
-              ref: self2.formats,
+              ref: self.formats,
               code: opts.code.formats
             });
             const fmt = gen.const("fmt", (0, codegen_1._)`${fmts}[${fCxt.schemaCode}]`);
@@ -37508,7 +37509,7 @@ var init_ajvProvider_DyjnscPj = __esm({
           }
           function validateFormat() {
             const format = fCxt.schema;
-            const fmtDef = self2.formats[format];
+            const fmtDef = self.formats[format];
             if (!fmtDef || fmtDef === true) return;
             if (typeof fmtDef != "object" || fmtDef instanceof RegExp || typeof fmtDef.compare != "function") throw new Error(`"${keyword}": format "${format}" does not define "compare" function`);
             const fmt = gen.scopeValue("formats", {
@@ -41908,6 +41909,7 @@ function usage() {
     "agent-ctx install      connect every agent found on this computer",
     "agent-ctx status       the memory file and the connected agents",
     "agent-ctx rules        the pending rules, with accept ID and reject ID",
+    "agent-ctx mirror       a copy of the memory in a folder or repository of your own",
     "agent-ctx uninstall    take agent-ctx out and keep the memory"
   ];
 }
@@ -41926,7 +41928,7 @@ async function run3(args2) {
   if (command2 === "uninstall") return uninstall(has("--yes"));
   if (command2 === "status") return status2();
   if (command2 === "rules") return rules(args2.slice(args2.indexOf("rules") + 1).filter((arg) => !arg.startsWith("-")));
-  if (command2 === "mirror" || command2 === "sync" || command2 === "restore") return command(command2, args2.slice(args2.indexOf(command2) + 1).filter((arg) => !arg.startsWith("-")), { say: say2, me: self(paths()), agreed: () => agreed(has("--yes")) });
+  if (command2 === "mirror" || command2 === "sync" || command2 === "restore") return command(command2, args2.slice(args2.indexOf(command2) + 1).filter((arg) => !arg.startsWith("-")), { say: say2, me: typed(), agreed: () => agreed(has("--yes")) });
   process.stderr.write(`${[`No command named ${command2.replace(/[^\w.-]+/g, "").slice(0, 40)} exists in this version.`, ...about()].join("\n")}
 `);
   return 1;

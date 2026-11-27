@@ -4041,7 +4041,8 @@ function plain(text) {
 }
 async function sync() {
   const [{ spawn }, { fileURLToPath }] = await Promise.all([import("node:child_process"), import("node:url")]);
-  spawn(process.execPath, [fileURLToPath(new URL(MAIN, import.meta.url)), "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  const whole = globalThis.Bun?.isStandaloneExecutable;
+  spawn(process.execPath, [...whole ? [] : [fileURLToPath(new URL(MAIN, import.meta.url))], "sync"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
 }
 async function run() {
   const started = Date.now();
