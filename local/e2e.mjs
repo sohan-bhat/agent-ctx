@@ -426,6 +426,7 @@ const unknown = asked.filter((name) => !Object.hasOwn(PROOFS, name));
 
 if (unknown.length) {
   console.log(`Give any of ${Object.keys(PROOFS).join(', ')}, or nothing for all. The real Claude Code program is run with haiku in proofs 2, 3 and 4, at a cost of a few cents.`);
+  rmSync(TMP, { recursive: true, force: true });
   process.exit(1);
 }
 
