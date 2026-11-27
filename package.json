@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "bin": {
-    "agent-ctx": "local/dist/agent-ctx.js"
+    "agent-ctx": "plugins/claude-code/scripts/agent-ctx.mjs"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
