@@ -11,15 +11,22 @@ export interface Product {
   path: Step[];
 }
 
-const claudeOpen: Step = { type: 'open', label: 'Copy address and open Claude', copy: true, href: () => 'https://claude.ai/customize/connectors' };
-const claudeSteps: Step = { type: 'steps', items: ['Press Add', 'Choose Add custom connector', 'Paste the address', 'In a chat press the plus button, then Connectors, then turn agent-ctx on'] };
-
 export const PRODUCTS: Product[] = [
-  { id: 'claude', label: 'Claude', path: [claudeOpen, claudeSteps] },
+  {
+    id: 'claude',
+    label: 'Claude',
+    path: [
+      { type: 'open', label: 'Copy address and open Claude', copy: true, href: (a) => `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=agent-ctx&connectorUrl=${encodeURIComponent(a)}` },
+      { type: 'steps', items: ['Press Add in Claude, then sign in', 'In a chat press the plus button, then Connectors, then turn agent-ctx on'] },
+    ],
+  },
   {
     id: 'claude-code',
     label: 'Claude Code',
-    path: [claudeOpen, claudeSteps, { type: 'copy', label: 'Then type this command in Claude Code', text: () => `/plugin install agent-ctx --marketplace ${REPO}` }],
+    path: [
+      { type: 'copy', label: 'Type this command in a Claude Code session', text: () => `/plugin install agent-ctx --marketplace ${REPO}` },
+      { type: 'copy', label: 'Then type this command, choose agent-ctx and sign in', text: () => '/mcp' },
+    ],
   },
   {
     id: 'cursor',
