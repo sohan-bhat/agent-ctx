@@ -8,13 +8,18 @@
   "engines": {
     "node": ">=22"
   },
+  "bin": {
+    "agent-ctx": "local/dist/agent-ctx.js"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
+    "build": "node local/build.mjs",
     "test": "node --test --test-concurrency=1 core/test/*.test.ts service/e2e/*.test.ts",
     "precision": "node core/test/precision.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "esbuild": "0.25.12",
     "typescript": "5.9"
   }
 }
