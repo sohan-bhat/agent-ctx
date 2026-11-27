@@ -27,7 +27,8 @@ import "./site.css";
 
 const RELEASED = import.meta.env.VITE_RELEASED === "1";
 const HOME = `https://github.com/${REPO}`;
-const INSTALL = "curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh";
+const INSTALL =
+  "Set up agent-ctx on this computer. Read https://sohanbhat.me/agent-ctx/setup.md and follow the steps.";
 const RATE = (DEMO_END - DEMO_START) / 30_000;
 const AGENTS = DEMO_AGENTS.map((a) => a.label);
 const NONE = new Set<string>();
@@ -314,9 +315,13 @@ function Action() {
         <code
           translate="no"
           data-site="install"
-          className="site-install num select-all"
+          title={INSTALL}
+          className="site-install num"
         >
-          {INSTALL}
+          <span aria-hidden className="select-none">
+            &gt;
+          </span>
+          <span className="select-all">{INSTALL}</span>
         </code>
         <Button
           className="h-11 w-[5.5rem] rounded-full text-[0.9375rem]"

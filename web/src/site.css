@@ -143,16 +143,28 @@
 
 .site-install {
   display: flex;
+  flex: 1 1 100%;
   align-items: center;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
+  gap: 1ch;
+  min-width: 0;
   height: 2.75rem;
   padding-inline: 1rem;
   border: 1px solid var(--input);
   border-radius: 999px;
   font-size: clamp(0.75rem, 3.6vw, 0.875rem);
   white-space: nowrap;
+}
+
+.site-install > span + span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 40rem) {
+  .site-install {
+    flex-basis: 0;
+  }
 }
 
 .site-demo {
