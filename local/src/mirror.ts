@@ -111,7 +111,7 @@ function check(x: unknown): Rec | null {
 
 export function line(rec: Rec): string {
   const ok = check(rec);
-  if (!ok) throw new TypeError('A mirror record needs version 1, a time, a device id, an item id and one whole item for a put.');
+  if (!ok) throw new TypeError('A mirror record consists of version 1, a time, a device id, an item id and one whole item for a put.');
   const text = JSON.stringify(ok).replace(/[\u0085\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
   if (bytes(text) > LINE_BYTES) throw new RangeError('A mirror line is at most 8 KB long.');
   return text;
@@ -177,11 +177,11 @@ function content(item: Item): string {
   return JSON.stringify([item.kind, item.project, item.created, body]);
 }
 
-function arrive(raw: Item, known: Item | null): Item {
+function arrive(raw: Item, at: number, known: Item | null): Item {
   const o = raw.origin;
   const side = sanitizeItem({ ...raw, kind: 'dropped', flags: [], held: false, body: { label: '', text: [raw.project, o.agent, o.model ?? '', o.machine ?? ''].join('\n'), size: 0 } });
-  const origin: Origin = { ...o, via: o.via === 'page' ? 'import' : o.via, source: o.source === 'person' ? 'agent' : o.source };
-  let next = sanitizeItem({ ...raw, origin, flags: [...new Set([...raw.flags, ...side.flags])], held: raw.held || side.held });
+  const origin: Origin = { ...o, via: o.via === 'page' ? 'import' : o.via, source: o.source === 'person' ? 'agent' : o.source, at: Math.min(o.at, at) };
+  let next = sanitizeItem({ ...raw, origin, flags: [...new Set([...raw.flags, ...side.flags])], held: raw.held || side.held, created: Math.min(raw.created, at) });
   if (next.kind === 'rule') {
     const { proof: _proof, ...rest } = next.body as RuleBody;
     next = { ...next, body: { ...rest, status: 'pending' } };
@@ -191,12 +191,13 @@ function arrive(raw: Item, known: Item | null): Item {
   return asItem(next) ?? next;
 }
 
-export function merge(local: Item[], incoming: Rec[], device: string): { put: Item[]; hide: string[] } {
+export function merge(local: Item[], incoming: Rec[], device: string, now: number = Date.now()): { put: Item[]; hide: string[] } {
   needDevice(device);
+  const until = Number.isFinite(now) ? now + DAY_MS : Infinity;
   const best = new Map<string, Rec>();
   for (const raw of incoming ?? []) {
     const rec = check(raw);
-    if (!rec || rec.device === device) continue;
+    if (!rec || rec.device === device || rec.at > until) continue;
     const now = best.get(rec.id);
     if (!now || order(rec, now) > 0) best.set(rec.id, rec);
   }
@@ -217,7 +218,7 @@ export function merge(local: Item[], incoming: Rec[], device: string): { put: It
       continue;
     }
     const known = here ? asItem(here) : null;
-    const next = arrive(rec.item, known);
+    const next = arrive(rec.item, rec.at, known);
     if (known && JSON.stringify(known) === JSON.stringify(next)) continue;
     const taken: Timed = { ...next, updated: rec.at };
     put.push(taken);
