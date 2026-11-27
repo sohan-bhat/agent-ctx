@@ -354,7 +354,7 @@ test('every command that a person or an agent is told to type exists on the comp
     const told = go(['install', '--yes']);
     assert.equal(existsSync(file), true, file);
     const help = go(['--help']);
-    assert.deepEqual(help.slice(2).map((line) => line.split(/ {2,}/)[0]), ['install', 'status', 'rules', 'mirror', 'uninstall'].map((name) => `${me} ${name}`));
+    assert.deepEqual(help.slice(2).map((line) => line.split(/ {2,}/)[0]), ['install', 'status', 'rules', 'page', 'mirror', 'uninstall'].map((name) => `${me} ${name}`));
     const saved = await server(where, 'cursor', [['rule', RULE]], form === 'script' ? [] : preload(where));
     assert.deepEqual(saved, [`Rule saved as pending. The person turns the rule on in a terminal with ${me} rules.`]);
     const status = go(['status']);
@@ -363,6 +363,6 @@ test('every command that a person or an agent is told to type exists on the comp
     assert.equal(listed.at(-1), `Type ${me} rules accept ID to turn a rule on, or ${me} rules reject ID to turn a rule down.`);
     const piped = go(['rules', 'accept', 'ffffffff']);
     assert.deepEqual(piped, [`A rule is turned on or down by a person at a terminal, so type ${me} rules accept ID in a terminal of your own.`]);
-    for (const line of [...told, ...help, ...saved, ...status, ...listed, ...piped]) assert.equal(/(^|[^/\w-])agent-ctx (install|status|rules|mirror|sync|restore|uninstall)\b/.test(line), false, line);
+    for (const line of [...told, ...help, ...saved, ...status, ...listed, ...piped]) assert.equal(/(^|[^/\w-])agent-ctx (install|status|rules|page|mirror|sync|restore|uninstall)\b/.test(line), false, line);
   }
 });

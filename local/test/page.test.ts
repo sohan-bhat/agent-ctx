@@ -30,7 +30,7 @@ const GOAL = 'Glaze the kiln shelf with the cone 6 mix';
 const RULE = { text: 'Indent Python with two spaces', words: 'from now on indent Python with two spaces', scope: 'all' };
 const FILES_SERVER = { mcpServers: { files: { command: 'npx', args: ['-y', 'files-server'] } } };
 const INSTALL = 'claude plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
-const REFUSED = 'Type agent-ctx page in a terminal to open the memory page.';
+const REFUSED = 'Type npx -y github:sohan-bhat/agent-ctx page in a terminal to open the memory page.';
 const OPEN = /^The memory page is open at (http:\/\/127\.0\.0\.1:(\d+)\/([\w-]+)\/) and stays open until 30 seconds after you close the page\.$/m;
 const POLICY = "default-src 'none'; script-src 'self'";
 

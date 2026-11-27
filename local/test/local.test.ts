@@ -153,7 +153,7 @@ test('the version is the version in package.json and the bare command prints at 
     assert.equal(bare.code, 0);
     assert.equal(bare.err, '');
     const lines = bare.out.trimEnd().split('\n');
-    assert.ok(lines.length <= (args[0] === '--help' ? 7 : 6) && lines.every((l) => l.trim()), bare.out);
+    assert.ok(lines.length <= (args[0] === '--help' ? 8 : 6) && lines.every((l) => l.trim()), bare.out);
     assert.ok(lines[0].includes(args.length === 1 && args[0] === '--help' ? `agent-ctx ${version}` : 'No agent was found on this computer, so nothing was changed.'), lines[0]);
     const prose = bare.out.replace(join(where.AGENT_CTX_HOME, 'memory.db'), 'PATH').replace(/npx -y github:\S+/g, 'COMMAND');
     assert.equal(/\b(it|its|itself|it's)\b|[—–;:()]| - /i.exec(prose), null);

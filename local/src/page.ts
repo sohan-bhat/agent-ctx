@@ -6,14 +6,13 @@ import type { AddressInfo } from 'node:net';
 import { dirname, extname, join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { body, buildExport, err, pageApi, type PageMemory } from '../../service/src/api.ts';
-import { Refusal, caller, file, folder, open, type Db } from './db.ts';
+import { Refusal, caller, file, folder, open, typed, type Db } from './db.ts';
 import { apply, detect, plan, unplan, type Agent, type Change, type Paths } from './install.ts';
 
 export interface Kit {
   paths(): Paths;
   program(p: Paths): { to: string; stale: string[]; missing: string[] };
   place(to: string, names: string[]): void;
-  self(p: Paths): string;
   signs: string[];
 }
 
@@ -24,7 +23,7 @@ const SUMS = 'SHA256SUMS';
 const RELEASES = 'https://github.com/sohan-bhat/agent-ctx/releases/latest/download';
 const AGENTS: Agent[] = ['claude-code', 'cursor', 'codex', 'gemini', 'claude-desktop'];
 const BACKUP = '.agent-ctx-backup';
-const REFUSED = 'Type agent-ctx page in a terminal to open the memory page.';
+const refused = (): string => `Type ${typed()} page in a terminal to open the memory page.`;
 const STALE = 'These changes are different now. Read the lines again.';
 const QUIET = 30;
 const FIRST = 300;
@@ -209,7 +208,7 @@ async function sent(req: IncomingMessage): Promise<Buffer | null> {
 export async function page(kit: Kit): Promise<number> {
   const p = kit.paths();
   if (kit.signs.some((sign) => process.env[sign] !== undefined)) {
-    say(`The memory page is opened by a person at a terminal, so type ${kit.self(p)} page in a terminal of your own.`);
+    say(`The memory page is opened by a person at a terminal, so type ${typed()} page in a terminal of your own.`);
     return 1;
   }
   const dir = await files();
@@ -328,7 +327,7 @@ export async function page(kit: Kit): Promise<number> {
       const given = address.slice(1, cut < 0 ? address.length : cut);
       const from = req.headers.origin;
       if (req.headers.host !== origin.slice(7) || (from !== undefined && from !== origin) || !address.startsWith('/') || !same(given, token)) {
-        return reply(res, 403, PLAIN, `${REFUSED}\n`);
+        return reply(res, 403, PLAIN, `${refused()}\n`);
       }
       loaded = true;
       quiet = 0;

@@ -299,6 +299,7 @@ function usage(): string[] {
     'agent-ctx install      connect every agent found on this computer',
     'agent-ctx status       the memory file and the connected agents',
     'agent-ctx rules        the pending rules, with accept ID and reject ID',
+    'agent-ctx page         the memory in your browser, with the rules and the agents',
     'agent-ctx mirror       a copy of the memory in a folder or repository of your own',
     'agent-ctx uninstall    take agent-ctx out and keep the memory',
   ];
@@ -318,7 +319,7 @@ export async function run(args: string[]): Promise<number> {
   if (command === undefined || command === 'install') return install(has('--yes'));
   if (command === 'uninstall') return uninstall(has('--yes'));
   if (command === 'status') return status();
-  if (command === 'page') return (await import('./page.ts')).page({ paths, program, place, self, signs: SIGNS });
+  if (command === 'page') return (await import('./page.ts')).page({ paths, program, place, signs: SIGNS });
   if (command === 'rules') return rules(args.slice(args.indexOf('rules') + 1).filter((arg) => !arg.startsWith('-')));
   if (command === 'mirror' || command === 'sync' || command === 'restore') return mirror(command, args.slice(args.indexOf(command) + 1).filter((arg) => !arg.startsWith('-')), { say, me: typed(), agreed: () => agreed(has('--yes')) });
   process.stderr.write(`${[`No command named ${command.replace(/[^\w.-]+/g, '').slice(0, 40)} exists in this version.`, ...about()].join('\n')}\n`);

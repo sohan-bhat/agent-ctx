@@ -12,7 +12,7 @@ export interface Plan {
   ready: boolean;
 }
 
-export const GONE = 'This page is no longer connected. Type agent-ctx page in a terminal to open the memory again.';
+export const GONE = 'This page is no longer connected. Open the memory page again from a terminal.';
 
 export const LABELS: Record<string, string> = { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', gemini: 'Gemini CLI', 'claude-desktop': 'Claude Desktop' };
 
