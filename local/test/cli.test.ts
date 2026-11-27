@@ -7,7 +7,7 @@ import { BANNED, MAIN, PTY, ROOT, SCRIPTS, calls, hook, one, place, plain, prelo
 
 const TMP = mkdtempSync(join(tmpdir(), 'agent-ctx-cli-'));
 const INSTALL = 'plugin install agent-ctx --marketplace sohan-bhat/agent-ctx';
-const REMOVE = 'mcp remove --scope user agent-ctx';
+const REMOVE = 'mcp remove agent-ctx --scope user';
 const PLUGGED = 'The plugin agent-ctx is already installed in Claude Code and stays the one connection.';
 const DESKTOP = `${process.platform === 'darwin' ? 'Library/Application Support' : '.config'}/Claude/claude_desktop_config.json`;
 const THEME = { theme: 'dark' };

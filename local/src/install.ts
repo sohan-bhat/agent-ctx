@@ -382,7 +382,7 @@ function direct(p: Paths, on: boolean): Change[] {
   const now = dig(loose(load(join(p.home, '.claude.json'), p)), 'mcpServers', NAME);
   const [command, args] = launch(p, 'claude-code');
   const fine = on && same(dig(now, 'command'), command) && same(dig(now, 'args'), args);
-  const calls = [...(!fine && (on ? now !== undefined : former(now).length) ? [['remove', '--scope', 'user', NAME]] : []), ...(on && !fine ? [['add', '--scope', 'user', NAME, '--', command, ...args]] : [])];
+  const calls = [...(!fine && (on ? now !== undefined : former(now).length) ? [['remove', NAME, '--scope', 'user']] : []), ...(on && !fine ? [['add', '--scope', 'user', NAME, '--', command, ...args]] : [])];
   const runs = calls.map((rest): Change => {
     const run = ['claude', 'mcp', ...rest];
     const what = `The server ${NAME} is ${rest[0] === 'add' ? 'added to' : 'removed from'} Claude Code with the command ${run.map((part) => word(part, p)).join(' ')}.`;

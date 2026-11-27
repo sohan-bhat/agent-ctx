@@ -705,7 +705,7 @@ describe('one program', () => {
   const OTHERS: Agent[] = ['cursor', 'codex', 'gemini', 'claude-desktop'];
   const EVENTS = 'UserPromptSubmit, PostToolUse, PostToolUseFailure, Stop, StopFailure, PostCompact and SessionStart';
   const add = ['claude', 'mcp', 'add', '--scope', 'user', 'agent-ctx', '--', ONE, 'mcp', '--agent', 'claude-code'];
-  const remove = ['claude', 'mcp', 'remove', '--scope', 'user', 'agent-ctx'];
+  const remove = ['claude', 'mcp', 'remove', 'agent-ctx', '--scope', 'user'];
   const note: Change = { file: '', what: 'The plugin agent-ctx is already installed in Claude Code and stays the one connection.', before: null, after: null };
   const one = (t: TestContext): Paths => ({ ...make(t), app: ONE, node: '' });
   const server = (agent: string): { command: string; args: string[] } => ({ command: ONE, args: ['mcp', '--agent', agent] });

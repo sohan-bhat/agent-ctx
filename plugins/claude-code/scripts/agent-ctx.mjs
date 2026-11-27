@@ -40617,7 +40617,7 @@ function direct(p, on) {
   const now = dig(loose(load(join2(p.home, ".claude.json"), p)), "mcpServers", NAME);
   const [command, args2] = launch(p, "claude-code");
   const fine = on && same2(dig(now, "command"), command) && same2(dig(now, "args"), args2);
-  const calls = [...!fine && (on ? now !== void 0 : former(now).length) ? [["remove", "--scope", "user", NAME]] : [], ...on && !fine ? [["add", "--scope", "user", NAME, "--", command, ...args2]] : []];
+  const calls = [...!fine && (on ? now !== void 0 : former(now).length) ? [["remove", NAME, "--scope", "user"]] : [], ...on && !fine ? [["add", "--scope", "user", NAME, "--", command, ...args2]] : []];
   const runs = calls.map((rest) => {
     const run4 = ["claude", "mcp", ...rest];
     const what = `The server ${NAME} is ${rest[0] === "add" ? "added to" : "removed from"} Claude Code with the command ${run4.map((part) => word2(part, p)).join(" ")}.`;
