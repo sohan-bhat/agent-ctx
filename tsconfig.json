@@ -14,5 +14,5 @@
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["core"]
+  "include": ["core", "local"]
 }
