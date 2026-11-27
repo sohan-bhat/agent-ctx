@@ -263,7 +263,7 @@ test('no file, no tool answer and no hook output carries the port or the token',
     ['rule', RULE],
     ['recall', { folder: KILN }],
   ]);
-  assert.equal(answers[1], 'Rule saved as pending. The person turns the rule on in a terminal with agent-ctx rules.');
+  assert.equal(answers[1], 'Rule saved as pending. The person turns the rule on in a terminal with npx -y github:sohan-bhat/agent-ctx rules.');
   const prompt = hook(where, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 's-1', cwd: KILN, prompt: 'carry on with the kiln shelf and the glaze' });
   assert.ok(prompt.out.includes(GOAL), prompt.out);
   assert.equal((await call(p, '/space')).status, 200);
