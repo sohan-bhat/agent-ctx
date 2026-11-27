@@ -483,7 +483,7 @@ async function walk(b, site, w, h, scheme) {
       });
       return { ...t, seen: t.seen.map(list), place: t.place.map(list), tall: list(t.tall), under: list(t.under), said: list(t.said), apart: list(t.apart), carets: carets.length, rows, line: parseFloat(getComputedStyle(p).lineHeight) };
     });
-    check(`${tag} the typed block has two lines and each line ends in a cursor of its own`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top, `${typed.carets} cursors, ${typed.rows.length} names`);
+    check(`${tag} the typed block has two lines and each line ends in a cursor`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.rows[0].mid < typed.rows[1].top, `${typed.carets} cursors, ${typed.rows.length} names`);
     check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.seen.every((v) => v.length >= 2), typed.seen.map((v) => v.join(', ')).join(' and '));
     check(`${tag} the two spots never show the same complete name at one moment`, typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
     check(`${tag} at most one spot is in the middle of a word at any moment`, typed.typing > 0 && typed.both === 0, `${typed.both} of ${typed.typing} moments in the middle of a word`);
