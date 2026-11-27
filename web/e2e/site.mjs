@@ -9,7 +9,7 @@ import { browser, context, drag, engine, labels, overflow, press, ready, touchDr
 
 const BASE = '/agent-ctx/';
 const REPO = /REPO = '([^']+)'/.exec(fs.readFileSync(path.join(web, 'src', 'agents.ts'), 'utf8'))[1];
-const LINE = `npx -y github:${REPO}`;
+const LINE = 'curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh';
 const HOME = `https://github.com/${REPO}`;
 const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
@@ -449,7 +449,7 @@ async function walk(b, site, w, h, scheme) {
     const bad = faults(t.out);
     check(`${tag} the wording rules hold in every text node`, t.out.length > 40 && !bad.length, bad.slice(0, 4).join(' | '));
     check(`${tag} a question mark stands only on the eight questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
-    check(`${tag} no install line is shown`, !t.out.join('\n').includes('npx') && !(await page.locator('[data-site=install]').count()));
+    check(`${tag} no install line is shown`, !t.out.join('\n').includes('install.sh') && !(await page.locator('[data-site=install]').count()));
 
     const typed = await page.evaluate(() => ({ seen: [...window.__typed.seen], tall: [...window.__typed.tall] }));
     check(`${tag} the typed line shows at least two agent names over time and keeps one height`, typed.seen.length >= 2 && typed.tall.length === 1, `${typed.seen.join(', ')}, heights ${typed.tall.join(' ')}`);
@@ -545,7 +545,7 @@ function built(dir) {
   const off = refs.filter((r) => !r.startsWith(BASE));
   const far = [...`${html}\n${css}`.matchAll(/(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"')]*/gi)].map((m) => m[0]);
   check(`every asset address in the built page starts with ${BASE}`, refs.length >= 4 && !off.length && !far.length, `${refs.length} addresses${off.length || far.length ? `, off ${[...off, ...far].slice(0, 3).join(' ')}` : ''}`);
-  const holds = all.filter((f) => /\.(?:html|js|css)$/.test(f) && fs.readFileSync(f, 'utf8').includes('npx -y'));
+  const holds = all.filter((f) => /\.(?:html|js|css)$/.test(f) && fs.readFileSync(f, 'utf8').includes('install.sh | sh'));
   check('the built page holds no install line without VITE_RELEASED', !holds.length, holds.map((f) => path.basename(f)).join(' '));
   const bytes = all.reduce((a, f) => a + fs.statSync(f).size, 0);
   console.log(`NOTE the built page is ${(bytes / 1024).toFixed(0)} kB in ${all.length} files`);

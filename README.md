@@ -4,11 +4,11 @@ agent-ctx is one memory on your computer, shared by the agents you use. Claude C
 
 ## Install
 
-On macOS and Linux, paste the line below into a terminal. No Node is needed, and one program is placed at `~/.agent-ctx/app/agent-ctx`. This line can be used from the first release on.
+On macOS and Linux, paste the line below into a terminal. No Node is needed, and one program is placed at `~/.agent-ctx/app/agent-ctx`.
 
     curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh
 
-With Node 22.16 or newer, the line below gives the same result today.
+With Node 22.16 or newer, the line below gives the same result.
 
     npx -y github:sohan-bhat/agent-ctx
 

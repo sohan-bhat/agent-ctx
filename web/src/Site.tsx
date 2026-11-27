@@ -27,7 +27,7 @@ import "./site.css";
 
 const RELEASED = import.meta.env.VITE_RELEASED === "1";
 const HOME = `https://github.com/${REPO}`;
-const INSTALL = `npx -y github:${REPO}`;
+const INSTALL = "curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh";
 const RATE = (DEMO_END - DEMO_START) / 30_000;
 const AGENTS = DEMO_AGENTS.map((a) => a.label);
 const NONE = new Set<string>();
@@ -47,7 +47,7 @@ const FAQ = [
   ],
   [
     "Which agents work with agent-ctx?",
-    "Claude Code is proven with the real program. Cursor, Codex, Gemini CLI and the Claude desktop app are built from the documents of each vendor and are not yet tested with the real programs.",
+    "Claude Code is proven with the real program, and Cursor, Codex, Gemini CLI and the Claude desktop app are built from the documents of each vendor and are not yet tested with the real programs. macOS and Linux are supported today.",
   ],
   [
     "Where is the memory kept?",
@@ -64,7 +64,7 @@ const FAQ = [
   ],
   [
     "How do I remove agent-ctx?",
-    "Every entry that was added is taken out with the command node ~/.agent-ctx/app/agent-ctx.mjs uninstall, and the memory file stays until you delete the folder.",
+    "Every entry that was added is taken out with the command ~/.agent-ctx/app/agent-ctx uninstall, and the memory file stays until you delete the folder.",
   ],
   [
     "What does agent-ctx cost?",
@@ -242,9 +242,6 @@ function Action() {
           {home}
         </Button>
       </div>
-      <p className="site-status" data-site="need">
-        Node 22.16 or newer is needed.
-      </p>
     </>
   );
 }
