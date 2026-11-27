@@ -137,7 +137,7 @@ test('the release workflow builds four programs on native runners with one pinne
   assert.deepEqual(pairs, ['macos-15 darwin-arm64', 'macos-15-intel darwin-x64', 'ubuntu-24.04 linux-x64', 'ubuntu-24.04-arm linux-arm64']);
   assert.deepEqual(pairs.map((pair) => pair.split(' ')[1]), TARGETS);
   assert.deepEqual(text.match(/bun-version: .*/g), ['bun-version: 1.4.5']);
-  assert.deepEqual(text.match(/bun build .*/g), ['bun build --compile --bytecode --format=esm agent-ctx.mjs --outfile "$PROGRAM"']);
+  assert.deepEqual(text.match(/bun build .*/g), ['bun build --compile --bytecode --format=esm --no-compile-autoload-dotenv --no-compile-autoload-bunfig agent-ctx.mjs --outfile "$PROGRAM"']);
   assert.match(text, /tags:\n\s+- 'v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+'\n\s+workflow_dispatch:/);
   assert.match(text, /echo "PROGRAM=\$RUNNER_TEMP\/out\/agent-ctx-\$TARGET" >> "\$GITHUB_ENV"/);
   assert.match(text, /working-directory: \$\{\{ runner\.temp \}\}\/compile\n\s+run: bun build /);
@@ -147,7 +147,8 @@ test('the release workflow builds four programs on native runners with one pinne
   assert.equal(/windows|macos-latest|ubuntu-latest|larger|self-hosted/i.test(text), false);
   assert.deepEqual(text.match(/contents: \w+/g), ['contents: read', 'contents: write']);
   const said = [...text.matchAll(/(?:echo "|console\.log\(')([A-Z][^"\n]*?\.)["']/g)].map((m) => m[1]);
-  assert.equal(said.length, 6, said.join('\n'));
+  assert.match(text, /working-directory: \$\{\{ runner\.temp \}\}\/planted\n\s+run: \|\n\s+export HOME="\$RUNNER_TEMP\/smoke\/home"\n.*hook --agent claude-code\n\s+if \[ -e ran\.txt \] \|\| \[ -e memory \] /);
+  assert.equal(said.length, 7, said.join('\n'));
   for (const line of said) assert.equal(BANNED.exec(line.replace(/' \+ [\w.]+ \+ '/g, 'N')), null, line);
 });
 
