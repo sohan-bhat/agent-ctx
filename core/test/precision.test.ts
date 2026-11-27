@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { measure, reachable, run, SETS, SET2B, SET_LANG, SET_LANG2 } from './precision.ts';
+import { measure, reachable, reachableWanted, run, SETS, SET2B, SET_LANG, SET_LANG2, SET_LANG4 } from './precision.ts';
 import { ITEMS, PROJECTS, QUERIES } from './corpus.ts';
 import * as two from './corpus2.ts';
 import * as lang from './corpus-lang.ts';
@@ -81,4 +81,20 @@ test('recall over the second language set keeps wrong cards out in five language
     const own = measure(rows.filter((r) => r.query.project === lang.SECOND.projects[k].key));
     assert.ok(own.precision_at_3 >= floors[k], `${code} ${JSON.stringify(own)}`);
   });
+});
+
+test('recall over the fourth language set shows no wrong card and keeps its found floors in five languages', () => {
+  const rows = run(SET_LANG4);
+  const s = measure(rows);
+  assert.ok(s.precision_at_3 >= 1 && s.empty_correct >= 1 && s.found >= 0.33, JSON.stringify(s));
+  const floors = [0.33, 0.5, 0.33, 0.33, 0.16];
+  lang.FOURTH.langs.forEach((code, k) => {
+    const own = measure(rows.filter((r) => r.query.project === lang.FOURTH.projects[k].key));
+    assert.ok(own.found >= floors[k], `${code} ${JSON.stringify(own)}`);
+  });
+});
+
+test('on the tool path every wanted card of the fourth language set stays reachable', () => {
+  const reach = reachableWanted(SET_LANG4);
+  assert.ok(reach >= 1, String(reach));
 });
