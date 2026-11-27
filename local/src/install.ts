@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, win32 } from 'node:path';
+import PLUGIN from '../../plugins/claude-code/hooks/hooks.json' with { type: 'json' };
 
 export type Agent = 'claude-code' | 'cursor' | 'codex' | 'gemini' | 'claude-desktop';
 export interface Paths { home: string; app: string; node: string; platform: 'darwin' | 'linux' | 'win32' }
@@ -8,7 +9,7 @@ export interface Change { file: string; what: string; before: string | null; aft
 type Obj = Record<string, unknown>;
 type Mine = (value: unknown) => boolean;
 type Verb = 'created' | 'added' | 'updated' | 'removed' | 'gone';
-interface Hooks { events: string[]; nested: boolean; version: boolean; entry: Obj }
+interface Hooks { events: string[]; nested: boolean; version: boolean; entry: Obj; groups?: Record<string, Obj[]> }
 interface Target { file: string; server?: Obj; hooks?: Hooks }
 interface Part { path: string[]; array: boolean; from: number; to: number }
 interface Pair { name: string; full: string[]; value: string }
@@ -16,7 +17,7 @@ interface Pair { name: string; full: string[]; value: string }
 const NAME = 'agent-ctx';
 const BACKUP = `.${NAME}-backup`;
 const HOOK = 'hook.mjs';
-const MARK = /"agent-ctx"\s*:|hook\.mjs\\?"? --agent |^\s*\[\s*mcp_servers\s*\.\s*["']?agent-ctx/m;
+const MARK = /"agent-ctx"\s*:|hook\.mjs\\?"? --agent |agent-ctx\\?"? hook --agent |^\s*\[\s*mcp_servers\s*\.\s*["']?agent-ctx/m;
 const LAYOUT = 'has an unexpected layout';
 const LINK = 'is a link to a place outside the home folder';
 const UNSAFE = `has ${NAME} in a form unsafe for a text edit`;
@@ -93,19 +94,35 @@ function word(text: string, p: Paths): string {
   return win ? `"${text}"` : `"${text.replace(/[\\"$`]/g, '\\$&')}"`;
 }
 
-function beside(app: string, p: Paths): string {
+function beside(app: string, p: Paths, name = HOOK): string {
   const path = p.platform === 'win32' ? win32 : posix;
-  return path.join(path.dirname(app), HOOK);
+  return path.join(path.dirname(app), name);
 }
 
-function former(args: unknown): string[] {
-  return Array.isArray(args) && typeof args[0] === 'string' && args[1] === 'mcp' && args[2] === '--agent' ? [args[0]] : [];
+function launch(p: Paths, agent: Agent): [string, string[]] {
+  const args = ['mcp', '--agent', agent];
+  return p.node ? [p.node, [p.app, ...args]] : [p.app, args];
+}
+
+function line(p: Paths, agent: Agent): string {
+  return p.node ? `${word(p.node, p)} ${word(beside(p.app, p), p)} --agent ${agent}` : `${word(p.app, p)} hook --agent ${agent}`;
+}
+
+function former(server: unknown): string[] {
+  const [command, args] = [dig(server, 'command'), dig(server, 'args')];
+  if (!Array.isArray(args)) return [];
+  if (typeof args[0] === 'string' && args[1] === 'mcp' && args[2] === '--agent') return [args[0]];
+  return typeof command === 'string' && args[0] === 'mcp' && args[1] === '--agent' ? [command] : [];
 }
 
 function owned(p: Paths, apps: string[]): Mine {
+  const marks = apps.filter(Boolean).flatMap((app) => {
+    const [hook, one] = [beside(app, p), beside(app, p, NAME)];
+    return [hook, word(hook, p), `${one} hook `, `${word(one, p)} hook `];
+  });
   return (value) => {
     const text = dig(value, 'command');
-    return typeof text === 'string' && text.includes(' --agent ') && apps.some((app) => app !== '' && (text.includes(beside(app, p)) || text.includes(word(beside(app, p), p))));
+    return typeof text === 'string' && text.includes(' --agent ') && marks.some((mark) => text.includes(mark));
   };
 }
 
@@ -176,7 +193,8 @@ function wire(doc: Obj, target: Target, on: boolean, mine: Mine, file: string): 
     }
   }
   if (target.hooks) {
-    const { events, nested, version, entry } = target.hooks;
+    const { events, nested, version, entry, groups } = target.hooks;
+    const fresh = (event: string): unknown[] => groups?.[event] ?? [entry];
     const hooks = doc.hooks === undefined ? {} : doc.hooks;
     if (!isObj(hooks)) throw new Odd(LAYOUT);
     const out: [string, unknown][] = [];
@@ -190,10 +208,10 @@ function wire(doc: Obj, target: Target, on: boolean, mine: Mine, file: string): 
       }
       const { kept, at } = strip(items, nested, mine);
       hit ||= at >= 0;
-      if (wanted) kept.splice(at < 0 ? kept.length : at, 0, entry);
+      if (wanted) kept.splice(at < 0 ? kept.length : at, 0, ...fresh(event));
       if (kept.length || at < 0 || had('hooks', event)) out.push([event, kept]);
     }
-    if (on) out.push(...events.filter((event) => !Object.hasOwn(hooks, event)).map((event): [string, unknown] => [event, [entry]]));
+    if (on) out.push(...events.filter((event) => !Object.hasOwn(hooks, event)).map((event): [string, unknown] => [event, fresh(event)]));
     const rest = Object.fromEntries(out);
     if ((on || hit) && !same(hooks, rest)) {
       next = out.length || had('hooks') ? { ...next, hooks: rest } : drop(next, 'hooks');
@@ -317,8 +335,8 @@ function survey(text: string) {
   return { lines, end, pairs, mine, main: main.at(0), clash, cut };
 }
 
-function toml(target: string, p: Paths, on: boolean, args: string[]): Change[] {
-  const rows = [`[mcp_servers.${NAME}]`, `command = ${quote(p.node)}`, `args = [${args.map(quote).join(', ')}]`];
+function toml(target: string, p: Paths, on: boolean, command: string, args: string[]): Change[] {
+  const rows = [`[mcp_servers.${NAME}]`, `command = ${quote(command)}`, `args = [${args.map(quote).join(', ')}]`];
   const hand = `add the table ${rows[0]} with ${rows[1]} and ${rows[2]}`;
   const things = `the table mcp_servers.${NAME}`;
   const file = locate(target, p);
@@ -335,7 +353,7 @@ function toml(target: string, p: Paths, on: boolean, args: string[]): Change[] {
   }
   const body = main ? pairs(main) : [];
   const values = (name: string): (string[] | null)[] => body.flatMap((pair) => (pair?.name === name ? [strings(pair.value)] : []));
-  if (same(values('command'), [[p.node]]) && same(values('args'), [args])) return [];
+  if (same(values('command'), [[command]]) && same(values('args'), [args])) return [];
   const cr = before.includes('\r\n') ? '\r' : '';
   const fresh = rows.map((row) => row + cr);
   const what = say(file, things, mine.length ? 'updated' : 'added', p.app);
@@ -360,28 +378,52 @@ function plugin(p: Paths, on: boolean): Change[] {
   return [{ file: '', what, before: null, after: null, run }];
 }
 
+function direct(p: Paths, on: boolean): Change[] {
+  const now = dig(loose(load(join(p.home, '.claude.json'), p)), 'mcpServers', NAME);
+  const [command, args] = launch(p, 'claude-code');
+  const fine = on && same(dig(now, 'command'), command) && same(dig(now, 'args'), args);
+  const calls = [...(!fine && (on ? now !== undefined : former(now).length) ? [['remove', '--scope', 'user', NAME]] : []), ...(on && !fine ? [['add', '--scope', 'user', NAME, '--', command, ...args]] : [])];
+  const runs = calls.map((rest): Change => {
+    const run = ['claude', 'mcp', ...rest];
+    const what = `The server ${NAME} is ${rest[0] === 'add' ? 'added to' : 'removed from'} Claude Code with the command ${run.map((part) => word(part, p)).join(' ')}.`;
+    return { file: '', what, before: null, after: null, run };
+  });
+  const text = line(p, 'claude-code');
+  const groups = Object.fromEntries(Object.entries(PLUGIN.hooks as Record<string, Obj[]>).map(([event, all]) => [event, all.map((group) => ({ ...group, hooks: (group.hooks as Obj[]).map((hook) => ({ ...hook, command: text })) }))]));
+  const hooks: Hooks = { events: Object.keys(groups), nested: true, version: false, entry: { hooks: [{ type: 'command', command: text }] }, groups };
+  return [...runs, ...json({ file: join(p.home, '.claude', 'settings.json'), hooks }, p, on, [p.app, ...former(now)])];
+}
+
+function claude(p: Paths, on: boolean): Change[] {
+  if (!on) return [...plugin(p, false), ...direct(p, false)];
+  if (p.node) return [...plugin(p, true), ...direct(p, false)];
+  if (plugin(p, true).length) return direct(p, true);
+  return [{ file: '', what: `The plugin ${NAME} is already installed in Claude Code and stays the one connection.`, before: null, after: null }, ...direct(p, false)];
+}
+
 function changes(agent: Agent, p: Paths, on: boolean): Change[] {
-  if (agent === 'claude-code') return plugin(p, on);
-  const args = [p.app, 'mcp', '--agent', agent];
-  const server: Obj = { command: p.node, args };
+  if (agent === 'claude-code') return claude(p, on);
+  const [command, args] = launch(p, agent);
+  const server: Obj = { command, args };
   if (agent === 'claude-desktop') return json({ file: desktop(p), server }, p, on, [p.app]);
   const folder = join(p.home, `.${agent}`);
-  const run: Obj = { type: 'command', command: `${word(p.node, p)} ${word(beside(p.app, p), p)} --agent ${agent}` };
+  const run: Obj = { type: 'command', command: line(p, agent) };
   if (agent === 'cursor') {
     const file = join(folder, 'mcp.json');
-    const apps = [p.app, ...former(dig(loose(load(file, p)), 'mcpServers', NAME, 'args'))];
+    const apps = [p.app, ...former(dig(loose(load(file, p)), 'mcpServers', NAME))];
     const hooks: Hooks = { events: ['sessionStart', 'beforeSubmitPrompt', 'postToolUse', 'afterAgentResponse', 'stop'], nested: false, version: true, entry: { command: run.command } };
     return [...json({ file, server: { type: 'stdio', ...server } }, p, on, apps), ...json({ file: join(folder, 'hooks.json'), hooks }, p, on, apps)];
   }
   if (agent === 'codex') {
     const file = join(folder, 'config.toml');
     const table = survey(load(file, p) ?? '');
-    const apps = [p.app, ...(table.main ? table.pairs(table.main).flatMap((pair) => (pair?.name === 'args' ? former(strings(pair.value)) : [])) : [])];
+    const value = (name: string): string[] => (table.main ? table.pairs(table.main) : []).flatMap((pair) => (pair?.name === name ? strings(pair.value) ?? [] : []));
+    const apps = [p.app, ...former({ command: value('command')[0], args: value('args') })];
     const hooks: Hooks = { events: ['UserPromptSubmit', 'PostToolUse', 'Stop'], nested: true, version: false, entry: { hooks: [run] } };
-    return [...toml(file, p, on, args), ...json({ file: join(folder, 'hooks.json'), hooks }, p, on, apps)];
+    return [...toml(file, p, on, command, args), ...json({ file: join(folder, 'hooks.json'), hooks }, p, on, apps)];
   }
   const file = join(folder, 'settings.json');
-  const apps = [p.app, ...former(dig(loose(load(file, p)), 'mcpServers', NAME, 'args'))];
+  const apps = [p.app, ...former(dig(loose(load(file, p)), 'mcpServers', NAME))];
   const hooks: Hooks = { events: ['BeforeAgent', 'AfterTool', 'AfterAgent'], nested: true, version: false, entry: { hooks: [{ name: NAME, ...run }] } };
   return json({ file, server, hooks }, p, on, apps);
 }
@@ -403,6 +445,10 @@ export function plan(agent: Agent, p: Paths): Change[] {
 
 export function unplan(agent: Agent, p: Paths): Change[] {
   return changes(agent, p, false);
+}
+
+export function connected(agent: Agent, p: Paths): boolean {
+  return plan(agent, p).every((change) => !change.file && !change.run);
 }
 
 export function apply(changes: Change[]): void {

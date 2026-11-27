@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { describe, test, type TestContext } from 'node:test';
-import { apply, detect, plan, unplan, type Agent, type Change, type Paths } from '../src/install.ts';
+import { apply, connected, detect, plan, unplan, type Agent, type Change, type Paths } from '../src/install.ts';
 
 type Files = Record<string, unknown>;
 
@@ -694,5 +694,144 @@ describe('guard', () => {
     assert.deepEqual(seen.filter((one) => !inside(one)), []);
     for (const name of ['readFileSync', 'writeFileSync', 'renameSync', 'copyFileSync', 'mkdirSync', 'unlinkSync']) assert.equal(seen.some((one) => one.name === name), true, name);
     assert.equal(fs.existsSync(join(p.home, 'AppData', 'Roaming', 'Claude')), true);
+  });
+});
+
+describe('one program', () => {
+  const ONE = '/opt/agent-ctx/app/agent-ctx';
+  const CLAUDE = '.claude/settings.json';
+  const LISTED = '.claude.json';
+  const RECORD = '.claude/plugins/installed_plugins.json';
+  const OTHERS: Agent[] = ['cursor', 'codex', 'gemini', 'claude-desktop'];
+  const EVENTS = 'UserPromptSubmit, PostToolUse, PostToolUseFailure, Stop, StopFailure, PostCompact and SessionStart';
+  const add = ['claude', 'mcp', 'add', '--scope', 'user', 'agent-ctx', '--', ONE, 'mcp', '--agent', 'claude-code'];
+  const remove = ['claude', 'mcp', 'remove', '--scope', 'user', 'agent-ctx'];
+  const note: Change = { file: '', what: 'The plugin agent-ctx is already installed in Claude Code and stays the one connection.', before: null, after: null };
+  const one = (t: TestContext): Paths => ({ ...make(t), app: ONE, node: '' });
+  const server = (agent: string): { command: string; args: string[] } => ({ command: ONE, args: ['mcp', '--agent', agent] });
+  const listed = (command = ONE): unknown => ({ numStartups: 3, mcpServers: { files: FILES, 'agent-ctx': { type: 'stdio', ...server('claude-code'), command, env: {} } } });
+  const plugged = (p: Paths): void => put(join(p.home, RECORD), { version: 2, plugins: { 'agent-ctx@agent-ctx': [{ scope: 'user' }] } });
+  const steps = (changes: Change[]): unknown[] => changes.map((change) => change.run ?? change.file);
+
+  test('one program is the command of every server and every hook with no node in front', (t) => {
+    const p = one(t);
+    for (const agent of OTHERS) connect(agent, p);
+    const hook = (agent: string, more: Files = {}): unknown => ({ hooks: [{ ...more, type: 'command', command: `${ONE} hook --agent ${agent}` }] });
+    check(p, {
+      '.cursor/mcp.json': { mcpServers: { 'agent-ctx': { type: 'stdio', ...server('cursor') } } },
+      '.cursor/hooks.json': cursorHooks({ command: `${ONE} hook --agent cursor` }),
+      '.codex/hooks.json': { hooks: { UserPromptSubmit: [hook('codex')], PostToolUse: [hook('codex')], Stop: [hook('codex')] } },
+      [SETTINGS]: { mcpServers: { 'agent-ctx': server('gemini') }, hooks: { BeforeAgent: [hook('gemini', { name: 'agent-ctx' })], AfterTool: [hook('gemini', { name: 'agent-ctx' })], AfterAgent: [hook('gemini', { name: 'agent-ctx' })] } },
+      [DESKTOP]: { mcpServers: { 'agent-ctx': server('claude-desktop') } },
+    });
+    assert.equal(text(join(p.home, CONFIG)), `[mcp_servers.agent-ctx]\ncommand = "${ONE}"\nargs = ["mcp", "--agent", "codex"]\n`);
+    for (const body of Object.values(tree(p.home))) assert.equal(/node|\.mjs/.test(body), false, body);
+    for (const agent of OTHERS) assert.deepEqual([plan(agent, p), connected(agent, p)], [[], true], agent);
+    for (const agent of OTHERS) disconnect(agent, p);
+    assert.deepEqual(tree(p.home), {});
+  });
+
+  test('a move between the script form and one program replaces every entry of the other form', (t) => {
+    for (const first of ['script', 'program']) {
+      const home = make(t);
+      const script = { ...home, app: MOVED };
+      const program = { ...home, app: ONE, node: '' };
+      const [from, to] = first === 'script' ? [script, program] : [program, script];
+      for (const agent of OTHERS) connect(agent, from);
+      for (const agent of OTHERS) {
+        for (const change of connect(agent, to)) assert.equal(change.what.endsWith(` updated in ${change.file} for the program path ${to.app}.`), true, change.what);
+        assert.deepEqual(plan(agent, to), [], agent);
+      }
+      const all = Object.values(tree(home.home)).join('\n');
+      assert.equal(all.includes(first === 'script' ? 'hook.mjs' : `${ONE} hook`), false, all);
+      assert.equal(all.split(first === 'script' ? `${ONE} hook` : beside(MOVED)).length - 1, 5 + 3 + 3, all);
+      for (const agent of OTHERS) disconnect(agent, from);
+      assert.deepEqual(tree(home.home), {});
+    }
+  });
+
+  test('claude-code as one program gets the add command and the hooks of the plugin file in the settings file', (t) => {
+    const p = one(t);
+    const changes = connect('claude-code', p);
+    assert.deepEqual(steps(changes), [add, join(p.home, CLAUDE)]);
+    assert.equal(changes[0].what, `The server agent-ctx is added to Claude Code with the command ${add.join(' ')}.`);
+    assert.equal(changes[1].what, `${join(p.home, CLAUDE)} is created with the agent-ctx hooks for ${EVENTS}.`);
+    const shipped = JSON.parse(text(join(import.meta.dirname, '..', '..', 'plugins', 'claude-code', 'hooks', 'hooks.json'))) as { hooks: Record<string, { matcher?: string; hooks: { command: string; timeout: number }[] }[]> };
+    const written = look(join(p.home, CLAUDE)) as typeof shipped;
+    assert.deepEqual(Object.keys(written), ['hooks']);
+    assert.deepEqual(Object.keys(written.hooks), Object.keys(shipped.hooks));
+    for (const [event, groups] of Object.entries(shipped.hooks)) {
+      assert.deepEqual(written.hooks[event].map((group) => [group.matcher, group.hooks.map((hook) => hook.timeout)]), groups.map((group) => [group.matcher, group.hooks.map((hook) => hook.timeout)]), event);
+      for (const group of written.hooks[event]) assert.deepEqual(group.hooks.map((hook) => hook.command), [`${ONE} hook --agent claude-code`], event);
+    }
+    assert.equal(mode(join(p.home, CLAUDE)), 0o600);
+  });
+
+  test('claude-code as one program gets no change once the server is listed and a server at another path is replaced', (t) => {
+    const p = one(t);
+    connect('claude-code', p);
+    assert.equal(connected('claude-code', p), false);
+    put(join(p.home, LISTED), listed());
+    assert.deepEqual([plan('claude-code', p), connected('claude-code', p)], [[], true]);
+    put(join(p.home, LISTED), listed('/old/agent-ctx'));
+    assert.deepEqual(steps(plan('claude-code', p)), [remove, add]);
+    assert.equal(connected('claude-code', p), false);
+  });
+
+  test('claude-code as one program leaves an installed plugin as the one connection', (t) => {
+    const p = one(t);
+    plugged(p);
+    const before = tree(p.home);
+    assert.deepEqual(connect('claude-code', p), [note]);
+    assert.deepEqual(tree(p.home), before);
+    assert.equal(connected('claude-code', p), true);
+    const q = one(t);
+    connect('claude-code', q);
+    put(join(q.home, LISTED), listed());
+    plugged(q);
+    assert.deepEqual(steps(plan('claude-code', q)), ['', remove, join(q.home, CLAUDE)]);
+    assert.deepEqual(steps(plan('claude-code', { ...q, app: APP, node: NODE })), [remove, join(q.home, CLAUDE)]);
+    assert.equal(connected('claude-code', q), false);
+    connect('claude-code', q);
+    assert.equal(fs.existsSync(join(q.home, CLAUDE)), false);
+  });
+
+  test('claude-code is taken out of the settings file and the server list by unplan in both forms', (t) => {
+    for (const script of [false, true]) {
+      const p = one(t);
+      const kept = { permissions: { allow: ['Bash(npm test)'] }, hooks: { PostToolUse: [GUARD], Notification: [NOTIFY] } };
+      put(join(p.home, CLAUDE), kept);
+      put(join(p.home, RECORD), { version: 2, plugins: { 'formatter@tools': [{ scope: 'user' }] } });
+      connect('claude-code', p);
+      put(join(p.home, LISTED), listed());
+      const wired = look(join(p.home, CLAUDE)) as { hooks: Record<string, unknown[]> };
+      assert.deepEqual([wired.hooks.PostToolUse.length, wired.hooks.PostToolUse[0], wired.hooks.Notification], [4, GUARD, [NOTIFY]]);
+      const changes = disconnect('claude-code', script ? { ...p, app: APP, node: NODE } : p);
+      assert.deepEqual(steps(changes), [remove, join(p.home, CLAUDE)]);
+      assert.equal(changes[0].what, `The server agent-ctx is removed from Claude Code with the command ${remove.join(' ')}.`);
+      assert.equal(changes[1].what, `The agent-ctx hooks for ${EVENTS} are removed from ${join(p.home, CLAUDE)}.`);
+      assert.deepEqual(look(join(p.home, CLAUDE)), kept);
+      assert.deepEqual(look(join(p.home, CLAUDE + BACKUP)), kept);
+    }
+  });
+
+  test('every line about one program is one line without the banned words and marks', (t) => {
+    const p = one(t);
+    const lines = connect('claude-code', p).map((change) => change.what);
+    put(join(p.home, LISTED), listed('/old/agent-ctx'));
+    lines.push(...plan('claude-code', p).map((change) => change.what));
+    plugged(p);
+    lines.push(...plan('claude-code', p).map((change) => change.what), ...unplan('claude-code', p).map((change) => change.what));
+    const q = one(t);
+    put(join(q.home, CLAUDE), '{ "hooks": {');
+    lines.push(...plan('claude-code', q).map((change) => change.what));
+    for (const agent of OTHERS) lines.push(...connect(agent, q).map((change) => change.what), ...disconnect(agent, q).map((change) => change.what));
+    assert.equal(lines.length > 20, true, String(lines.length));
+    assert.equal(lines.includes(note.what), true);
+    assert.equal(lines.some((line) => line.includes(' is not strict JSON and was left alone. To connect by hand, add ')), true);
+    for (const line of lines) {
+      assert.doesNotMatch(line, /\n|\b(it|its|itself|them|they|this|that|those)\b|[\u2013\u2014;()]| - /i, line);
+      assert.match(line, /\.$/, line);
+    }
   });
 });
