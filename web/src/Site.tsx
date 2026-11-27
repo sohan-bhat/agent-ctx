@@ -39,6 +39,11 @@ const NAMES = [
   "Gemini CLI",
   "Claude desktop",
 ];
+const START = [0, 1].map((name) => ({
+  name,
+  shown: NAMES[name].length,
+  back: false,
+}));
 const PILL = "h-11 rounded-full px-5 text-[0.9375rem]";
 
 const FAQ = [
@@ -151,39 +156,86 @@ function Top() {
   );
 }
 
+const between = (low: number, high: number) =>
+  low + Math.random() * (high - low);
+
+const idle = (at: (typeof START)[number]) =>
+  !at.back && at.shown === NAMES[at.name].length;
+
+const pause = (at: (typeof START)[number]) =>
+  idle(at)
+    ? between(1500, 5000)
+    : !at.back
+      ? between(60, 170)
+      : at.shown
+        ? between(30, 80)
+        : between(200, 600);
+
+function step(spots: typeof START, spot: number) {
+  const at = spots[spot];
+  if (!at.back) {
+    const by = idle(at) ? -1 : 1;
+    return { ...at, shown: at.shown + by, back: by < 0 };
+  }
+  if (at.shown) return { ...at, shown: at.shown - 1 };
+  const free = NAMES.map((_, name) => name).filter(
+    (name) => name !== at.name && name !== spots[1 - spot].name,
+  );
+  const name = free[Math.floor(Math.random() * free.length)];
+  return { name, shown: 1, back: false };
+}
+
+const watchHidden = (f: () => void) => {
+  document.addEventListener("visibilitychange", f);
+  return () => document.removeEventListener("visibilitychange", f);
+};
+const isHidden = () => document.hidden;
+
+function Caret({ blink }: { blink: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !blink) return;
+    let id = 0;
+    const flip = (off: boolean) => {
+      el.toggleAttribute("data-off", off);
+      id = window.setTimeout(
+        () => flip(!off),
+        off ? between(200, 550) : between(350, 900),
+      );
+    };
+    flip(false);
+    return () => {
+      clearTimeout(id);
+      el.removeAttribute("data-off");
+    };
+  }, [blink]);
+  return (
+    <span ref={ref} className="site-caret" data-blink={blink || undefined} />
+  );
+}
+
 function Typed() {
   const reduced = useReduced();
-  const [at, setAt] = useState({
-    names: [0, 1],
-    spot: 1,
-    shown: NAMES[1].length,
-    back: false,
-  });
-  const whole = NAMES[at.names[at.spot]].length;
-  const busy = at.back || at.shown < whole;
+  const hidden = useSyncExternalStore(watchHidden, isHidden);
+  const still = reduced || hidden;
+  const [spots, setSpots] = useState(START);
+  const now = useRef(spots);
   useEffect(() => {
-    if (reduced) return;
-    const id = setTimeout(
-      () => {
-        const other = 1 - at.spot;
-        if (!busy) setAt({ ...at, back: true });
-        else if (at.back && at.shown) setAt({ ...at, shown: at.shown - 1 });
-        else if (at.back)
-          setAt({
-            ...at,
-            names: at.names.map((n, i) =>
-              i === at.spot ? (n + 1) % NAMES.length : n,
-            ),
-            back: false,
-          });
-        else if (at.shown + 1 < whole) setAt({ ...at, shown: at.shown + 1 });
-        else
-          setAt({ ...at, spot: other, shown: NAMES[at.names[other]].length });
-      },
-      at.back ? (at.shown ? 55 : 500) : busy ? 110 : 2000,
-    );
-    return () => clearTimeout(id);
-  }, [at, busy, whole, reduced]);
+    if (still) return;
+    const ids = [0, 0];
+    const run = (spot: number) => {
+      const next = [...now.current];
+      next[spot] = step(next, spot);
+      now.current = next;
+      setSpots(next);
+      ids[spot] = window.setTimeout(() => run(spot), pause(next[spot]));
+    };
+    now.current.forEach((at, spot) => {
+      ids[spot] = window.setTimeout(() => run(spot), pause(at));
+    });
+    return () => ids.forEach((id) => clearTimeout(id));
+  }, [still]);
   return (
     <p className="site-typed" data-site="typed">
       <span className="sr-only">
@@ -196,17 +248,12 @@ function Typed() {
           data-room={`${lead} ${NAMES[NAMES.length - 1]}`}
         >
           <span>
+            {spot ? " " : null}
             {lead}{" "}
             <span data-site="agent">
-              {spot === at.spot
-                ? NAMES[at.names[spot]].slice(0, at.shown)
-                : NAMES[at.names[spot]]}
+              {NAMES[spots[spot].name].slice(0, spots[spot].shown)}
             </span>
-            <span
-              key={at.spot}
-              className="site-caret"
-              data-caret={spot !== at.spot ? undefined : busy ? "lit" : "next"}
-            />
+            <Caret blink={!still && idle(spots[spot])} />
           </span>
         </span>
       ))}
