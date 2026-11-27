@@ -204,11 +204,11 @@ function raw(text: string): string[] {
   return folded.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu) ?? [];
 }
 
-test('five lists of 25 to 40 plain lowercase words', () => {
+test('five safe lists of 150 to 250 plain lowercase words', () => {
   assert.deepEqual(Object.keys(STOP_LISTS).sort(), [...LANGS].sort());
   for (const l of LANGS) {
     const list = STOP_LISTS[l];
-    assert.ok(list.length >= 25 && list.length <= 40, `${l} ${list.length}`);
+    assert.ok(list.length >= 150 && list.length <= 250, `${l} ${list.length}`);
     assert.equal(new Set(list).size, list.length, l);
     for (const w of list) assert.match(w, /^[a-z]{3,}$/, `${l} ${w}`);
   }
@@ -231,6 +231,17 @@ test('function words drop out of each language and content stays', () => {
     ['avec une facture depuis toujours', ['factur']],
     ['uma fatura quando ainda paga', ['fatura', 'paga']],
     ['nella fattura senza questo sconto', ['fattura', 'sconto']],
+  ];
+  for (const [text, want] of cases) assert.deepEqual(tokens(text), want, text);
+});
+
+test('question, chat and other closed class words set the language of a short text', () => {
+  const cases: [string, string[]][] = [
+    ['hola, gracias, alguien sabe donde quedo la factura', ['sab', 'quedo', 'factura']],
+    ['danke, warum fehlt die Rechnung schon wieder', ['fehlt', 'rechnung']],
+    ['bonjour, pourquoi la facture est encore fausse', ['factur', 'fauss']],
+    ['obrigado, onde fica o boleto do aluno', ['fica', 'boleto', 'aluno']],
+    ['grazie, perché il conto non torna ancora', ['conto', 'torna']],
   ];
   for (const [text, want] of cases) assert.deepEqual(tokens(text), want, text);
 });
@@ -285,7 +296,8 @@ test('a project takes a language when at least two cards and three in ten hold i
   const of = (held: number, all: number) => projectLanguages(Array.from({ length: all }, (_, k) => (k < held ? [...es] : [])));
   assert.deepEqual([of(0, 0), of(1, 1), of(2, 2), of(1, 3), of(2, 6), of(2, 10), of(3, 10), of(9, 40), of(12, 40)], [[], [], ['es'], [], ['es'], [], ['es'], [], ['es']]);
   assert.deepEqual(projectLanguages([['es', 'pt'], ['pt'], ['es'], []]), ['es', 'pt']);
-  assert.deepEqual(languagesOf('los pagos por tarjeta desde que vence'), ['es']);
+  assert.deepEqual(languagesOf('los pagos por tarjeta desde que vence'), ['es', 'pt']);
+  assert.deepEqual(languagesOf('nosotros pagamos los recibos'), ['es']);
   assert.deepEqual(languagesOf('the car is on the plus plan'), []);
 });
 

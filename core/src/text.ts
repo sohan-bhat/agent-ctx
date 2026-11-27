@@ -5,28 +5,109 @@ const STOP = new Set(
   ).split(' '),
 );
 
+const words = (...lines: string[]): string[] => lines.join(' ').split(' ');
+
 export const STOP_LISTS: Readonly<Record<'es' | 'de' | 'fr' | 'pt' | 'it', readonly string[]>> = {
-  es: 'que los unos unas por desde hacia durante segun cuando donde porque aunque mientras pues entonces tambien muy esta estos estas esto eso otro otra otros otras mismo tanto todas cual quien ellos siempre nunca ahora fue estan sido puede'.split(' '),
-  de: 'ein eine einen einem einer eines nicht kein keine sich auch sie ich wir ihr wird werden wurde sind haben kann noch nur wie wenn dann aber weil dass durch nach zum zur beim unter ohne mehr sehr diese dieser'.split(' '),
-  fr: 'que quoi donc avec depuis selon parmi elles leur leurs notre votre vos lui aussi alors ainsi puis toujours jamais souvent tous toute toutes comme quand puisque lorsque jusqu ceux celui cette chaque quelques etre etait sont ont peut peuvent'.split(' '),
-  pt: 'uma umas uns quando porque enquanto embora porem desde durante apenas isso isto essa esta aquele aquela ela eles elas seus nosso nossa quem tambem muito muitos ainda sempre nunca depois entao aqui estao sido podem deve toda todas mesmo'.split(' '),
-  it: 'gli tra dello degli dalla dagli nel nella negli nelle sulla sulle essere hanno questo questa questi queste quello quella quelli molto molti gia piu quindi cosi tutto tutte ogni qualche alcuni senza mentre invece oppure dopo cui quale puo'.split(' '),
+  es: words(
+    'que los unos unas por desde hacia durante segun cuando donde porque aunque mientras pues entonces tambien muy esta estos estas esto eso otro otra otros otras mismo tanto todas cual quien ellos siempre nunca ahora fue estan sido puede',
+    'hasta mediante tras dentro',
+    'ello ellas usted ustedes nosotros nosotras vosotros vosotras nuestro nuestra nuestros nuestras vuestro vuestra vuestros vuestras suyo suya suyos suyas tuyo tuya',
+    'esos esas aquel aquella aquello aquellos aquellas quienes cuales cuyo cuya cuyos cuyas alguien nadie alguno alguna algunos algunas algun ninguno ninguna ningun',
+    'misma mismos mismas toda cada varios varias mucha muchos muchas poca pocos pocas tanta tantos tantas demasiado demasiada demasiados cualquier cualquiera ambos ambas',
+    'sino tampoco ademas luego',
+    'somos eres eran fueron siendo seria estoy estamos estaba estaban habia habian habra haya hubo hubiera puedo puedes podemos pueden podia podria pudo',
+    'debe deben debemos deberia tiene tienen tenemos tenia hace hacen hizo quiero quiere queremos',
+    'cuanto cuanta cuantos cuantas adonde',
+    'menos bien todavia jamas despues aqui alli ahi casi vez quizas quiza bastante apenas',
+    'hola gracias perfecto bueno buena buenos buenas listo venga adelante saludos perdon disculpa porfa porfavor sigue oye',
+  ),
+  de: words(
+    'ein eine einen einem einer eines nicht kein keine sich auch sie ich wir ihr wird werden wurde sind haben kann noch nur wie wenn dann aber weil dass durch nach zum zur beim unter ohne mehr sehr diese dieser',
+    'keinen keinem keiner keines',
+    'gegen hinter neben seit trotz wahrend wegen zwischen innerhalb ausserhalb gegenuber entlang statt vor',
+    'mich dich uns euch mir ihm ihn ihnen mein meine meinen meinem meiner dein deine deinen sein seinen seinem seiner seines ihre ihren ihrem ihrer unser unsere unseren unserem euer eure',
+    'dieses diesen diesem jener jene jenes welcher welche welches welchen jemand niemand etwas nichts alle alles jeder jede jedes jeden beide beiden viele vielen wenige einige manche selbst selber',
+    'denn sondern obwohl damit sobald sodass bevor nachdem sowie jedoch trotzdem deshalb daher darum sonst',
+    'bist seid gewesen habe hast habt hatte hatten gehabt werde wirst werdet wurden worden geworden kannst konnen konnte konnten musst mussen musste mussten',
+    'soll sollst sollen sollte sollten willst wollen wollte wollten darf durfen durfte mochte mochten',
+    'wer wem wessen wann warum wieso weshalb woher wohin womit wofur worum wozu woran worauf wodurch',
+    'schon immer nie jetzt hier dort gerade wieder ganz etwa eben eigentlich vielleicht wirklich ziemlich bereits sofort zuerst',
+    'dabei dazu davon dafur daran darauf dadurch deswegen ebenfalls sogar kaum leider naturlich nein doch eher irgendwie genau',
+    'danke bitte gerne gern klar tschuss servus moin',
+  ),
+  fr: words(
+    'que quoi donc avec depuis selon parmi elles leur leurs notre votre vos lui aussi alors ainsi puis toujours jamais souvent tous toute toutes comme quand puisque lorsque jusqu ceux celui cette chaque quelques etre etait sont ont peut peuvent',
+    'dans chez contre apres malgre envers hors durant jusque avant voici',
+    'eux moi toi soi ceci cela celle celles lequel laquelle lesquels lesquelles quelque chacun chacune aucun aucune rien autre autres plusieurs certains certaines telle telles',
+    'parce quoique tandis cependant pourtant sinon soit toutefois ensuite enfin',
+    'suis sommes etes etaient serait seront avons avez avait avaient aurait aurons peux pouvons pouvez pourrait dois devons devez doivent devrait',
+    'veux veut voulons voulez veulent voudrais faut fallait fait faites vais vont allons',
+    'pourquoi combien quel quelle quels quelles',
+    'moins trop bien deja parfois ici maintenant bientot tard beaucoup peu assez tellement tant presque surtout seulement vraiment ailleurs partout oui longtemps autant',
+    'dessus dessous dedans dehors plutot',
+    'bonjour salut merci coucou bonsoir desole allez',
+  ),
+  pt: words(
+    'uma umas uns quando porque enquanto embora porem desde durante apenas isso isto essa esta aquele aquela ela eles elas seus nosso nossa quem tambem muito muitos ainda sempre nunca depois entao aqui estao sido podem deve toda todas mesmo',
+    'numa nuns dumas neste nesta nestes nestas nesse nessa nesses nessas naquele naquela deste desta destes destas desse dessa desses dessas daquele daquela',
+    'por apos perante pra mediante',
+    'voce voces lhe lhes mim comigo contigo conosco meu minha meus minhas teu tua teus tuas nossos nossas dela deles delas esse esses essas aquilo aqueles aquelas',
+    'qual quais cujo cuja alguem ninguem tudo algum alguma alguns algumas nenhum nenhuma muita muitas pouca poucos poucas tanta tantos varios varias mesma mesmos mesmas proprio propria outra outros outras cada',
+    'que contudo todavia entretanto pois portanto conforme nem',
+    'sou somos eram foram seja sejam seria estou estamos estava estavam esteve tenho temos tinha tinham teve havia houve',
+    'posso pode podemos podia poderia pude devo devemos devem deveria vou vai vao faz fazem quero quer',
+    'onde aonde quanto quantos quantas',
+    'menos jamais quase talvez bastante demais cedo somente assim',
+    'obrigado obrigada valeu beleza otimo perfeito tchau blz vlw',
+  ),
+  it: words(
+    'gli tra dello degli dalla dagli nel nella negli nelle sulla sulle essere hanno questo questa questi queste quello quella quelli molto molti gia piu quindi cosi tutto tutte ogni qualche alcuni senza mentre invece oppure dopo cui quale puo',
+    'delle dallo dalle allo nello nei sullo sugli',
+    'sotto sopra dentro fuori contro presso oltre tramite attraverso durante insieme',
+    'noi voi miei tuo tuoi suo suoi nostro nostra nostri nostre vostro vostra vostri vostre quelle quel quali qualcuno qualcosa nessuno nessuna niente ognuno',
+    'altro altra altri altre stesso stessa stessi stesse molta molte pochi poche troppo troppa troppi alcune ciascuno ciascuna',
+    'quando dunque neanche nemmeno cioe infatti tuttavia siccome finche affinche benche sebbene',
+    'siamo siete erano ero sarebbe abbiamo avete aveva avevano avuto avra avrebbe posso puoi possiamo potete possono poteva potrebbe',
+    'devo deve dobbiamo dovete devono doveva dovrebbe voglio vuoi vuole vogliamo volete vogliono vorrei faccio fai facciamo fanno vado vai andiamo vanno sto stai stiamo stanno hai',
+    'cosa quanto quanti quante',
+    'meno ancora sempre spesso adesso bene soltanto subito tardi forse davvero proprio appena abbastanza piuttosto ovviamente comunque purtroppo finalmente infine',
+    'grazie prego perfetto benissimo ottimo buongiorno buonasera arrivederci allora certo scusa scusi favore perfavore',
+  ),
 };
 
-const EXTRA: Record<keyof typeof STOP_LISTS, string> = {
-  es: 'el la de en con del para las una un al se lo le les su sus es ha como mas pero sin entre ya hay son ni mi me te nos',
-  de: 'der die das den dem des und ist mit im am an auf aus bei fur uber um zu von vom es er man als oder war hat bis so da wo also',
-  fr: 'le la les de des du un une et est en au aux ce ces cet se sa son ses il ils elle on ne pas par pour sur dans qui mais ou nous vous tout plus tres sans mon ma mes nos car si',
-  pt: 'os as de do da dos das em no na nos nas um com para por pelo pela pelos pelas ao aos se que nao mais mas como ele seu sua suas foi tem ser sao ja',
-  it: 'il lo la le di da in con per su del dei dal al alla allo ai agli alle un una uno che non si ci ne ma come sono anche loro ha ho mi ti sul sui fra',
+const EXTRA: Record<keyof typeof STOP_LISTS, readonly string[]> = {
+  es: words(
+    'el la de en con del para las una un al se lo le les su sus es ha como mas pero sin entre ya hay son ni mi me te nos',
+    'yo tu ella mis tus os ese esa este algo nada todo todos mucho poco ante antes contra sobre si asi',
+    'era sea sean ser estar han va voy vamos iba tengo tal tan solo pronto mal aun vale genial favor',
+  ),
+  de: words(
+    'der die das den dem des und ist mit im am an auf aus bei fur uber um zu von vom es er man als oder war hat bis so da wo also',
+    'du ab ob ins ans aufs bin mag sei ware dir seine wen nun oft bald fast halt mal ja gut dank mach super toll prima hallo falls muss',
+  ),
+  fr: words(
+    'le la les de des du un une et est en au aux ce ces cet se sa son ses il ils elle on ne pas par pour sur qui mais ou nous vous tout plus tres sans mon ma mes nos car si',
+    'je tu te ca dont ton ta tes tel meme memes sous vers pendant ni',
+    'ete sera ai eu pu aura doit font va comment voila encore tot vite ensemble non pardon accord bravo super genial parfait continue svp stp',
+  ),
+  pt: words(
+    'os as de do da dos das em no na nos nas um com para pelo pela pelos pelas ao aos se nao mais mas como ele seu sua suas foi tem ser sao ja',
+    'eu tu te si ti lo la vos ou sem sob ate pro num dum duma dele outro todo todos nada algo pouco quanta',
+    'era ha vamos fez ia sim bem mal agora antes tao bom boa legal show oi ola favor',
+  ),
+  it: words(
+    'il lo la le di da in con per su del dei dal al alla ai agli alle un una uno che non si ci ne ma come sono anche loro ha ho mi ti sul sui fra',
+    'io tu lei vi li te se ce ve mio mia mie tue sua sue chi tutti nulla della dai col coi verso prima pure poi sia ed od',
+    'sei era sara devi sta fa va qui qua ora mai male presto quasi solo dove quanta perche bravo salve ciao',
+  ),
 };
 
 export const FULL_LISTS: Readonly<Record<keyof typeof STOP_LISTS, readonly string[]>> = {
-  es: [...STOP_LISTS.es, ...EXTRA.es.split(' ')],
-  de: [...STOP_LISTS.de, ...EXTRA.de.split(' ')],
-  fr: [...STOP_LISTS.fr, ...EXTRA.fr.split(' ')],
-  pt: [...STOP_LISTS.pt, ...EXTRA.pt.split(' ')],
-  it: [...STOP_LISTS.it, ...EXTRA.it.split(' ')],
+  es: [...STOP_LISTS.es, ...EXTRA.es],
+  de: [...STOP_LISTS.de, ...EXTRA.de],
+  fr: [...STOP_LISTS.fr, ...EXTRA.fr],
+  pt: [...STOP_LISTS.pt, ...EXTRA.pt],
+  it: [...STOP_LISTS.it, ...EXTRA.it],
 };
 
 const SAFE_BY_WORD = new Map<string, string[]>();
