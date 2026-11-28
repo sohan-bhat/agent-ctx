@@ -77,9 +77,10 @@ export interface SpaceProps {
   onPanel?: (open: boolean) => void;
   prefer?: string | null;
   segments?: boolean;
+  wait?: boolean;
 }
 
-export function Space({ projects, agents, items, reads, queue, start, end, time, clockOnly = false, actions, notice, aside, label, onTime, onHold, onPanel, prefer = null, segments = true }: SpaceProps) {
+export function Space({ projects, agents, items, reads, queue, start, end, time, clockOnly = false, actions, notice, aside, label, onTime, onHold, onPanel, prefer = null, segments = true, wait = false }: SpaceProps) {
   const narrow = useNarrow();
   const webgl = useMemo(hasWebGL, []);
   const [ready, setReady] = useState(false);
@@ -150,23 +151,25 @@ export function Space({ projects, agents, items, reads, queue, start, end, time,
           <>
             <Fallback fallback={<FailedScene onFail={() => setBroken(true)} />}>
               <Suspense fallback={null}>
-                <Scene
-                  projects={projects}
-                  agents={agents}
-                  items={items}
-                  reads={reads}
-                  time={time}
-                  span={span}
-                  focusKey={focus}
-                  selected={mode === 'scene' ? selected : null}
-                  panel={panel}
-                  inline={!narrow}
-                  label={label}
-                  onSelect={select}
-                  onPlate={(key) => setFocus(key)}
-                  onHold={(h) => onHold?.(h)}
-                  onReady={() => setReady(true)}
-                />
+                {!wait && (
+                  <Scene
+                    projects={projects}
+                    agents={agents}
+                    items={items}
+                    reads={reads}
+                    time={time}
+                    span={span}
+                    focusKey={focus}
+                    selected={mode === 'scene' ? selected : null}
+                    panel={panel}
+                    inline={!narrow}
+                    label={label}
+                    onSelect={select}
+                    onPlate={(key) => setFocus(key)}
+                    onHold={(h) => onHold?.(h)}
+                    onReady={() => setReady(true)}
+                  />
+                )}
               </Suspense>
             </Fallback>
             {list(false)}

@@ -260,25 +260,80 @@ function Caret({ blink }: { blink: boolean }) {
   );
 }
 
+const drawing = new EventTarget();
+let drawn = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const isDrawn = () => drawn;
+const watchDrawn = (f: () => void) => {
+  drawing.addEventListener("change", f);
+  return () => drawing.removeEventListener("change", f);
+};
+const finish = () => {
+  if (drawn) return;
+  drawn = true;
+  drawing.dispatchEvent(new Event("change"));
+};
+
 function Logo() {
+  const reduced = useReduced();
+  const ended = useSyncExternalStore(watchDrawn, isDrawn);
+  const done = reduced || ended;
+  const ref = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    const svg = ref.current;
+    if (done || !svg) {
+      finish();
+      return;
+    }
+    let end = 0;
+    let id = 0;
+    let late = 0;
+    const start = () => {
+      cancelAnimationFrame(id);
+      clearTimeout(late);
+      svg.setAttribute("data-draw", "run");
+      end = window.setTimeout(finish, 2600);
+    };
+    const look = (stamp: number) => {
+      if (performance.now() - stamp < 34) start();
+      else id = requestAnimationFrame(look);
+    };
+    id = requestAnimationFrame(look);
+    late = window.setTimeout(start, 700);
+    return () => {
+      cancelAnimationFrame(id);
+      clearTimeout(late);
+      clearTimeout(end);
+    };
+  }, [done]);
   return (
     <svg
+      ref={ref}
       className="site-logo"
       data-site="logo"
+      data-draw={done ? "done" : "wait"}
       viewBox="0 0 1210.002 172"
       aria-hidden
       focusable="false"
+      onAnimationEnd={(e) => {
+        if (
+          e.animationName === "site-logo-line" &&
+          (e.target as Element).parentElement === e.currentTarget.lastElementChild
+        )
+          finish();
+      }}
     >
       {LOGO.map((d, i) => (
-        <path
+        <g
           key={d}
-          d={d}
-          pathLength={1}
-          data-part={i < 3 ? "mark" : "word"}
           style={
-            { "--at": `${i < 3 ? i * 0.18 : 0.5 + (i - 3) * 0.055}s` } as CSSProperties
+            { "--at": `${(0.5 * (1.06 ** i - 1)).toFixed(3)}s` } as CSSProperties
           }
-        />
+        >
+          <path d={d} data-part={i < 3 ? "mark" : "word"} />
+          {d.split(/(?=M)/).map((line) => (
+            <path key={line} d={line} pathLength={1} data-line="" />
+          ))}
+        </g>
       ))}
     </svg>
   );
@@ -447,6 +502,7 @@ function Demo() {
   const [time, setTime] = useState(reduced ? DEMO_END : DEMO_START);
   const [seen, setSeen] = useState(false);
   const [stopped, setStopped] = useState(reduced);
+  const wait = !useSyncExternalStore(watchDrawn, isDrawn);
   const idle = useRef({ held: false, open: false });
   useEffect(() => {
     const el = frame.current;
@@ -459,7 +515,7 @@ function Demo() {
     return () => io.disconnect();
   }, [seen]);
   useEffect(() => {
-    if (!seen || stopped) return;
+    if (!seen || stopped || wait) return;
     let id = 0;
     let last = performance.now();
     let due = 0;
@@ -476,7 +532,7 @@ function Demo() {
     };
     id = requestAnimationFrame(step);
     return () => cancelAnimationFrame(id);
-  }, [seen, stopped]);
+  }, [seen, stopped, wait]);
   useEffect(() => {
     if (time >= DEMO_END) setStopped(true);
   }, [time]);
@@ -494,9 +550,11 @@ function Demo() {
       ref={frame}
       className="site-demo"
       data-site="demo"
+      data-wait={wait || undefined}
       onWheelCapture={scroll}
     >
       <Space
+        wait={wait}
         projects={DEMO_PROJECTS}
         agents={AGENTS}
         items={DEMO_ITEMS}

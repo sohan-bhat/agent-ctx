@@ -67,80 +67,88 @@
   fill: currentColor;
 }
 
+.site-logo [data-line] {
+  fill: none;
+  stroke-width: 5.375;
+  stroke-dasharray: 1;
+  stroke-linejoin: miter;
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  .site-logo path {
-    animation: site-logo-draw 0.6s cubic-bezier(0.4, 0, 0.2, 1) var(--at) backwards;
+  .site-logo[data-draw='wait'] {
+    visibility: hidden;
+  }
+
+  .site-logo[data-draw='run'] [data-part] {
+    animation: site-logo-fill 1.5s linear calc(0.12s + var(--at)) backwards;
+  }
+
+  .site-logo[data-draw='run'] [data-line] {
+    animation: site-logo-line 1.5s linear calc(0.12s + var(--at)) backwards;
   }
 
   @media (hover: hover) and (pointer: fine) {
-    .site-logo:hover path {
-      animation:
-        site-logo-draw 0.6s cubic-bezier(0.4, 0, 0.2, 1) var(--at) backwards,
-        site-logo-redraw 0.56s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--at) * 0.25);
+    .site-logo[data-draw='done']:hover [data-part] {
+      animation: site-logo-refill 0.78s linear calc(var(--at) * 0.45);
+    }
+
+    .site-logo[data-draw='done']:hover [data-line] {
+      animation: site-logo-line 0.78s linear calc(var(--at) * 0.45) backwards;
     }
   }
 }
 
-@keyframes site-logo-draw {
+@keyframes site-logo-line {
   from {
-    fill-opacity: 0;
     stroke: currentColor;
-    stroke-width: 7;
-    stroke-dasharray: 1;
     stroke-dashoffset: 1;
     stroke-opacity: 1;
+    animation-timing-function: cubic-bezier(0.3, 0.2, 0.65, 1);
   }
 
-  70% {
-    fill-opacity: 0;
+  73.333% {
+    stroke-dashoffset: 0;
+  }
+
+  80% {
     stroke-opacity: 1;
+    animation-timing-function: cubic-bezier(0.3, 0.2, 0.65, 1);
   }
 
   to {
-    fill-opacity: 1;
     stroke: currentColor;
-    stroke-width: 7;
-    stroke-dasharray: 1;
     stroke-dashoffset: 0;
     stroke-opacity: 0;
   }
 }
 
-@keyframes site-logo-redraw {
-  from {
-    fill-opacity: 1;
-    stroke: currentColor;
-    stroke-width: 7;
-    stroke-dasharray: 1;
-    stroke-dashoffset: 0;
-    stroke-opacity: 0;
-  }
-
-  15% {
+@keyframes site-logo-fill {
+  from,
+  52% {
     fill-opacity: 0;
-    stroke-dashoffset: 0;
-    stroke-opacity: 1;
+    animation-timing-function: cubic-bezier(0.3, 0.2, 0.65, 1);
   }
 
-  45% {
-    fill-opacity: 0;
-    stroke-dashoffset: 1;
-    stroke-opacity: 1;
-  }
-
-  80% {
-    fill-opacity: 0;
-    stroke-dashoffset: 0;
-    stroke-opacity: 1;
-  }
-
+  84%,
   to {
     fill-opacity: 1;
-    stroke: currentColor;
-    stroke-width: 7;
-    stroke-dasharray: 1;
-    stroke-dashoffset: 0;
-    stroke-opacity: 0;
+  }
+}
+
+@keyframes site-logo-refill {
+  from {
+    fill-opacity: 1;
+  }
+
+  14%,
+  52% {
+    fill-opacity: 0;
+    animation-timing-function: cubic-bezier(0.3, 0.2, 0.65, 1);
+  }
+
+  84%,
+  to {
+    fill-opacity: 1;
   }
 }
 
