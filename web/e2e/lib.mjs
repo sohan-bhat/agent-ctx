@@ -7,10 +7,10 @@ const PW = process.env.PW ?? '/usr/local/lib/node_modules/@playwright/cli/node_m
 
 export const engine = process.env.ENGINE ?? 'chromium';
 
-export async function browser(extra = []) {
+export async function browser(extra = [], skip = []) {
   if (engine !== 'chromium' && !process.env.PLAYWRIGHT_BROWSERS_PATH) process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(web, '..', '..', '..', 'pw-browsers');
   const pw = await import(PW);
-  if (engine === 'chromium') return pw.chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', ...extra] });
+  if (engine === 'chromium') return pw.chromium.launch({ channel: 'chrome', headless: true, ignoreDefaultArgs: skip, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', ...extra] });
   return pw[engine].launch({ headless: true });
 }
 
@@ -57,6 +57,7 @@ export async function context(b, { w, h, scheme = 'light', signedIn = false, dpr
 
 export async function ready(page) {
   await page.waitForSelector('[aria-roledescription=space][data-ready="1"]', { timeout: 30000 });
+  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-intro'), null, { timeout: 10000 });
 }
 
 export const space = (page) =>

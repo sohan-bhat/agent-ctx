@@ -1288,6 +1288,317 @@ async function lost(b, site) {
   }
 }
 
+function stilled() {
+  const timer = window.setTimeout.bind(window);
+  window.setTimeout = (f, ms, ...rest) => (ms === 2100 ? 0 : timer(f, ms, ...rest));
+  const intro = (window.__intro = { held: [], end: 0, fade: 0, clear: 0, free: null, plan: [], frames: [], boxes: new Set(), back: null });
+  intro.parts = () => {
+    const out = [];
+    for (let e = document.querySelector('h1'); e && e !== document.body; e = e.parentElement) for (const other of e.parentElement.children) if (other !== e) out.push(other);
+    return out;
+  };
+  intro.shown = () => intro.parts().filter((e) => getComputedStyle(e).visibility === 'visible' && getComputedStyle(e).opacity === '1').length;
+  const place = () =>
+    intro
+      .parts()
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        return [r.left, r.top + scrollY, r.width, r.height].map((v) => Math.round(v * 100) / 100).join(' ');
+      })
+      .join(' | ');
+  intro.seek = (share) => {
+    for (const a of intro.held) a.currentTime = intro.end * share;
+  };
+  intro.release = () => {
+    for (const a of intro.held) {
+      a.currentTime = intro.end - 60;
+      a.play();
+    }
+  };
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) requestAnimationFrame(() => (intro.back = { mode: document.documentElement.getAttribute('data-intro'), shown: intro.shown(), parts: intro.parts().length }));
+  });
+  new MutationObserver(() => {
+    const mode = document.documentElement.getAttribute('data-intro');
+    if (mode === 'fade' && !intro.fade) {
+      intro.fade = performance.now();
+      intro.free = document.documentElement.scrollHeight > innerHeight;
+      intro.plan = document.getAnimations().filter((a) => intro.parts().includes(a.effect?.target)).map((a) => `${a.transitionProperty} ${Math.round(Number(a.effect.getComputedTiming().endTime))}`);
+      const tick = () => {
+        const now = performance.now();
+        const seen = intro.parts().map((e) => Number(getComputedStyle(e).opacity));
+        intro.frames.push([now - intro.fade, Math.min(...seen), Math.max(...seen), !!document.querySelector('[data-site=demo][data-wait]')]);
+        intro.boxes.add(place());
+        if (!intro.clear && seen.every((v) => v === 1)) intro.clear = now;
+        if (now - intro.fade < 1200) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+    if (intro.held.length) return;
+    const svg = document.querySelector('[data-site=logo]');
+    if (!svg || svg.getAttribute('data-draw') !== 'run') return;
+    intro.held = [...svg.querySelectorAll('path')].flatMap((e) => e.getAnimations());
+    intro.end = Math.max(0, ...intro.held.map((a) => Number(a.effect.getComputedTiming().endTime) || 0));
+    for (const a of intro.held) a.pause();
+    intro.seek(0.25);
+    intro.boxes.add(place());
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-draw', 'data-intro'] });
+}
+
+function opened() {
+  const io = new MutationObserver(() => {
+    const h1 = document.querySelector('h1');
+    if (!h1 || !document.querySelector('[data-site=faq]')) return;
+    io.disconnect();
+    const parts = [];
+    for (let e = h1; e && e !== document.body; e = e.parentElement) for (const other of e.parentElement.children) if (other !== e) parts.push(other);
+    const shown = () => parts.filter((e) => getComputedStyle(e).visibility === 'visible' && getComputedStyle(e).opacity === '1').length;
+    const free = () => shown() === parts.length && document.documentElement.getAttribute('data-intro') !== 'hide' && document.documentElement.scrollHeight > innerHeight;
+    const first = (window.__first = { mode: document.documentElement.getAttribute('data-intro'), shown: shown(), parts: parts.length, tall: document.documentElement.scrollHeight > innerHeight, free: free() ? 0 : -1 });
+    let from = 0;
+    const tick = () => {
+      const now = performance.now();
+      from ||= now;
+      if (first.free < 0 && free()) first.free = now - from;
+      if (first.free < 0 && now - from < 6000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  io.observe(document, { subtree: true, childList: true });
+}
+
+const twice = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))));
+
+async function hold(b, site, size) {
+  const made = await context(b, size);
+  await made.ctx.addInitScript(stilled);
+  await made.page.goto(site.url, { waitUntil: 'commit' });
+  const held = await waitFor(() => made.page.evaluate(() => (window.__intro?.held.length ?? 0) > 0).catch(() => false), 8000);
+  return { ...made, held: !!held };
+}
+
+async function faded(page) {
+  await page.evaluate(() => window.__intro?.release()).catch(() => {});
+  await waitFor(() => page.evaluate(() => window.__intro.fade > 0 && performance.now() - window.__intro.fade > 1250).catch(() => false), 6000);
+}
+
+async function alone(b, site, w, h, scheme) {
+  const { ctx, page, held } = await hold(b, site, { w, h, scheme });
+  try {
+    const ground = GROUND[scheme].match(/\d+/g).map(Number);
+    const out = [];
+    for (const share of [0.25, 0.5, 0.9]) {
+      await page.evaluate((v) => window.__intro?.seek(v), share);
+      await twice(page);
+      const at = await box(page, '[data-site=logo]');
+      const shot = decode(await page.screenshot());
+      const seen = { off: 0, on: 0 };
+      for (let y = 0; y < shot.h; y++)
+        for (let x = 0; x < shot.w; x++) {
+          const i = (y * shot.w + x) * shot.n;
+          if (shot.px[i] === ground[0] && shot.px[i + 1] === ground[1] && shot.px[i + 2] === ground[2]) continue;
+          seen[at && x >= at.x - 2 && x < at.x + at.width + 2 && y >= at.y - 2 && y < at.y + at.height + 2 ? 'on' : 'off']++;
+        }
+      out.push(seen);
+    }
+    check(`${scheme} ${w}x${h} at three moments of the drawing no pixel outside the box of the logo differs from the plain ground`, held && out.every((v) => v.off === 0 && v.on > 40), out.map((v) => `${v.off} outside and ${v.on} inside`).join(', '));
+  } finally {
+    await ctx.close();
+  }
+}
+
+async function boxed(page) {
+  const boxes = [];
+  for (const share of [0.25, 0.5, 0.9]) {
+    await page.evaluate((v) => window.__intro?.seek(v), share);
+    await twice(page);
+    boxes.push(await box(page, '[data-site=logo]'));
+  }
+  const bar = () => page.evaluate(() => innerWidth - document.documentElement.clientWidth);
+  const wide = [await bar()];
+  await faded(page);
+  boxes.push(await box(page, '[data-site=logo]'));
+  wide.push(await bar());
+  const drift = Math.max(...boxes.flatMap((r) => ['x', 'y', 'width', 'height'].map((k) => Math.abs((r?.[k] ?? 1e6) - (boxes[0]?.[k] ?? 0)))));
+  return { drift, wide, told: `a logo at ${boxes.map((r) => (r ? `${r.x} ${r.y}` : 'missing')).join(', ')} with a scroll bar of ${wide.join(' then ')} px` };
+}
+
+async function late(b, site, name, script) {
+  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+  try {
+    await ctx.addInitScript(opened);
+    await ctx.addInitScript(script);
+    await page.goto(site.url, { waitUntil: 'commit' });
+    await waitFor(() => page.evaluate(() => (window.__first?.free ?? -1) >= 0).catch(() => false), 7000);
+    const first = await page.evaluate(() => window.__first ?? null).catch(() => null);
+    check(`${name} the page is hidden at first and visible and free at the latest 3 s after the first paint`, first?.mode === 'hide' && first.shown === 0 && first.free > 0 && first.free <= 3000, first ? `${first.shown} of ${first.parts} parts shown at first, free after ${Math.round(first.free)} ms` : 'no page');
+  } finally {
+    await ctx.close();
+  }
+}
+
+async function intro(b, site, away) {
+  for (const scheme of ['dark', 'light']) for (const [w, h] of [[1440, 900], [390, 664]]) await alone(b, site, w, h, scheme);
+
+  const one = await hold(b, site, { w: 1440, h: 900, scheme: 'dark' });
+  try {
+    const { page } = one;
+    const acts = [['a wheel turn', () => page.mouse.wheel(0, 600)], ...['Space', 'PageDown', 'End', 'ArrowDown'].map((key) => [key, () => page.keyboard.press(key)])];
+    const moved = async () => {
+      const out = [];
+      for (const [, act] of acts) {
+        await page.evaluate(() => {
+          document.activeElement?.blur?.();
+          scrollTo(0, 0);
+        });
+        await act();
+        await page.waitForTimeout(350);
+        out.push(await top(page));
+      }
+      return out;
+    };
+    await page.mouse.move(300, 60);
+    const before = await moved();
+    const tabs = [];
+    for (let i = 0; i < 2; i++) {
+      await page.keyboard.press('Tab');
+      tabs.push(await page.evaluate(() => document.activeElement?.tagName ?? ''));
+    }
+    const spot = await boxed(page);
+    const fade = await page.evaluate(() => {
+      const i = window.__intro;
+      return { took: i.clear ? i.clear - i.fade : -1, mid: i.frames.filter((f) => f[1] > 0 && f[2] < 1).length, frames: i.frames.length, early: i.frames.filter((f) => f[2] < 1 && !f[3]).length, plan: i.plan, boxes: [...i.boxes].length, free: i.free, shown: i.shown(), parts: i.parts().length, mode: document.documentElement.getAttribute('data-intro') };
+    });
+    await page.keyboard.press('Tab');
+    const first = await page.evaluate(() => `${document.activeElement?.tagName} ${document.activeElement?.getAttribute('href') ?? ''}`);
+    const after = await moved();
+    check('while the logo draws the page does not scroll by a wheel turn or by the keys Space, PageDown, End and ArrowDown, and after the drawing each of those scrolls the page', one.held && before.every((v) => v === 0) && after.every((v) => v > 0), `${acts.map((v) => v[0]).join(', ')} moved the page by ${before.join(', ')} px and then by ${after.join(', ')} px`);
+    check(
+      'every other part reaches full opacity within 0.3 s after the end of the drawing by a fade of the opacity alone, the lock ends in the same moment, no part changes place or size and the scene waits for the end of the fade',
+      fade.took > 0 && fade.took <= 300 && fade.mid > 0 && fade.early === 0 && fade.parts > 5 && fade.plan.length === fade.parts && new Set(fade.plan).size === 1 && /^opacity (1\d\d|2\d\d)$/.test(fade.plan[0]) && fade.free === true && fade.boxes === 1 && fade.shown === fade.parts && fade.mode === null,
+      `full after ${Math.round(fade.took)} ms with ${fade.mid} of ${fade.frames} frames in between and the scene asked for in ${fade.early} of those, ${fade.plan.length} transitions of ${[...new Set(fade.plan)].join(' and ') || 'nothing'} ms, ${fade.boxes} sets of boxes, page ${fade.free ? 'free' : 'locked'} at the start of the fade`,
+    );
+    check('while the logo draws the Tab key reaches no part, and after the fade the first Tab reaches the link to the demo as on main', one.held && tabs.every((v) => v === 'BODY') && first === 'A #space', `${tabs.join(' and ')} while drawing, then ${first}`);
+
+    let wide = { drift: 1e6, wide: [0, 0], told: 'no browser with a scroll bar' };
+    let back = null;
+    if (engine === 'chromium') {
+      const real = await browser([], ['--hide-scrollbars', '--disable-back-forward-cache']);
+      try {
+        const bars = await hold(real, site, { w: 1440, h: 900, scheme: 'dark' });
+        wide = await boxed(bars.page);
+        await bars.ctx.close();
+        const gone = await hold(real, site, { w: 1440, h: 900, scheme: 'dark' });
+        await gone.page.goto(away.url, { waitUntil: 'commit' });
+        await gone.page.waitForSelector('[data-site=logo]', { timeout: 8000 }).catch(() => {});
+        await gone.page.goBack({ waitUntil: 'commit', timeout: 5000 }).catch(() => {});
+        await waitFor(() => gone.page.evaluate(() => !!window.__intro?.back).catch(() => false), 4000);
+        back = await gone.page.evaluate(() => window.__intro?.back ?? null).catch(() => null);
+        if (back) {
+          await gone.page.mouse.move(300, 60);
+          await gone.page.mouse.wheel(0, 500);
+          await gone.page.waitForTimeout(350);
+          back.moved = await top(gone.page);
+        }
+        await gone.ctx.close();
+      } finally {
+        await real.close();
+      }
+      check('the box of the logo is equal within 0.1 px while the logo draws and one second after, also with a scroll bar that has a width', one.held && spot.drift <= 0.1 && wide.drift <= 0.1 && wide.wide.every((v) => v > 0), `${spot.told}, and ${wide.told}`);
+      check('after a return from the back and forward cache the whole page is visible at once and scrolls freely', !!back && back.mode === null && back.parts > 5 && back.shown === back.parts && back.moved > 0, back ? `${back.shown} of ${back.parts} parts shown in the first frame, a wheel turn moved the page by ${back.moved} px` : 'the page did not come back from the cache');
+    } else console.log('NOTE the scroll bar with a width and the back and forward cache need Chrome and were left out');
+  } finally {
+    await one.ctx.close();
+  }
+
+  if (engine === 'chromium') {
+    const two = await hold(b, site, { w: 390, h: 664, scheme: 'dark' });
+    try {
+      const cdp = await two.ctx.newCDPSession(two.page);
+      const pull = async () => {
+        await two.page.evaluate(() => scrollTo(0, 0));
+        await touchDrag(two.page, cdp, 195, 330, 195, 110);
+        await two.page.waitForTimeout(400);
+        return top(two.page);
+      };
+      const before = await pull();
+      await faded(two.page);
+      const after = await pull();
+      check('at 390x664 a touch drag does not scroll the page while the logo draws, and the same drag scrolls the page after the drawing', two.held && before === 0 && after > 0, `${before} px and then ${after} px`);
+    } finally {
+      await two.ctx.close();
+    }
+  }
+
+  for (const [name, size, hash] of [['with reduced motion', { reduced: true }, ''], ['with #faq in the address', {}, '#faq']]) {
+    const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark', ...size });
+    try {
+      await ctx.addInitScript(opened);
+      await page.goto(`${site.url}${hash}`);
+      await waitFor(() => page.evaluate(() => !!window.__first).catch(() => false), 8000);
+      await twice(page);
+      const first = await page.evaluate(() => ({ ...(window.__first ?? {}), faq: document.getElementById('faq')?.getBoundingClientRect().top ?? -1, high: innerHeight }));
+      const from = await top(page);
+      await page.mouse.move(300, 60);
+      await page.mouse.wheel(0, hash ? -300 : 300);
+      await page.waitForTimeout(350);
+      const to = await top(page);
+      const open = first.mode === null && first.parts > 5 && first.shown === first.parts && first.tall && from !== to;
+      if (hash) check(`${name} the whole page is visible at the first paint, scrolls freely and has the FAQ in view`, open && first.faq >= 0 && first.faq < first.high, `${first.shown} of ${first.parts} parts shown, FAQ at ${Math.round(first.faq)} px of ${first.high}, a wheel turn moved the page from ${from} to ${to} px`);
+      else check(`${name} the whole page is visible at the first paint and scrolls freely`, open, `${first.shown} of ${first.parts} parts shown, a wheel turn moved the page from ${from} to ${to} px`);
+    } finally {
+      await ctx.close();
+    }
+  }
+
+  const round = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+  try {
+    await round.ctx.addInitScript(opened);
+    await round.page.goto(site.url);
+    await ready(round.page);
+    await round.page.goto(away.url);
+    await round.page.waitForSelector('[data-site=logo]');
+    await round.page.goBack();
+    await waitFor(() => round.page.evaluate(() => !!window.__first).catch(() => false), 8000);
+    await twice(round.page);
+    const first = await round.page.evaluate(() => ({ ...(window.__first ?? {}), kind: performance.getEntriesByType('navigation')[0]?.type ?? '' }));
+    check('after a return by the back button without the cache the whole page is visible at the first paint', first.kind === 'back_forward' && first.mode === null && first.parts > 5 && first.shown === first.parts && first.tall, `${first.kind} load with ${first.shown} of ${first.parts} parts shown`);
+  } finally {
+    await round.ctx.close();
+  }
+
+  await late(b, site, 'with the end event of the drawing lost', () => {
+    for (const name of ['animationend', 'animationcancel']) window.addEventListener(name, (e) => e.stopImmediatePropagation(), true);
+  });
+  await late(b, site, 'with a drawing that never starts', () => {
+    const add = () => {
+      const style = document.createElement('style');
+      style.textContent = '[data-site=logo] * { animation: none !important; }';
+      document.documentElement.append(style);
+    };
+    if (document.documentElement) add();
+    else new MutationObserver((_, io) => document.documentElement && (io.disconnect(), add())).observe(document, { childList: true });
+  });
+
+  const again = await hold(b, site, { w: 1440, h: 900, scheme: 'dark' });
+  try {
+    const { page } = again;
+    await faded(page);
+    await page.evaluate(() => scrollTo(0, 1500));
+    await page.waitForTimeout(300);
+    const from = await top(page);
+    await page.reload({ waitUntil: 'commit' });
+    const held = await waitFor(() => page.evaluate(() => (window.__intro?.held.length ?? 0) > 0).catch(() => false), 8000);
+    await page.waitForTimeout(600);
+    const during = { y: await top(page), mode: await page.evaluate(() => document.documentElement.getAttribute('data-intro')), logo: await box(page, '[data-site=logo]') };
+    await faded(page);
+    const rest = await top(page);
+    check('after a reload at a scrolled place the logo draws alone at the top of the page and the page stays at the top', !!held && from > 1000 && during.mode === 'hide' && during.y === 0 && inside(during.logo, 1440, 900) && rest === 0, `reload at ${from} px, ${during.y} px while drawing with the logo at ${span(during.logo)}, ${rest} px after`);
+  } finally {
+    await again.ctx.close();
+  }
+}
+
 async function shoot(b, site, w, h, scheme, name = '') {
   const { ctx, page, touch } = await context(b, { w, h, scheme, dpr: 2, reduced: true });
   try {
@@ -1356,6 +1667,7 @@ try {
   await run('switch point walk', () => fit(b, plain));
   await run('logo walk', () => logo(b, plain));
   await run('lost event walk', () => lost(b, plain));
+  await run('intro walk', () => intro(b, plain, later));
   if (engine === 'chromium') await run('slowed walk', () => slowed(b, plain));
   else console.log('NOTE the slowed walk needs the processor switch of Chrome and was left out');
   if (shots) {
