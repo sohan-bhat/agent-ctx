@@ -785,12 +785,27 @@ async function walk(b, site, w, h, scheme) {
     const was = await toggle.getAttribute('aria-checked').catch(() => null);
     await page.evaluate(() => scrollTo(0, 0));
     const wears = () => page.evaluate(() => [...document.querySelectorAll('[data-site=typed] [data-site=unit]')].map((u) => u.querySelector('[data-site=mark] img')?.currentSrc ?? ''));
-    await waitFor(async () => (await wears()).some(Boolean), 6000, 100);
+    await page.evaluate(
+      () =>
+        new Promise((done) => {
+          const was = new Map();
+          const end = performance.now() + 45000;
+          const look = () => {
+            for (const box of document.querySelectorAll('[data-site=typed] [data-site=box]')) {
+              const whole = !!box.querySelector('.site-caret[data-blink]') && /-on-/.test(box.querySelector('[data-site=mark] img')?.currentSrc ?? '');
+              if ((whole && was.get(box) === false) || performance.now() > end) return done();
+              was.set(box, whole);
+            }
+            setTimeout(look, 30);
+          };
+          look();
+        }),
+    );
     const worn0 = (await wears()).map(worn);
     await tap(toggle).catch(() => {});
     const worn1 = (await wears()).map(worn);
     const swapped = worn0.map((v, i) => [v, worn1[i]]).filter(([v, x]) => v && x);
-    check(`${tag} the marks follow the theme switch at once`, swapped.length > 0 && swapped.every(([v, x]) => (v === 'claude.svg' ? x === v : v.endsWith(`-on-${scheme}.svg`) && x === v.replace(`-on-${scheme}.svg`, `-on-${other}.svg`))), swapped.map((v) => v.join(' then ')).join(', '));
+    check(`${tag} the marks follow the theme switch at once`, swapped.some(([v]) => v !== 'claude.svg') && swapped.every(([v, x]) => (v === 'claude.svg' ? x === v : v.endsWith(`-on-${scheme}.svg`) && x === v.replace(`-on-${scheme}.svg`, `-on-${other}.svg`))), swapped.map((v) => v.join(' then ')).join(', '));
     await centre(page);
     await page.waitForTimeout(900);
     const forced = { ground: await ground(page), light: (await paint(page)).light, on: await toggle.getAttribute('aria-checked').catch(() => null) };
