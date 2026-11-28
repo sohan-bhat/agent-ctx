@@ -535,6 +535,14 @@ async function walk(b, site, w, h, scheme) {
 
     const first = [await box(page, 'h1'), await box(page, '[data-site=typed]'), await box(page, '[data-site=line]'), await box(page, '[data-site=action] a >> nth=0'), await box(page, '[data-site=action] a >> nth=1')];
     check(`${tag} the name, the typed line, the sentence and both pills are inside the first screen`, first.every((r) => inside(r, w, h)), first.map(span).join(', '));
+    const rows = await page.evaluate(() => {
+      const range = document.createRange();
+      range.selectNodeContents(document.querySelector('[data-site=line]'));
+      const by = new Map();
+      for (const r of range.getClientRects()) by.set(Math.round(r.top), (by.get(Math.round(r.top)) ?? 0) + r.width);
+      return [...by.values()].map((v) => Math.round(v));
+    });
+    check(`${tag} no row of the sentence under the typed line is shorter than half of the longest row`, rows.length > 0 && Math.min(...rows) >= Math.max(...rows) / 2, `rows of ${rows.join(' and ')} px`);
     const frame = await box(page, '[data-site=demo]');
     const column = await box(page, '[data-site=column]');
     check(`${tag} the top of the demo frame is inside the first screen`, !!frame && frame.y > 0 && frame.y < h - 40, `frame ${span(frame)}`);
