@@ -323,10 +323,12 @@ function Typed() {
           <span>
             {" "}
             {lead}{" "}
-            <span data-site="agent">
-              {NAMES[spots[spot].name].slice(0, spots[spot].shown)}
+            <span className="site-box" data-site="box">
+              <span data-site="agent">
+                {NAMES[spots[spot].name].slice(0, spots[spot].shown)}
+              </span>
+              <Caret blink={!still && idle(spots[spot])} />
             </span>
-            <Caret blink={!still && idle(spots[spot])} />
             {spot ? <span data-site="tail">{TAIL}</span> : null}
           </span>
         </span>

@@ -148,7 +148,7 @@
   container-type: inline-size;
   margin-top: 1.25rem;
   font-size: clamp(1.0625rem, 0.98rem + 0.4vw, 1.1875rem);
-  line-height: 1.4;
+  line-height: 1.7;
 }
 
 .site-typed [data-site='open'] {
@@ -162,7 +162,7 @@
 .site-typed [data-room]::before {
   content: attr(data-room) attr(data-tail);
   grid-area: 1 / 1;
-  padding-right: 3px;
+  padding-right: calc(5px + 0.7em);
   visibility: hidden;
 }
 
@@ -182,7 +182,7 @@
   }
 }
 
-@container (min-width: 27.8em) {
+@container (min-width: 29.4em) {
   .site-typed [data-room] {
     display: inline;
     white-space: nowrap;
@@ -191,6 +191,14 @@
   .site-typed [data-room]::before {
     content: none;
   }
+}
+
+.site-box {
+  padding-inline: 0.35em;
+  border: 1px solid var(--border);
+  border-radius: 0.33em;
+  background: var(--muted);
+  white-space: nowrap;
 }
 
 .site-caret {
