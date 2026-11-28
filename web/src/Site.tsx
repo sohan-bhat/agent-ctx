@@ -513,7 +513,7 @@ function Site() {
             <Logo />
           </h1>
           <Typed />
-          <p data-site="line">Local memory shared by your coding agents.</p>
+          <p data-site="line">Universal memory shared by your coding agents.</p>
           <Action />
         </div>
         <Demo />
