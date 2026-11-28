@@ -32,7 +32,7 @@ agent-ctx is one memory on a person's computer, shared by agent products of diff
 - A hook is one short run of hook.mjs with no MCP library, or one run of the program with the word hook in the self contained form. Every run ends with exit 0 and an empty stderr, and the wait for the memory file ends after one second.
 - With a mirror on, one `agent-ctx sync` is started as a detached process on SessionStart and on Stop, at most once per 60 seconds, and the hook run ends at once. No other program is started from hook.mjs.
 - The memory file is never placed in a mirror. Every record read from a mirror counts as text written by an agent, so a rule from a mirror arrives as pending.
-- HOME and AGENT_CTX_HOME are set to a temp folder in every test and proof, and no `claude` command found on PATH is started by a test.
+- HOME and AGENT_CTX_HOME are set to a temp folder in every test and proof, with one exception. Proofs 2, 3 and 4 of local/e2e.mjs start the real Claude Code program with the real HOME, where the sign in of that program is kept, and with AGENT_CTX_HOME in a temp folder. No `claude` command found on PATH is started by a test.
 - Never open or print the queries of core/test/corpus3.ts and core/test/corpus4.ts. Those sets stay blind, so recall settings are chosen on corpus2.ts alone.
 - A commit message is one line of at most six words.
 - The memory rules are in service/src/engine.ts and the tool definitions in service/src/mcp.ts. Both files are shared by the Worker and the local program, so no import from Cloudflare is allowed in either file.
