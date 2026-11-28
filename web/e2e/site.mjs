@@ -417,7 +417,7 @@ function seeded(seed) {
 const watch = (page) =>
   page.evaluate(
     ([names, leads, tail, open, faces]) => {
-      const t = (window.__typed = { units: {}, files: {}, shape: {}, face: {}, why: new Set(), gone: new Set(), marks: 0, spoiled: 0, lives: [[], []], loaded: null, drawn: null, boxed: [new Set(), new Set()], pad: [[], []], bare: [[], []], eased: 0, open: new Set(), shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
+      const t = (window.__typed = { units: {}, files: {}, shape: {}, face: {}, why: new Set(), gone: new Set(), marks: 0, spoiled: 0, lives: [[], []], loaded: null, moved: [null, null], boxed: [new Set(), new Set()], pad: [[], []], bare: [[], []], eased: 0, open: new Set(), shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
       const p = document.querySelector('[data-site=typed]');
       const words = [];
       let end = null;
@@ -430,12 +430,6 @@ const watch = (page) =>
         if (n.textContent.trim() === tail) end = n;
       }
       const range = document.createRange();
-      const logo = document.querySelector('[data-site=logo]');
-      const ended = () => {
-        if (t.drawn === null && logo?.getAttribute('data-draw') === 'done') t.drawn = performance.now();
-      };
-      if (logo) new MutationObserver(ended).observe(logo, { attributes: true });
-      ended();
       const pen = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
       const fam = (e) => getComputedStyle(e).fontFamily.split(',')[0].replace(/"/g, '').trim();
       const font = (e) => {
@@ -576,6 +570,7 @@ const watch = (page) =>
             if (marks[i] && words[i]) size(name, marks[i], words[i], e.firstChild, units[i]);
           }
           if (t.keys[i].at(-1)?.[0] === keys[i]) return;
+          if (t.keys[i].length) t.moved[i] ??= fired.due - fired.ms;
           t.keys[i].push([keys[i], fired.chain, fired.due]);
           if (whole[i]) t.shown[i].push(name);
           if (!keys[i] && t.shown[i].length) t.gone.add(t.shown[i].at(-1));
@@ -645,6 +640,8 @@ const typedOf = (page) =>
       asked: window.__timers?.asked ?? {},
       why: list(t.why),
       gone: list(t.gone),
+      rested: window.__rested ?? null,
+      starts: t.moved.filter((v) => v !== null),
       timing: { paint: performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint')?.startTime ?? NaN, fonts: performance.getEntriesByType('resource').filter((e) => e.name.endsWith('.woff2')).map((e) => [e.name.split('/').pop(), e.startTime, e.responseEnd]) },
       open: list(t.open),
       stack: [first, words[0], spots[0]?.getBoundingClientRect(), words[1], spots[1]?.getBoundingClientRect(), end].map(row),
@@ -1091,8 +1088,14 @@ async function still(b, site) {
 async function chance(b, site, seed, changes, scheme = 'dark') {
   const { ctx, page } = await context(b, { w: 1440, h: 900, scheme });
   await ctx.addInitScript(seeded, seed);
+  await ctx.addInitScript(() => {
+    new MutationObserver(() => {
+      if (document.documentElement.hasAttribute('data-intro')) window.__hidden = true;
+      else if (window.__hidden) window.__rested ??= performance.now();
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ['data-intro'] });
+  });
   await page.goto(site.url);
-  await page.waitForSelector('[data-site=typed]');
+  await page.waitForSelector('[data-site=typed]', { state: 'attached' });
   await watch(page);
   await ready(page);
   await waitFor(() => page.evaluate(([n, all]) => window.__typed.shown.every((v) => v.length > n && new Set(v).size >= 3) && window.__typed.gone.size === all && Object.keys(window.__typed.units).length === all, [changes, NAMES.length]), 300000, 500);
@@ -1115,6 +1118,7 @@ async function random(b, site) {
     const share = [near(hands[0], hands[1], 40), near(hands[1], hands[0], 40)];
     check('with seed 1 the pauses differ from each other and the two spots start changes at different moments', ranged(pauses, [1500, 5000], pauses.length) && share.every((v) => v < 1 / 3), `pauses ${pauses.map((v) => Math.round(v)).join(' ')} ms, ${share.map((v) => Math.round(v * 100)).join(' and ')} percent of the starts near a start of the other spot`);
     check(`the typed line keeps one height and one top while both names change and "${OPEN} ${LEADS[0]}" never moves`, steady(typed), placed(typed));
+    check('the first pause of each name starts only after the intro has gone', typed.rested !== null && typed.starts.length === 2 && typed.starts.every((v) => v >= typed.rested - 5), `first pauses from ${typed.starts.map((v) => Math.round(v)).join(' and ')} ms, intro gone at ${Math.round(typed.rested ?? NaN)} ms`);
     check('with seed 1 the mark is typed first and deleted last over a full cycle of every name', !odd.length && typed.gone.length === NAMES.length && all.some((v) => v === '*'), `${typed.gone.length} of ${NAMES.length} names typed and deleted, ${all.filter((v) => v === '*').length} moments with a mark alone${odd.length ? `, odd ${odd.slice(0, 3).join(' | ')}` : ''}`);
     const files = NAMES.map((n) => worn(typed.files[n]));
     check('on the dark ground each name shows the light file of the mark and Muse Code shows none', NAMES.every((n, i) => n in typed.files && right(n, files[i], 'dark')), NAMES.map((n, i) => `${n} ${files[i] || 'none'}`).join(', '));
@@ -1135,7 +1139,7 @@ async function random(b, site) {
     check('the small letters of each face are as tall as the small letters of the page font within half a pixel', drawn.every(([, v]) => v && Math.abs(v.low - v.base) <= 0.5), drawn.map(([n, v]) => (v ? `${n} ${v.low.toFixed(2)} of ${v.base.toFixed(2)} px` : `${n} not seen`)).join(', '));
     const loads = typed.timing.fonts.filter(([f]) => FILES.some((k) => f.startsWith(`${k}-`)));
     const own = typed.timing.fonts.filter(([f]) => f.startsWith('atkinson-'));
-    check('no face is requested before the first paint, before the page font has arrived or before the drawing of the logo has ended', loads.length === FILES.length && own.length > 0 && typed.drawn !== null && loads.every(([, at]) => at >= typed.timing.paint && at >= typed.drawn && own.every(([, , end]) => at >= end)), `${loads.length} faces asked from ${Math.round(Math.min(...loads.map((v) => v[1])))} ms, first paint with content at ${Math.round(typed.timing.paint)} ms, page font there at ${Math.round(Math.max(...own.map((v) => v[2])))} ms, logo drawn at ${Math.round(typed.drawn)} ms`);
+    check('no face is requested before the first paint, before the page font has arrived or before the intro of the logo has gone', loads.length === FILES.length && own.length > 0 && typed.rested !== null && loads.every(([, at]) => at >= typed.timing.paint && at >= typed.rested && own.every(([, , end]) => at >= end)), `${loads.length} faces asked from ${Math.round(Math.min(...loads.map((v) => v[1])))} ms, first paint with content at ${Math.round(typed.timing.paint)} ms, page font there at ${Math.round(Math.max(...own.map((v) => v[2])))} ms, intro gone at ${Math.round(typed.rested)} ms`);
     const beats = typed.blink.map(rhythm);
     const both = [near(beats[0], beats[1], 40), near(beats[1], beats[0], 40)];
     check(
