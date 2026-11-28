@@ -10,6 +10,26 @@
   }
 }
 
+:root[data-intro='hide'] {
+  height: 100%;
+  overflow-y: scroll;
+  overscroll-behavior: none;
+}
+
+:root[data-intro='hide'] body {
+  height: 100%;
+  overflow: hidden;
+}
+
+:root[data-intro='hide'] :is(.site > :not(main), main > :not(.site-head), .site-head > :not(h1)) {
+  visibility: hidden;
+  opacity: 0;
+}
+
+:root[data-intro='fade'] :is(.site > :not(main), main > :not(.site-head), .site-head > :not(h1)) {
+  transition: opacity 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
 .site-top,
 .site-demo,
 .site-foot {

@@ -278,6 +278,30 @@ const finish = () => {
   drawing.dispatchEvent(new Event("change"));
 };
 
+const page = document.documentElement;
+const arrival = performance.getEntriesByType("navigation")[0] as
+  | PerformanceNavigationTiming
+  | undefined;
+if (!calm.matches && !location.hash && arrival?.type !== "back_forward")
+  page.dataset.intro = "hide";
+const isRested = () => isDrawn() && !page.dataset.intro;
+drawing.addEventListener("change", () => {
+  if (page.dataset.intro !== "hide") return;
+  page.dataset.intro = "fade";
+  window.setTimeout(() => {
+    delete page.dataset.intro;
+    drawing.dispatchEvent(new Event("change"));
+  }, 300);
+});
+calm.addEventListener("change", () => {
+  if (calm.matches) finish();
+});
+window.addEventListener("pageshow", (e) => {
+  if (!e.persisted) return;
+  delete page.dataset.intro;
+  finish();
+});
+
 function Logo() {
   const done = useSyncExternalStore(watchDrawn, isDrawn);
   const ref = useRef<SVGSVGElement>(null);
@@ -291,14 +315,14 @@ function Logo() {
       cancelAnimationFrame(id);
       clearTimeout(late);
       svg.setAttribute("data-draw", "run");
-      end = window.setTimeout(finish, 2600);
+      end = window.setTimeout(finish, 2100);
     };
     const look = (stamp: number) => {
       if (performance.now() - stamp < 34) start();
       else id = requestAnimationFrame(look);
     };
     id = requestAnimationFrame(look);
-    late = window.setTimeout(start, 700);
+    late = window.setTimeout(start, 300);
     return () => {
       cancelAnimationFrame(id);
       clearTimeout(late);
@@ -502,7 +526,7 @@ function Demo() {
   const [time, setTime] = useState(reduced ? DEMO_END : DEMO_START);
   const [seen, setSeen] = useState(false);
   const [stopped, setStopped] = useState(reduced);
-  const wait = !useSyncExternalStore(watchDrawn, isDrawn);
+  const wait = !useSyncExternalStore(watchDrawn, isRested);
   const idle = useRef({ held: false, open: false });
   useEffect(() => {
     const el = frame.current;
