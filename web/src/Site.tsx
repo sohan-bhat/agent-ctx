@@ -149,6 +149,10 @@ const FAQ = [
     "Claude Code is proven with the real program, and Cursor, Codex, Antigravity, Grok Build, Muse Code and the Claude desktop app are built from the documents of each vendor and are not yet tested with the real programs. macOS and Linux are supported today.",
   ],
   [
+    "Is agent-ctx made by one of these companies?",
+    "agent-ctx is an independent open source project and is not affiliated with, endorsed by or sponsored by any company named on this page. Every product name and logo belongs to the company that owns that product.",
+  ],
+  [
     "Where is the memory kept?",
     "The memory is one database file in the folder .agent-ctx in your home folder, and no account exists.",
   ],
