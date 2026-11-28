@@ -50,8 +50,9 @@ const LOGO = [
   "M1063.49 130Q1052.57 130 1046.55 124.46Q1040.54 118.91 1040.54 107.55L1040.54 52.08L1023.47 52.08L1023.47 30L1040.84 30L1040.84 0L1068.5 0L1068.5 30L1091.35 30L1091.35 52.08L1068.8 52.08L1068.8 107.87L1093.74 107.87L1093.74 130L1063.49 130Z",
   "M1099.8 130L1138.8 78.81L1101.8 30L1133.42 30L1154.93 58.87L1176.72 30L1208 30L1171.15 78.81L1210 130L1178.42 130L1154.85 98.38L1131.14 130L1099.8 130Z",
 ];
-const LEADS = ["Switching from", "to"];
-const TAIL = "requires no explanation.";
+const OPEN = "Your context follows you";
+const LEADS = ["from", "to"];
+const TAIL = ".";
 const NAMES = [
   "Claude Code",
   "Cursor",
@@ -307,23 +308,26 @@ function Typed() {
   return (
     <p className="site-typed" data-site="typed">
       <span className="sr-only">
-        {`${LEADS[0]} ${NAMES[0]} ${LEADS[1]} ${NAMES[1]} ${TAIL}`}
+        {`${OPEN} ${LEADS[0]} ${NAMES[0]} ${LEADS[1]} ${NAMES[1]}${TAIL}`}
+      </span>
+      <span aria-hidden data-site="open">
+        {OPEN}
       </span>
       {LEADS.map((lead, spot) => (
         <span
           key={lead}
           aria-hidden
           data-room={`${lead} ${NAMES[NAMES.length - 1]}`}
-          data-tail={spot ? ` ${TAIL}` : undefined}
+          data-tail={spot ? TAIL : undefined}
         >
           <span>
-            {spot ? " " : null}
+            {" "}
             {lead}{" "}
             <span data-site="agent">
               {NAMES[spots[spot].name].slice(0, spots[spot].shown)}
             </span>
             <Caret blink={!still && idle(spots[spot])} />
-            {spot ? <span data-site="tail"> {TAIL}</span> : null}
+            {spot ? <span data-site="tail">{TAIL}</span> : null}
           </span>
         </span>
       ))}
