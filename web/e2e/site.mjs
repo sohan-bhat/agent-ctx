@@ -19,11 +19,57 @@ const END = 18 * 60;
 const NAMES = ['Claude Code', 'Cursor', 'Codex', 'Antigravity', 'Grok Build', 'Muse Code', 'Claude desktop'];
 const OPEN = 'Your context follows you';
 const LEADS = ['from', 'to'];
+const MARKS = {
+  'antigravity-on-dark.svg': '5b8121138dcb017642ccf15d9f5cda738e61d8d70a12277c9cf5aeec3e575e81',
+  'antigravity-on-light.svg': '5b5d0cfd07cb79ba5d299d80b754e7c91d782dc1199811688dec67a0a11ba240',
+  'claude.svg': '6d53db4be375e899c937c26cf16684a80d6e869b1928d72b37748bef2560e219',
+  'codex-on-dark.svg': '01d158767c4eec0e47bd617e67759c33da0accd1438be1a8d29dfdb99ce87285',
+  'codex-on-light.svg': '75c1e9fffa5e8c437bec1d67197a73992bca45d166c6ff23215185dea8fae92a',
+  'cursor-on-dark.svg': 'cd0e3e5d8991a4cdd4577f8896cd063105207665165c73e25a1ff918dd367eb7',
+  'cursor-on-light.svg': 'c483c02f78eb2619778fdd959e72a9adfac4844854472cd2653d4cbfd60e4d71',
+  'grok-on-dark.svg': 'b20648e2f111d7fbc91f58b22d1e76e9885b68a163cb5a1010f7f11bf5840491',
+  'grok-on-light.svg': 'a127a7cd42b0450f7d3827a331b0730aab49fd99c3fe920d172475b9ffc83992',
+};
+const WEARS = { 'Claude Code': 'claude', Cursor: 'cursor-on', Codex: 'codex-on', Antigravity: 'antigravity-on', 'Grok Build': 'grok-on', 'Muse Code': '', 'Claude desktop': 'claude' };
+const FACES = { 'Claude Code': ['Castoro', 400, 1.042], Cursor: ['Hedvig Letters Sans', 400, 0.957], Codex: ['Figtree', 430, 0.995], Antigravity: ['Google Sans Flex', 400, 0.976], 'Grok Build': ['TikTok Sans', 410, 0.961], 'Muse Code': ['Google Sans Flex', 400, 0.976], 'Claude desktop': ['Castoro', 400, 1.042] };
+const FILES = ['castoro', 'figtree', 'google-sans-flex', 'hedvig-letters-sans', 'tiktok-sans'];
+const FULL = NAMES.map((n) => (WEARS[n] ? `*${n}` : n));
+const sum = (data) => crypto.createHash('sha256').update(data).digest('hex');
+const worn = (address) => {
+  if (!address) return '';
+  const file = path.join(DIST, decodeURIComponent(new URL(address).pathname.slice(BASE.length)));
+  const hash = fs.existsSync(file) ? sum(fs.readFileSync(file)) : '';
+  return Object.keys(MARKS).find((k) => MARKS[k] === hash) ?? 'unknown';
+};
+const right = (name, file, ground) => (WEARS[name] ? file === (WEARS[name].endsWith('-on') ? `${WEARS[name]}-${ground}.svg` : `${WEARS[name]}.svg`) : file === '');
+const told = (file) => {
+  const d = fs.readFileSync(file);
+  if (d.toString('latin1', 0, 4) !== 'wOF2') return '';
+  let at = 48;
+  const number = () => {
+    let v = 0;
+    for (let i = 0; i < 5; i++) {
+      const byte = d[at++];
+      v = v * 128 + (byte & 127);
+      if (!(byte & 128)) break;
+    }
+    return v;
+  };
+  for (let i = d.readUInt16BE(12); i > 0; i--) {
+    const flags = d[at++];
+    const tag = flags & 63;
+    if (tag === 63) at += 4;
+    number();
+    if (tag === 10 || tag === 11 ? flags >> 6 !== 3 : flags >> 6 !== 0) number();
+  }
+  const raw = zlib.brotliDecompressSync(d.subarray(at, at + d.readUInt32BE(20)));
+  return `${raw.toString('latin1')}\n${Buffer.from(raw.subarray(0, raw.length - (raw.length % 2))).swap16().toString('utf16le')}\n${Buffer.from(raw.subarray(1, raw.length - ((raw.length - 1) % 2))).swap16().toString('utf16le')}`;
+};
 const MARK = 'M0 0L5 0L5 3L3 3L3 13L5 13L5 16L0 16ZM6 6L10 6L10 10L6 10ZM8 0L12.243 0L20.243 8L12.243 16L8 16L16 8Z';
 const LOCKUP = '163099391999c215';
 const TAIL = '.';
 const SPOKEN = 'Your context follows you from Claude Code to Cursor.';
-const EDGE = [563, 555, 402, 394];
+const EDGE = [657, 649, 429, 421];
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
 const shots = process.env.SHOTS;
@@ -370,8 +416,8 @@ function seeded(seed) {
 
 const watch = (page) =>
   page.evaluate(
-    ([names, leads, tail, open]) => {
-      const t = (window.__typed = { boxed: [new Set(), new Set()], pad: [[], []], bare: [[], []], eased: 0, open: new Set(), shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
+    ([names, leads, tail, open, faces]) => {
+      const t = (window.__typed = { units: {}, files: {}, shape: {}, face: {}, why: new Set(), gone: new Set(), marks: 0, spoiled: 0, lives: [[], []], loaded: null, drawn: null, boxed: [new Set(), new Set()], pad: [[], []], bare: [[], []], eased: 0, open: new Set(), shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
       const p = document.querySelector('[data-site=typed]');
       const words = [];
       let end = null;
@@ -384,6 +430,72 @@ const watch = (page) =>
         if (n.textContent.trim() === tail) end = n;
       }
       const range = document.createRange();
+      const logo = document.querySelector('[data-site=logo]');
+      const ended = () => {
+        if (t.drawn === null && logo?.getAttribute('data-draw') === 'done') t.drawn = performance.now();
+      };
+      if (logo) new MutationObserver(ended).observe(logo, { attributes: true });
+      ended();
+      const pen = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const fam = (e) => getComputedStyle(e).fontFamily.split(',')[0].replace(/"/g, '').trim();
+      const font = (e) => {
+        const c = getComputedStyle(e);
+        return `${c.fontWeight} ${c.fontSize} ${c.fontFamily}`;
+      };
+      const brands = new Set(Object.values(faces).map((v) => v[0]));
+      const inked = {};
+      const ink = (img) => {
+        if (inked[img.currentSrc]) return inked[img.currentSrc];
+        const [w, h] = [Math.round((240 * img.naturalWidth) / img.naturalHeight), 240];
+        Object.assign(pen.canvas, { width: w, height: h });
+        pen.drawImage(img, 0, 0, w, h);
+        const d = pen.getImageData(0, 0, w, h).data;
+        const out = [w, h, -1, -1];
+        for (let y = 0; y < h; y++)
+          for (let x = 0; x < w; x++)
+            if (d[(y * w + x) * 4 + 3] > 16) {
+              out[0] = Math.min(out[0], x);
+              out[1] = Math.min(out[1], y);
+              out[2] = Math.max(out[2], x + 1);
+              out[3] = Math.max(out[3], y + 1);
+            }
+        return (inked[img.currentSrc] = [out[0] / w, out[1] / h, out[2] / w, out[3] / h]);
+      };
+      const plain = (e) => {
+        const c = getComputedStyle(e);
+        const odd = [];
+        if (e.getAnimations().length || c.animationName !== 'none') odd.push('animation');
+        if (c.transitionDuration.split(',').some((v) => parseFloat(v) > 0)) odd.push('transition');
+        if (c.filter !== 'none' || c.backdropFilter !== 'none') odd.push('filter');
+        if ((c.maskImage ?? 'none') !== 'none' || (c.webkitMaskImage ?? 'none') !== 'none' || c.clipPath !== 'none') odd.push('mask');
+        if (c.mixBlendMode !== 'normal') odd.push('blend mode');
+        if (c.opacity !== '1') odd.push('opacity');
+        if (c.transform !== 'none' || (c.rotate ?? 'none') !== 'none' || (c.scale ?? 'none') !== 'none') odd.push('transform');
+        return odd;
+      };
+      const size = (name, img, word, letters, unit) => {
+        const r = img.getBoundingClientRect();
+        const f = ink(img);
+        const seen = { left: r.left + f[0] * r.width, top: r.top + f[1] * r.height, right: r.left + f[2] * r.width, bottom: r.top + f[3] * r.height };
+        pen.font = font(unit);
+        const cap = pen.measureText(name[0]).actualBoundingBoxAscent;
+        pen.font = font(p);
+        const m = pen.measureText('H');
+        range.selectNodeContents(word);
+        const lead = range.getBoundingClientRect();
+        range.setStart(letters, 0);
+        range.setEnd(letters, 1);
+        const first = range.getBoundingClientRect();
+        const logo = [...document.querySelectorAll('[data-site=logo] [data-part=mark]')].map((e) => e.getBoundingClientRect());
+        t.shape[name] = {
+          tall: seen.bottom - seen.top,
+          cap,
+          sit: seen.bottom - (lead.top + (lead.height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 + m.fontBoundingBoxAscent),
+          before: seen.left - (unit.closest('[data-site=box]').getBoundingClientRect().left + 1),
+          after: first.left - seen.right,
+          logo: logo.length ? Math.max(...logo.map((v) => v.bottom)) - Math.min(...logo.map((v) => v.top)) : 0,
+        };
+      };
       const look = () => {
         const fired = window.__timers?.last ?? {};
         const at = p.getBoundingClientRect();
@@ -402,15 +514,39 @@ const watch = (page) =>
         if (spots.length !== 2) return;
         [...p.querySelectorAll('[data-site=box]')].slice(0, 2).forEach((e, i) => {
           const r = e.getBoundingClientRect();
-          const word = spots[i].getBoundingClientRect();
+          const unit = spots[i].closest('[data-site=unit]') ?? spots[i];
+          const word = unit.getBoundingClientRect();
           t.boxed[i].add(`${Math.round(r.height * 10) / 10} tall at ${Math.round((r.top - at.top) * 10) / 10}`);
           t.pad[i].push(r.width - word.width);
-          if (!spots[i].textContent) t.bare[i].push(r.width);
+          if (!spots[i].textContent && !unit.querySelector('img')) t.bare[i].push(r.width);
           if (e.getAnimations().length || getComputedStyle(e).transitionDuration.split(',').some((v) => parseFloat(v) > 0)) t.eased++;
         });
+        const units = spots.map((e) => e.closest('[data-site=unit]') ?? e);
+        const marks = units.map((u) => u.querySelector('[data-site=mark] img'));
+        const keys = spots.map((e, i) => `${marks[i] ? '*' : ''}${e.textContent}`);
         const whole = spots.map((e) => names.includes(e.textContent));
-        const box = spots.map((e) => e.getBoundingClientRect());
+        const box = spots.map((e) => (e.closest('[data-site=box]') ?? e).getBoundingClientRect());
         t.drop.add(Math.round(box[1].top - box[0].top));
+        if (t.loaded === null && [...document.fonts].filter((f) => f.status === 'loaded' && brands.has(f.family.replace(/"/g, ''))).length >= brands.size) t.loaded = performance.now();
+        marks.forEach((img, i) => {
+          if (!img) return;
+          const odd = [img, img.parentElement, units[i]].flatMap(plain);
+          const here = img.complete && img.naturalWidth > 0;
+          if (!here && performance.now() > 2000) odd.push('shown before the file arrived');
+          if (here && Math.abs(img.getBoundingClientRect().width / img.getBoundingClientRect().height / (img.naturalWidth / img.naturalHeight) - 1) > 0.01) odd.push('ratio');
+          t.marks++;
+          if (odd.length) t.spoiled++;
+          for (const v of odd) t.why.add(v);
+        });
+        units.forEach((u, i) => {
+          let life = t.lives[i].at(-1);
+          if (!life || (keys[i] && life.ended)) t.lives[i].push((life = { name: '', faces: [], ready: t.loaded !== null, ended: false }));
+          if (!keys[i]) life.ended = true;
+          if (!keys[i] || life.ended) return;
+          const now = `${fam(u)}|${getComputedStyle(u).fontWeight}|${parseFloat(getComputedStyle(u).fontSize).toFixed(2)}`;
+          if (life.faces.at(-1) !== now) life.faces.push(now);
+          if (whole[i]) life.name = spots[i].textContent;
+        });
         if (first) {
           range.selectNodeContents(first);
           const r = range.getBoundingClientRect();
@@ -427,10 +563,22 @@ const watch = (page) =>
           if (last.right > at.right + 0.5) t.out++;
         } else t.out++;
         spots.forEach((e, i) => {
-          t.place[i].add(Math.round(box[i].left - at.left));
-          if (t.keys[i].at(-1)?.[0] === e.textContent) return;
-          t.keys[i].push([e.textContent, fired.chain, fired.due]);
-          if (whole[i]) t.shown[i].push(e.textContent);
+          const name = e.textContent;
+          t.place[i].add(Math.round(units[i].getBoundingClientRect().left - at.left));
+          if (whole[i] && !(name in t.units) && fam(units[i]) === faces[name][0] && (!marks[i] || (marks[i].complete && marks[i].naturalWidth))) {
+            const letter = ['x', 'u', 'v'].find((v) => name.includes(v));
+            t.units[name] = units[i].outerHTML;
+            t.files[name] = marks[i]?.currentSrc ?? '';
+            pen.font = font(units[i]);
+            const [low, wide] = [pen.measureText(letter).actualBoundingBoxAscent, pen.measureText(name).width];
+            pen.font = font(p);
+            t.face[name] = { family: fam(units[i]), weight: getComputedStyle(units[i]).fontWeight, size: parseFloat(getComputedStyle(units[i]).fontSize), text: e.getBoundingClientRect().width, wide, low, base: pen.measureText(letter).actualBoundingBoxAscent, other: pen.measureText(name).width };
+            if (marks[i] && words[i]) size(name, marks[i], words[i], e.firstChild, units[i]);
+          }
+          if (t.keys[i].at(-1)?.[0] === keys[i]) return;
+          t.keys[i].push([keys[i], fired.chain, fired.due]);
+          if (whole[i]) t.shown[i].push(name);
+          if (!keys[i] && t.shown[i].length) t.gone.add(t.shown[i].at(-1));
         });
         if (whole.every(Boolean)) t.pairs++;
         if (whole.every(Boolean) && spots[0].textContent === spots[1].textContent) t.same++;
@@ -444,7 +592,7 @@ const watch = (page) =>
       setInterval(look, 50);
       look();
     },
-    [NAMES, LEADS, TAIL, OPEN],
+    [NAMES, LEADS, TAIL, OPEN, FACES],
   );
 
 const typedOf = (page) =>
@@ -486,7 +634,7 @@ const typedOf = (page) =>
     const line = parseFloat(getComputedStyle(p).lineHeight);
     const row = (r) => (r ? Math.floor(((r.top + r.bottom) / 2 - at.top) / line) : -1);
     const rows = spots.map((e, i) => {
-      const r = e.getBoundingClientRect();
+      const r = (e.closest('[data-site=box]') ?? e).getBoundingClientRect();
       const c = carets[i];
       const word = [...e.childNodes].find((n) => n.nodeType === 3);
       return { top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? edge(word).right : r.left) - 0.5 };
@@ -495,6 +643,9 @@ const typedOf = (page) =>
     return {
       ...t,
       asked: window.__timers?.asked ?? {},
+      why: list(t.why),
+      gone: list(t.gone),
+      timing: { paint: performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint')?.startTime ?? NaN, fonts: performance.getEntriesByType('resource').filter((e) => e.name.endsWith('.woff2')).map((e) => [e.name.split('/').pop(), e.startTime, e.responseEnd]) },
       open: list(t.open),
       stack: [first, words[0], spots[0]?.getBoundingClientRect(), words[1], spots[1]?.getBoundingClientRect(), end].map(row),
       place: t.place.map(list),
@@ -530,9 +681,9 @@ function hand(log, asked) {
   for (let k = 1; k < log.length; k++) {
     for (let was = log[k - 1][0]; was !== log[k][0]; steps++) {
       const next = log[k][0].startsWith(was) ? log[k][0].slice(0, was.length + 1) : was.slice(0, -1);
-      if (next.length < was.length) (NAMES.includes(was) ? out.pause : out.erase).push(waits[steps]);
+      if (next.length < was.length) (FULL.includes(was) ? out.pause : out.erase).push(waits[steps]);
       else if (was) out.type.push(waits[steps]);
-      if (NAMES.includes(was)) out.starts.push(log[k][2]);
+      if (FULL.includes(was)) out.starts.push(log[k][2]);
       was = next;
     }
   }
@@ -633,7 +784,13 @@ async function walk(b, site, w, h, scheme) {
     const toggle = page.locator('nav [role=switch]');
     const was = await toggle.getAttribute('aria-checked').catch(() => null);
     await page.evaluate(() => scrollTo(0, 0));
+    const wears = () => page.evaluate(() => [...document.querySelectorAll('[data-site=typed] [data-site=unit]')].map((u) => u.querySelector('[data-site=mark] img')?.currentSrc ?? ''));
+    await waitFor(async () => (await wears()).some(Boolean), 6000, 100);
+    const worn0 = (await wears()).map(worn);
     await tap(toggle).catch(() => {});
+    const worn1 = (await wears()).map(worn);
+    const swapped = worn0.map((v, i) => [v, worn1[i]]).filter(([v, x]) => v && x);
+    check(`${tag} the marks follow the theme switch at once`, swapped.length > 0 && swapped.every(([v, x]) => (v === 'claude.svg' ? x === v : v.endsWith(`-on-${scheme}.svg`) && x === v.replace(`-on-${scheme}.svg`, `-on-${other}.svg`))), swapped.map((v) => v.join(' then ')).join(', '));
     await centre(page);
     await page.waitForTimeout(900);
     const forced = { ground: await ground(page), light: (await paint(page)).light, on: await toggle.getAttribute('aria-checked').catch(() => null) };
@@ -691,14 +848,16 @@ async function walk(b, site, w, h, scheme) {
     check(`${tag} the page has exactly one h1 and exactly one h2 and the h2 says FAQ`, s.h1.length === 1 && s.h1[0] === 'agent-ctx' && s.h2.length === 1 && s.h2[0] === 'FAQ', `h1 ${s.h1.join(' and ')}, h2 ${s.h2.join(' and ')}`);
     const sentences = (a) => (a.match(/[.!?](?=\s|$)/g) ?? []).length;
     const weak = s.items.filter((i) => !i.q.endsWith('?') || i.a.length < 20 || sentences(i.a) < 1 || sentences(i.a) > 2);
-    check(`${tag} eight questions exist and each has an answer of one or two sentences`, s.items.length === 8 && !weak.length, `${s.items.length} questions${weak.length ? `, weak ${weak.map((i) => i.q).join(' ')}` : ''}`);
-    const rowed = s.rows.length === 8;
+    check(`${tag} nine questions exist and each has an answer of one or two sentences`, s.items.length === 9 && !weak.length, `${s.items.length} questions${weak.length ? `, weak ${weak.map((i) => i.q).join(' ')}` : ''}`);
+    const rowed = s.rows.length === 9;
+    const honest = s.items.find((v) => v.q === 'Is agent-ctx made by one of these companies?');
+    check(`${tag} one FAQ row says that agent-ctx is independent of every company named on the page`, honest?.a === 'agent-ctx is an independent open source project and is not affiliated with, endorsed by or sponsored by any company named on this page. Every product name and logo belongs to the company that owns that product.', honest?.a ?? 'missing');
     if (wide) check(`${tag} every question starts left of the answer of the same row and on the same top line`, rowed && s.rows.every((r) => r.share > 0.25 && r.share < 0.42 && Math.abs(r.top[0] - r.top[1]) <= 2), `${s.rows.length} rows, the answer starts after ${s.rows.map((r) => Math.round(r.share * 100)).join(' ')} percent of the row`);
     else check(`${tag} each answer starts below the question of the same row`, rowed && s.rows.every((r) => r.top[1] >= r.end - 0.5 && Math.abs(r.left[0] - r.left[1]) < 1), `${s.rows.length} rows, ${s.rows.map((r) => Math.round(r.top[1] - r.end)).join(' ')} px under the question`);
     check(`${tag} every FAQ row has a top line of 1 px in the border colour`, rowed && s.rows.every((r) => r.line === `1px solid ${s.rule}`), `${[...new Set(s.rows.map((r) => r.line))].join(' | ')} with the border colour ${s.rule}`);
     if (wide) check(`${tag} the question has the weight, the size and the colour of the answer`, rowed && s.rows.every((r) => r.same && r.weight[0] === r.weight[1]), `weights ${s.rows[0]?.weight.join(' and ')}`);
     else check(`${tag} the stacked question is a little heavier than the answer at the same size and colour`, rowed && s.rows.every((r) => r.same && r.weight[0] > r.weight[1] && r.weight[0] <= 500), `weights ${s.rows[0]?.weight.join(' and ')}`);
-    check(`${tag} the name agent-ctx is never broken across two lines in the FAQ`, s.named === 8 && !s.split.length, `${s.named} times${s.split.length ? `, broken in ${s.split.join(' | ')}` : ''}`);
+    check(`${tag} the name agent-ctx is never broken across two lines in the FAQ`, s.named === 10 && !s.split.length, `${s.named} times${s.split.length ? `, broken in ${s.split.join(' | ')}` : ''}`);
     check(`${tag} no small label sits above a heading or beside the demo`, !s.marks.length, s.marks.join(' | '));
     check(`${tag} fewer than 60 words stand outside the FAQ and the demo frame`, s.words > 20 && s.words < 60, `${s.words} words`);
     check(`${tag} the top bar holds the GitHub link and the theme switch and nothing else`, !!s.nav && s.nav.parts === 3 && s.nav.toggles === 1 && s.nav.links.length === 1 && s.nav.links[0] === HOME && s.nav.text.join(' ') === 'GitHub Dark', s.nav ? s.nav.text.join(' ') : 'missing');
@@ -707,13 +866,13 @@ async function walk(b, site, w, h, scheme) {
       s.pills.length === 2 && s.pills[0].join() === ['View on GitHub', HOME, 'default'].join() && s.pills[1].join() === ['Read the FAQ', '#faq', 'outline'].join() && /first release is being tested/.test(s.status),
       s.pills.map((p) => p[0]).join(' and '),
     );
-    check(`${tag} no bar and no drawing stands in the FAQ`, s.items.length === 8 && s.bars === 0, `${s.bars} found`);
+    check(`${tag} no bar and no drawing stands in the FAQ`, s.items.length === 9 && s.bars === 0, `${s.bars} found`);
     check(`${tag} the footer holds the licence, the repository link and the cookie sentence${wide ? ' in one line' : ''}`, !!s.foot && /\bMIT\b/.test(s.foot.text) && s.foot.links.includes(HOME) && /No cookie is set/.test(s.foot.text) && /another host/.test(s.foot.text) && (!wide || new Set(s.foot.tops).size === 1), s.foot ? `${new Set(s.foot.tops).size} lines` : 'missing');
 
     const t = await texts(page);
     const bad = faults(t.out);
     check(`${tag} the wording rules hold in every text node`, t.out.length > 40 && !bad.length, bad.slice(0, 4).join(' | '));
-    check(`${tag} a question mark stands only on the eight questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
+    check(`${tag} a question mark stands only on the nine questions`, !t.asked.length, t.asked.slice(0, 3).join(' | '));
     check(`${tag} no setup prompt is shown`, !t.out.join('\n').includes('setup.md') && !(await page.locator('[data-site=install]').count()));
 
     await waitFor(() => page.evaluate(() => window.__typed.shown.every((v) => v.length >= 2)), 15000);
@@ -813,7 +972,7 @@ async function released(b, site, w, h) {
     const readme = fs.readFileSync(path.join(web, '..', 'README.md'), 'utf8');
     const lines = [/\n {4}(curl -fsSL \S+ \| sh)\n/.exec(readme)?.[1] ?? 'no curl line', /\n {4}(npx -y \S+)\n/.exec(readme)?.[1] ?? 'no npx line'];
     const hand = s.items.find((i) => /without an agent/.test(i.q));
-    check(`${tag} the FAQ has nine rows and one of them holds the two install lines of the README for a setup without an agent`, s.items.length === 9 && !!hand && lines.every((l) => hand.a.includes(l)), hand ? hand.a : `${s.items.length} rows and no such row`);
+    check(`${tag} the FAQ has ten rows and one of them holds the two install lines of the README for a setup without an agent`, s.items.length === 10 && !!hand && lines.every((l) => hand.a.includes(l)), hand ? hand.a : `${s.items.length} rows and no such row`);
     const boxes = await page.evaluate(() => {
       const ground = getComputedStyle(document.body).backgroundColor;
       const edge = document.querySelector('[data-site=faq]')?.getBoundingClientRect();
@@ -906,20 +1065,22 @@ async function still(b, site) {
     check('reduced motion leaves the logo still and filled at the start and later', early.length === 27 && [...early, ...late, ...over].every((v) => v === '0 1 none none'), [...new Set([...early, ...late, ...over])].join(' | ') || 'no logo');
     const first = await page.evaluate(() => window.__first ?? null);
     check('with reduced motion the logo is at rest and the scene is asked for at the first sight of the page', first?.draw === 'done' && first.held === false, first ? `drawing state ${first.draw}, scene ${first.held ? 'held back' : 'asked for'}` : 'no logo');
-    check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, cursor states ${carets.join(' and ')}`);
+    const marked = await page.locator('[data-site=typed] [data-site=mark] img').count();
+    const dressed = await page.evaluate(() => [...document.querySelectorAll('[data-site=typed] [data-site=unit]')].map((u) => getComputedStyle(u).fontFamily.split(',')[0].replace(/"/g, '').trim()).join(' and '));
+    check('reduced motion leaves the typed lines still with Claude Code and Cursor, both marks and both faces', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && marked === 2 && dressed === `${FACES[NAMES[0]][0]} and ${FACES[NAMES[1]][0]}` && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, ${marked} marks, ${dressed || 'no unit'}, cursor states ${carets.join(' and ')}`);
   } finally {
     await ctx.close();
   }
 }
 
-async function chance(b, site, seed, changes) {
-  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+async function chance(b, site, seed, changes, scheme = 'dark') {
+  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme });
   await ctx.addInitScript(seeded, seed);
   await page.goto(site.url);
   await page.waitForSelector('[data-site=typed]');
   await watch(page);
   await ready(page);
-  await waitFor(() => page.evaluate((n) => window.__typed.shown.every((v) => v.length > n && new Set(v).size >= 3), changes), 90000, 500);
+  await waitFor(() => page.evaluate(([n, all]) => window.__typed.shown.every((v) => v.length > n && new Set(v).size >= 3) && window.__typed.gone.size === all && Object.keys(window.__typed.units).length === all, [changes, NAMES.length]), 300000, 500);
   return { ctx, page, typed: await typedOf(page) };
 }
 
@@ -927,9 +1088,10 @@ async function random(b, site) {
   const one = await chance(b, site, 1, 4);
   try {
     const { page, typed } = one;
+    site.units = typed.units;
     const hands = typed.keys.map((log) => hand(log, typed.asked));
     const all = hands.flatMap((v) => v.texts);
-    const odd = all.filter((v) => !NAMES.some((n) => n.startsWith(v)));
+    const odd = all.filter((v) => !FULL.some((n) => n.startsWith(v)));
     check('with seed 1 every shown text is the start of one of the names', all.length > 40 && !odd.length, `${all.length} texts${odd.length ? `, odd ${odd.slice(0, 3).join(' | ')}` : ''}`);
     check('with seed 1 the two complete names are never the same at one moment', typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
     check('with seed 1 the page starts with Claude Code and Cursor and each spot shows at least three different names in four changes', typed.shown.every((v, i) => v[0] === NAMES[i] && v.length > 4 && new Set(v).size >= 3), typed.shown.map((v) => v.join(', ')).join(' and '));
@@ -938,6 +1100,27 @@ async function random(b, site) {
     const share = [near(hands[0], hands[1], 40), near(hands[1], hands[0], 40)];
     check('with seed 1 the pauses differ from each other and the two spots start changes at different moments', ranged(pauses, [1500, 5000], pauses.length) && share.every((v) => v < 1 / 3), `pauses ${pauses.map((v) => Math.round(v)).join(' ')} ms, ${share.map((v) => Math.round(v * 100)).join(' and ')} percent of the starts near a start of the other spot`);
     check(`the typed line keeps one height and one top while both names change and "${OPEN} ${LEADS[0]}" never moves`, steady(typed), placed(typed));
+    check('with seed 1 the mark is typed first and deleted last over a full cycle of every name', !odd.length && typed.gone.length === NAMES.length && all.some((v) => v === '*'), `${typed.gone.length} of ${NAMES.length} names typed and deleted, ${all.filter((v) => v === '*').length} moments with a mark alone${odd.length ? `, odd ${odd.slice(0, 3).join(' | ')}` : ''}`);
+    const files = NAMES.map((n) => worn(typed.files[n]));
+    check('on the dark ground each name shows the light file of the mark and Muse Code shows none', NAMES.every((n, i) => n in typed.files && right(n, files[i], 'dark')), NAMES.map((n, i) => `${n} ${files[i] || 'none'}`).join(', '));
+    check('no mark ever has an animation, a transition, a filter, a mask, a blend mode, a transform or an opacity below 1, and every mark is drawn in the ratio of the file', typed.marks > 100 && typed.spoiled === 0, `${typed.spoiled} of ${typed.marks} looks at a mark${typed.why.length ? `, ${typed.why.join(' and ')}` : ''}`);
+    const shapes = NAMES.filter((n) => WEARS[n]).map((n) => [n, typed.shape[n]]);
+    check('the visible shape of each mark is as tall as the capital letters of that name within one pixel, sits on the baseline and is lower than the mark in the h1', shapes.every(([, v]) => v && Math.abs(v.tall - v.cap) <= 1 && Math.abs(v.sit) <= 1 && v.logo > 0 && v.tall < v.logo), shapes.map(([n, v]) => (v ? `${n} ${v.tall.toFixed(1)} of ${v.cap.toFixed(1)} px, ${v.sit.toFixed(1)} px off the baseline` : `${n} not measured`)).join(', '));
+    check('a clear space of a third of the capital height stands on both sides of each mark', shapes.every(([, v]) => v && v.before >= v.cap / 3 - 0.3 && v.after >= v.cap / 3 - 0.3), shapes.map(([n, v]) => (v ? `${n} ${v.before.toFixed(1)} and ${v.after.toFixed(1)} px for ${(v.cap / 3).toFixed(1)} px` : `${n} not measured`)).join(', '));
+    const page0 = typed.lives.flatMap((v) => v.slice(0, 1).concat(v.slice(1).filter((x) => x.name && !x.ready)));
+    const later = typed.lives.flatMap((v) => v.slice(1).filter((x) => x.name && x.ready));
+    const set = (v) => v.faces[0]?.split('|') ?? [];
+    const fine = (v) => set(v)[0] === FACES[v.name][0] && Number(set(v)[1]) === FACES[v.name][1] && Math.abs(Number(set(v)[2]) - typed.em * FACES[v.name][2]) < 0.02;
+    const base = (v) => /Atkinson/.test(set(v)[0]) && Math.abs(Number(set(v)[2]) - typed.em) < 0.02;
+    check('each name is typed in the open face of that name once the faces have loaded, and in the page font before', typed.loaded !== null && page0.length >= 2 && page0.every(base) && NAMES.every((n) => later.some((v) => v.name === n)) && later.every(fine), `${page0.length} names before the faces with ${[...new Set(page0.map((v) => set(v)[0]))].join(' and ')}, ${later.filter(fine).length} of ${later.length} names after the faces in the face of the name, faces loaded after ${Math.round(typed.loaded)} ms`);
+    const turned = typed.lives.flat().filter((v) => v.faces.length > 1);
+    check('no letter changes face while that letter is on screen', typed.lives.flat().length > 10 && !turned.length, `${typed.lives.flat().length} typed names, ${turned.length} with a change of face${turned.length ? `, ${turned[0].name || 'a name'} from ${turned[0].faces.join(' to ')}` : ''}`);
+    const drawn = NAMES.map((n) => [n, typed.face[n]]);
+    check('the letters of each name are drawn in the open face at the weight and the size factor of the table', drawn.every(([n, v]) => v && v.family === FACES[n][0] && Number(v.weight) === FACES[n][1] && Math.abs(v.size - typed.em * FACES[n][2]) < 0.02 && Math.abs(v.text - v.wide) < 0.6 && Math.abs(v.wide - v.other) > 0.6), drawn.map(([n, v]) => (v ? `${n} ${v.family} ${v.weight} at ${v.size.toFixed(2)} px, ${v.text.toFixed(1)} px wide for ${v.wide.toFixed(1)} px in that face and ${v.other.toFixed(1)} px in the page font` : `${n} not seen`)).join(', '));
+    check('the small letters of each face are as tall as the small letters of the page font within half a pixel', drawn.every(([, v]) => v && Math.abs(v.low - v.base) <= 0.5), drawn.map(([n, v]) => (v ? `${n} ${v.low.toFixed(2)} of ${v.base.toFixed(2)} px` : `${n} not seen`)).join(', '));
+    const loads = typed.timing.fonts.filter(([f]) => FILES.some((k) => f.startsWith(`${k}-`)));
+    const own = typed.timing.fonts.filter(([f]) => f.startsWith('atkinson-'));
+    check('no face is requested before the first paint, before the page font has arrived or before the drawing of the logo has ended', loads.length === FILES.length && own.length > 0 && typed.drawn !== null && loads.every(([, at]) => at >= typed.timing.paint && at >= typed.drawn && own.every(([, , end]) => at >= end)), `${loads.length} faces asked from ${Math.round(Math.min(...loads.map((v) => v[1])))} ms, first paint with content at ${Math.round(typed.timing.paint)} ms, page font there at ${Math.round(Math.max(...own.map((v) => v[2])))} ms, logo drawn at ${Math.round(typed.drawn)} ms`);
     const beats = typed.blink.map(rhythm);
     const both = [near(beats[0], beats[1], 40), near(beats[1], beats[0], 40)];
     check(
@@ -960,10 +1143,12 @@ async function random(b, site) {
     await page.waitForTimeout(6000);
     const woke = await state();
     check('no name changes and no cursor blinks while the page is hidden, and both go on afterwards', kept === dark && woke !== kept, `${dark} then ${kept} then ${woke}`);
-    const two = await chance(b, site, 2, 3);
+    const two = await chance(b, site, 2, 3, 'light');
     try {
       const order = (v) => v.shown.map((names) => names.slice(0, 4).join(' > ')).join(' and ');
       check('with seed 2 the order of names differs from the order with seed 1', order(two.typed) !== order(typed), `${order(typed)} against ${order(two.typed)}`);
+      const lit = NAMES.map((n) => worn(two.typed.files[n]));
+      check('on the light ground each name shows the dark file of the mark and Muse Code shows none', NAMES.every((n, i) => n in two.typed.files && right(n, lit[i], 'light')) && two.typed.spoiled === 0, NAMES.map((n, i) => `${n} ${lit[i] || 'none'}`).join(', '));
     } finally {
       await two.ctx.close();
     }
@@ -978,10 +1163,10 @@ async function fit(b, site) {
     try {
       await page.goto(site.url);
       await ready(page);
+      await page.waitForFunction((n) => [...document.fonts].filter((f) => f.status === 'loaded' && !/Atkinson|JetBrains/.test(f.family)).length >= n, FILES.length, { timeout: 10000 }).catch(() => {});
       const got = await page.evaluate(
-        ([names, tail, open]) => {
+        ([names, tail, open, units]) => {
           const p = document.querySelector('[data-site=typed]');
-          const spots = [...p.querySelectorAll('[data-site=agent]')];
           const carets = [...p.querySelectorAll('.site-caret')];
           const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
           const range = document.createRange();
@@ -994,12 +1179,16 @@ async function fit(b, site) {
           }
           const line = parseFloat(getComputedStyle(p).lineHeight);
           const out = { room: p.getBoundingClientRect().width, pairs: 0, fits: [0, 0, 0, 0], wide: 0, pair: '' };
-          if (spots.length !== 2 || carets.length !== 2 || !end || !first || p.querySelectorAll('[data-site=box]').length !== 2) return out;
-          for (const a of names)
-            for (const z of names) {
+          if (p.querySelectorAll('[data-site=unit]').length !== 2 || carets.length !== 2 || !end || !first || p.querySelectorAll('[data-site=box]').length !== 2 || names.some((n) => !units?.[n])) return out;
+          for (const bare of [false, true])
+            for (const a of names)
+              for (const z of names) {
               if (a === z) continue;
-              spots[0].firstChild.nodeValue = a;
-              spots[1].firstChild.nodeValue = z;
+              [a, z].forEach((n, i) => {
+                p.querySelectorAll('[data-site=unit]')[i].outerHTML = units[n];
+                if (bare) p.querySelectorAll('[data-site=unit]')[i].removeAttribute('style');
+              });
+              const spots = [...p.querySelectorAll('[data-site=agent]')];
               range.selectNodeContents(first);
               const head = range.getBoundingClientRect();
               range.selectNodeContents(end);
@@ -1008,15 +1197,15 @@ async function fit(b, site) {
               const size = Math.max(head.right, last.right, ...[...carets, ...p.querySelectorAll('[data-site=box]')].map((c) => c.getBoundingClientRect().right)) - at.left;
               const rows = new Set([head.top, ...spots.map((e) => e.getBoundingClientRect().top), last.top].map((v) => Math.round((v - at.top) / line))).size;
               out.pairs++;
-              if (size > out.wide) Object.assign(out, { wide: size, pair: `${a} and ${z}` });
+              if (size > out.wide) Object.assign(out, { wide: size, pair: `${a} and ${z} in the ${bare ? 'page font' : 'faces'}` });
               if (size <= at.width + 0.5 && Math.round(at.height / line) === rows) out.fits[rows]++;
             }
           return out;
         },
-        [NAMES, TAIL, OPEN],
+        [NAMES, TAIL, OPEN, site.units ?? null],
       );
-      const all = NAMES.length * (NAMES.length - 1);
-      const told = `the longest line ends at ${got.wide.toFixed(1)} px with ${got.pair} in a column of ${got.room} px, ${got.fits.slice(1).join(' and ')} pairs fit on one, two and three lines`;
+      const all = 2 * NAMES.length * (NAMES.length - 1);
+      const told = `the longest line ends at ${got.wide.toFixed(1)} px with ${got.pair} in a column of ${got.room} px, ${got.fits.slice(1).join(' and ')} of ${all} pairs in the faces and in the page font fit on one, two and three lines`;
       if (lines === 1) check(`at ${w} px wide${where}, every pair of two names fits on one line`, got.pairs === all && got.fits[1] === all, told);
       else if (lines === 2) check(`at ${w} px wide${where}, the typed block has two lines and each line fits with every name`, got.pairs === all && got.fits[2] === all, told);
       else check(`at ${w} px wide${where}, the typed block has three lines and every line fits with every name`, got.pairs === all && got.fits[3] === all, told);
@@ -1627,7 +1816,14 @@ function built(dir) {
   const far = [...`${html}\n${css}`.matchAll(/(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"')]*/gi)].map((m) => m[0]);
   check(`every asset address in the built page starts with ${BASE}`, refs.length >= 4 && !off.length && !far.length, `${refs.length} addresses${off.length || far.length ? `, off ${[...off, ...far].slice(0, 3).join(' ')}` : ''}`);
   const holds = all.filter((f) => /\.(?:html|js|css)$/.test(f) && /install\.sh|setup\.md|Set up agent-ctx/.test(fs.readFileSync(f, 'utf8')));
-  const icon = /<link rel="icon"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? '';
+  const kept = fs.existsSync(path.join(web, 'src', 'marks')) ? fs.readdirSync(path.join(web, 'src', 'marks')).sort() : [];
+  const sums = new Set(all.map((f) => sum(fs.readFileSync(f))));
+  check('every mark file in web/src/marks and in the built page equals the official file byte for byte', kept.join() === Object.keys(MARKS).sort().join() && kept.every((f) => sum(fs.readFileSync(path.join(web, 'src', 'marks', f))) === MARKS[f]) && Object.values(MARKS).every((v) => sums.has(v)), `${kept.length} files, ${Object.values(MARKS).filter((v) => sums.has(v)).length} of ${kept.length} in the built page`);
+  const faces = all.filter((f) => f.endsWith('.woff2') && FILES.some((k) => path.basename(f).startsWith(`${k}-`)));
+  const weight = faces.reduce((n, f) => n + fs.statSync(f).size, 0);
+  const signed = faces.filter((f) => /Copyright/.test(told(f)) && /SIL Open Font License/.test(told(f)));
+  check('the five face files of the built page weigh at most 40 kB together and each holds a copyright line and the licence line', faces.length === FILES.length && weight <= 40000 && signed.length === faces.length, `${faces.length} files with ${weight} bytes, ${signed.length} with both lines`);
+  const icon = /<link rel="icon\"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? '';
   const file = path.join(dir, decodeURIComponent(icon.slice(BASE.length).split('?')[0]));
   const tile = icon.startsWith(BASE) && fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file, 'utf8') : '';
   const asks = (rel) => [...html.matchAll(/<link ([^>]+)>/g)].map((m) => m[1]).filter((v) => v.includes(`rel="${rel}"`) && /\scrossorigin[\s=>]|\scrossorigin$/.test(v)).map((v) => /href="([^"]+)"/.exec(v)?.[1] ?? '');
