@@ -4,6 +4,7 @@ import {
   StrictMode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -602,6 +603,9 @@ function Demo() {
 }
 
 function Site() {
+  useLayoutEffect(() => {
+    document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  }, []);
   return (
     <div className="site">
       <a
