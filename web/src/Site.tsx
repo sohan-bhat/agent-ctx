@@ -260,12 +260,17 @@ function Caret({ blink }: { blink: boolean }) {
   );
 }
 
+const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
 const drawing = new EventTarget();
-let drawn = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const isDrawn = () => drawn;
+let drawn = false;
+const isDrawn = () => (drawn ||= calm.matches);
 const watchDrawn = (f: () => void) => {
   drawing.addEventListener("change", f);
-  return () => drawing.removeEventListener("change", f);
+  calm.addEventListener("change", f);
+  return () => {
+    drawing.removeEventListener("change", f);
+    calm.removeEventListener("change", f);
+  };
 };
 const finish = () => {
   if (drawn) return;
@@ -274,16 +279,11 @@ const finish = () => {
 };
 
 function Logo() {
-  const reduced = useReduced();
-  const ended = useSyncExternalStore(watchDrawn, isDrawn);
-  const done = reduced || ended;
+  const done = useSyncExternalStore(watchDrawn, isDrawn);
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const svg = ref.current;
-    if (done || !svg) {
-      finish();
-      return;
-    }
+    if (done || !svg) return;
     let end = 0;
     let id = 0;
     let late = 0;
