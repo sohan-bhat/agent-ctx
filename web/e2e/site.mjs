@@ -1312,7 +1312,7 @@ function stilled() {
   intro.release = () => {
     for (const a of intro.held) {
       a.currentTime = intro.end - 60;
-      a.play();
+      if (intro.end - 60 < a.effect.getComputedTiming().endTime) a.play();
     }
   };
   window.addEventListener('pageshow', (e) => {
