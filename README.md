@@ -49,6 +49,10 @@ The memory is the one file `~/.agent-ctx/memory.db`. Prompts, the working folder
 
 The folder service contains an optional Cloudflare Worker with one private store per person, for a memory shared across computers. The folder web is the page of that mode, and service/plugins contains the JSON only plugins.
 
+## Fonts and marks
+
+The public page is set in Atkinson Hyperlegible Next and JetBrains Mono. Each agent name in the first sentence is set in a small subset of an open face, Castoro for Claude Code and Claude desktop, Hedvig Letters Sans for Cursor, Figtree for Codex, Google Sans Flex for Antigravity and Muse Code, and TikTok Sans for Grok Build. All seven families are under the SIL Open Font License 1.1, and the copyright line and the licence line of each family remain inside every file in web/src/faces. The marks of the companies beside the agent names belong to their owners and are not covered by the licence of this repository.
+
 ## Development
 
     npm test
