@@ -151,10 +151,6 @@
   line-height: 1.7;
 }
 
-.site-typed [data-site='open'] {
-  display: block;
-}
-
 .site-typed [data-room] {
   display: grid;
 }
