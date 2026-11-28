@@ -1240,6 +1240,7 @@ async function slowed(b, site) {
       await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
       await page.goto(site.url, { waitUntil: 'commit' });
       await ready(page).catch(() => {});
+      await waitFor(() => page.evaluate(() => window.__pace.done > 0).catch(() => false), 8000);
       loads.push(
         await page.evaluate(() => {
           const p = window.__pace;
