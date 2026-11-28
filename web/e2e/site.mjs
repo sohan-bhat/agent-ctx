@@ -27,6 +27,7 @@ const EDGE = [563, 555, 402, 394];
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
 const shots = process.env.SHOTS;
+const walks = process.env.WALKS?.split(',');
 const GROUND = { light: 'rgb(250, 250, 250)', dark: 'rgb(20, 20, 20)' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 const results = [];
@@ -1323,6 +1324,7 @@ function built(dir) {
 }
 
 async function run(name, f) {
+  if (walks && !walks.some((v) => name.includes(v))) return;
   try {
     await f();
     check(`${name} ran to the end`, true);
