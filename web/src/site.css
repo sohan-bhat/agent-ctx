@@ -173,10 +173,17 @@
 }
 
 .site-typed {
+  --cap: 0.668em;
   container-type: inline-size;
   margin-top: 1.25rem;
   font-size: clamp(1.0625rem, 0.98rem + 0.4vw, 1.1875rem);
   line-height: 1.7;
+}
+
+@supports (height: 1cap) {
+  .site-typed {
+    --cap: 1cap;
+  }
 }
 
 .site-typed [data-room] {
@@ -186,7 +193,7 @@
 .site-typed [data-room]::before {
   content: attr(data-room) attr(data-tail);
   grid-area: 1 / 1;
-  padding-right: calc(5px + 0.7em);
+  padding-right: calc(5px + 2.13em);
   visibility: hidden;
 }
 
@@ -194,7 +201,7 @@
   grid-area: 1 / 1;
 }
 
-@container (min-width: 21.2em) {
+@container (min-width: 22.6em) {
   .site-typed [data-site='open'],
   .site-typed [data-room]:not([data-tail]) {
     display: inline;
@@ -206,7 +213,7 @@
   }
 }
 
-@container (min-width: 29.4em) {
+@container (min-width: 32.2em) {
   .site-typed [data-room] {
     display: inline;
     white-space: nowrap;
@@ -223,6 +230,24 @@
   border-radius: 0.33em;
   background: var(--muted);
   white-space: nowrap;
+}
+
+.site-typed [data-site='unit'] {
+  line-height: 1;
+  font-synthesis: none;
+}
+
+.site-mark {
+  position: relative;
+  display: inline-block;
+  height: var(--cap);
+  margin-right: 0.28em;
+}
+
+.site-mark img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
 }
 
 .site-caret {

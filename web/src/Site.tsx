@@ -27,6 +27,20 @@ import {
 } from "@/demo";
 import { useReduced } from "@/lib/utils";
 import { Space } from "@/views/Space";
+import castoro from "./faces/castoro.woff2";
+import figtree from "./faces/figtree.woff2";
+import flex from "./faces/google-sans-flex.woff2";
+import hedvig from "./faces/hedvig-letters-sans.woff2";
+import tiktok from "./faces/tiktok-sans.woff2";
+import antigravityOnDark from "./marks/antigravity-on-dark.svg";
+import antigravityOnLight from "./marks/antigravity-on-light.svg";
+import claude from "./marks/claude.svg";
+import codexOnDark from "./marks/codex-on-dark.svg";
+import codexOnLight from "./marks/codex-on-light.svg";
+import cursorOnDark from "./marks/cursor-on-dark.svg";
+import cursorOnLight from "./marks/cursor-on-light.svg";
+import grokOnDark from "./marks/grok-on-dark.svg";
+import grokOnLight from "./marks/grok-on-light.svg";
 import "./index.css";
 import "./site.css";
 
@@ -54,19 +68,74 @@ const LOGO = [
 const OPEN = "Your context follows you";
 const LEADS = ["from", "to"];
 const TAIL = ".";
-const NAMES = [
-  "Claude Code",
-  "Cursor",
-  "Codex",
-  "Antigravity",
-  "Grok Build",
-  "Muse Code",
-  "Claude desktop",
+const SPARK = {
+  files: [claude, claude],
+  size: [94, 94],
+  box: [0.39, 0.16, 94, 93.84],
+};
+const SERIF = { family: "Castoro", weight: 400, size: 1.042, file: castoro };
+const FLEX = {
+  family: "Google Sans Flex",
+  weight: 400,
+  size: 0.976,
+  file: flex,
+};
+const TYPED = [
+  { name: "Claude Code", mark: SPARK, face: SERIF },
+  {
+    name: "Cursor",
+    mark: {
+      files: [cursorOnDark, cursorOnLight],
+      size: [466.73, 532.09],
+      box: [0, 0, 466.73, 532.09],
+    },
+    face: {
+      family: "Hedvig Letters Sans",
+      weight: 400,
+      size: 0.957,
+      file: hedvig,
+    },
+  },
+  {
+    name: "Codex",
+    mark: {
+      files: [codexOnDark, codexOnLight],
+      size: [716, 716],
+      box: [180.19, 180.19, 535.21, 535.21],
+    },
+    face: { family: "Figtree", weight: 430, size: 0.995, file: figtree },
+  },
+  {
+    name: "Antigravity",
+    mark: {
+      files: [antigravityOnDark, antigravityOnLight],
+      size: [180, 180],
+      box: [22.35, 28.05, 156.9, 151.95],
+    },
+    face: FLEX,
+  },
+  {
+    name: "Grok Build",
+    mark: {
+      files: [grokOnDark, grokOnLight],
+      size: [1024, 1024],
+      box: [0, 0, 1024, 987.31],
+    },
+    face: { family: "TikTok Sans", weight: 410, size: 0.961, file: tiktok },
+  },
+  { name: "Muse Code", mark: null, face: FLEX },
+  { name: "Claude desktop", mark: SPARK, face: SERIF },
 ];
+const NAMES = TYPED.map((agent) => agent.name);
+const LOADED = new Map<string, HTMLImageElement>();
+const READY = new Set<string>();
+const units = (name: number) =>
+  NAMES[name].length + (TYPED[name].mark ? 1 : 0);
 const START = [0, 1].map((name) => ({
   name,
-  shown: NAMES[name].length,
+  shown: units(name),
   back: false,
+  face: false,
 }));
 const PILL = "h-11 rounded-full px-5 text-[0.9375rem]";
 
@@ -206,7 +275,7 @@ const between = (low: number, high: number) =>
   low + Math.random() * (high - low);
 
 const idle = (at: (typeof START)[number]) =>
-  !at.back && at.shown === NAMES[at.name].length;
+  !at.back && at.shown === units(at.name);
 
 const pause = (at: (typeof START)[number]) =>
   idle(at)
@@ -224,11 +293,20 @@ function step(spots: typeof START, spot: number) {
     return { ...at, shown: at.shown + by, back: by < 0 };
   }
   if (at.shown) return { ...at, shown: at.shown - 1 };
-  const free = NAMES.map((_, name) => name).filter(
+  const open = NAMES.map((_, name) => name).filter(
     (name) => name !== at.name && name !== spots[1 - spot].name,
   );
+  const ready = open.filter((name) =>
+    (TYPED[name].mark?.files ?? []).every((file) => LOADED.has(file)),
+  );
+  const free = ready.length ? ready : open;
   const name = free[Math.floor(Math.random() * free.length)];
-  return { name, shown: 1, back: false };
+  return {
+    name,
+    shown: 1,
+    back: false,
+    face: READY.has(TYPED[name].face.family),
+  };
 }
 
 const watchHidden = (f: () => void) => {
@@ -364,7 +442,36 @@ function Logo() {
   );
 }
 
+function Mark({ of, dark }: { of: typeof SPARK; dark: boolean }) {
+  const [left, top, right, bottom] = of.box;
+  const by = (units: number) =>
+    `calc(var(--cap) * ${units / (bottom - top)})`;
+  return (
+    <span
+      className="site-mark"
+      data-site="mark"
+      style={{ width: by(right - left) }}
+    >
+      <img
+        src={of.files[dark ? 0 : 1]}
+        alt=""
+        decoding="sync"
+        draggable={false}
+        style={{
+          left: by(-left),
+          top: by(-top),
+          width: by(of.size[0]),
+          height: by(of.size[1]),
+        }}
+      />
+    </span>
+  );
+}
+
 function Typed() {
+  const dark = useSyncExternalStore(watch, isDark);
+  const done = useSyncExternalStore(watchDrawn, isDrawn);
+  const [, setFaces] = useState(0);
   const reduced = useReduced();
   const hidden = useSyncExternalStore(watchHidden, isHidden);
   const still = reduced || hidden;
@@ -385,6 +492,42 @@ function Typed() {
     });
     return () => ids.forEach((id) => clearTimeout(id));
   }, [still]);
+  useEffect(() => {
+    for (const agent of TYPED)
+      for (const file of agent.mark?.files ?? []) {
+        const image = new Image();
+        image.onload = () => LOADED.set(file, image);
+        image.src = file;
+      }
+  }, []);
+  useEffect(() => {
+    if (!done) return;
+    let live = true;
+    const page = getComputedStyle(document.body);
+    const faces = () => {
+      for (const { family, weight, file } of new Set(
+        TYPED.map((agent) => agent.face),
+      )) {
+        const face = new FontFace(family, `url(${file}) format("woff2")`, {
+          weight: String(weight),
+        });
+        face.load().then(
+          () => {
+            document.fonts.add(face);
+            READY.add(family);
+            if (live) setFaces((count) => count + 1);
+          },
+          () => undefined,
+        );
+      }
+    };
+    const later = () =>
+      requestAnimationFrame(() => requestAnimationFrame(faces));
+    document.fonts.load(`${page.fontSize} ${page.fontFamily}`).then(later, later);
+    return () => {
+      live = false;
+    };
+  }, [done]);
   return (
     <p className="site-typed" data-site="typed">
       <span className="sr-only">
@@ -393,26 +536,45 @@ function Typed() {
       <span aria-hidden data-site="open">
         {OPEN}
       </span>
-      {LEADS.map((lead, spot) => (
-        <span
-          key={lead}
-          aria-hidden
-          data-room={`${lead} ${NAMES[NAMES.length - 1]}`}
-          data-tail={spot ? TAIL : undefined}
-        >
-          <span>
-            {" "}
-            {lead}{" "}
-            <span className="site-box" data-site="box">
-              <span data-site="agent">
-                {NAMES[spots[spot].name].slice(0, spots[spot].shown)}
+      {LEADS.map((lead, spot) => {
+        const at = spots[spot];
+        const { name, mark, face } = TYPED[at.name];
+        const worn = reduced ? READY.has(face.family) : at.face;
+        return (
+          <span
+            key={lead}
+            aria-hidden
+            data-room={`${lead} ${NAMES[NAMES.length - 1]}`}
+            data-tail={spot ? TAIL : undefined}
+          >
+            <span>
+              {" "}
+              {lead}{" "}
+              <span className="site-box" data-site="box">
+                <span
+                  data-site="unit"
+                  style={
+                    worn
+                      ? {
+                          fontFamily: `"${face.family}", var(--font-sans)`,
+                          fontWeight: face.weight,
+                          fontSize: `${face.size}em`,
+                        }
+                      : undefined
+                  }
+                >
+                  {mark && at.shown ? <Mark of={mark} dark={dark} /> : null}
+                  <span data-site="agent">
+                    {name.slice(0, Math.max(0, at.shown - (mark ? 1 : 0)))}
+                  </span>
+                </span>
+                <Caret blink={!still && idle(at)} />
               </span>
-              <Caret blink={!still && idle(spots[spot])} />
+              {spot ? <span data-site="tail">{TAIL}</span> : null}
             </span>
-            {spot ? <span data-site="tail">{TAIL}</span> : null}
           </span>
-        </span>
-      ))}
+        );
+      })}
     </p>
   );
 }
