@@ -23,7 +23,7 @@ const MARK = 'M0 0L5 0L5 3L3 3L3 13L5 13L5 16L0 16ZM6 6L10 6L10 10L6 10ZM8 0L12.
 const LOCKUP = '163099391999c215';
 const TAIL = '.';
 const SPOKEN = 'Your context follows you from Claude Code to Cursor.';
-const EDGE = [530, 522, 402, 394];
+const EDGE = [563, 555, 402, 394];
 const sizes = (process.env.SIZES ?? '1440x900,390x664').split(',').map((s) => s.split('x').map(Number));
 const schemes = (process.env.SCHEMES ?? 'dark,light').split(',');
 const shots = process.env.SHOTS;
@@ -370,7 +370,7 @@ function seeded(seed) {
 const watch = (page) =>
   page.evaluate(
     ([names, leads, tail, open]) => {
-      const t = (window.__typed = { open: new Set(), shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
+      const t = (window.__typed = { boxed: [new Set(), new Set()], pad: [[], []], bare: [[], []], eased: 0, open: new Set(), shown: [[], []], keys: [[], []], blink: [[], []], place: [new Set(), new Set()], lead: [new Set(), new Set()], tail: new Set(), tall: new Set(), top: new Set(), drop: new Set(), under: new Set(), said: new Set(), pairs: 0, same: 0, typing: 0, unlit: 0, out: 0 });
       const p = document.querySelector('[data-site=typed]');
       const words = [];
       let end = null;
@@ -399,6 +399,14 @@ const watch = (page) =>
           if (t.blink[i].at(-1)?.[0] !== state) t.blink[i].push([state, fired.ms, fired.due]);
         });
         if (spots.length !== 2) return;
+        [...p.querySelectorAll('[data-site=box]')].slice(0, 2).forEach((e, i) => {
+          const r = e.getBoundingClientRect();
+          const word = spots[i].getBoundingClientRect();
+          t.boxed[i].add(`${Math.round(r.height * 10) / 10} tall at ${Math.round((r.top - at.top) * 10) / 10}`);
+          t.pad[i].push(r.width - word.width);
+          if (!spots[i].textContent) t.bare[i].push(r.width);
+          if (e.getAnimations().length || getComputedStyle(e).transitionDuration.split(',').some((v) => parseFloat(v) > 0)) t.eased++;
+        });
         const whole = spots.map((e) => names.includes(e.textContent));
         const box = spots.map((e) => e.getBoundingClientRect());
         t.drop.add(Math.round(box[1].top - box[0].top));
@@ -450,6 +458,19 @@ const typedOf = (page) =>
     };
     const spots = [...p.querySelectorAll('[data-site=agent]')];
     const carets = [...p.querySelectorAll('.site-caret')].map((e) => e.getBoundingClientRect());
+    const probe = p.appendChild(document.createElement('span'));
+    const token = (name) => {
+      probe.style.color = `var(${name})`;
+      return getComputedStyle(probe).color;
+    };
+    const tokens = { muted: token('--muted'), border: token('--border'), page: getComputedStyle(document.body).backgroundColor };
+    probe.remove();
+    const boxes = [...p.querySelectorAll('[data-site=box]')].map((e) => {
+      const r = e.getBoundingClientRect();
+      const c = getComputedStyle(e);
+      const sides = ['Top', 'Right', 'Bottom', 'Left'];
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, ground: c.backgroundColor, image: c.backgroundImage, shadow: c.boxShadow, ink: c.color, edges: sides.map((v) => `${c[`border${v}Width`]} ${c[`border${v}Style`]} ${c[`border${v}Color`]}`), radius: ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((v) => parseFloat(c[`border${v}Radius`])) };
+    });
     const words = [];
     let end = null;
     let first = null;
@@ -469,7 +490,7 @@ const typedOf = (page) =>
       const word = [...e.childNodes].find((n) => n.nodeType === 3);
       return { top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2, on: !!c && c.top + c.height / 2 > r.top && c.top + c.height / 2 < r.bottom, after: !!c && c.left >= (word ? edge(word).right : r.left) - 0.5 };
     });
-    const ends = [...words, ...spots.map((e) => e.getBoundingClientRect()), ...carets].filter((r) => row(r) === row(end)).map((r) => r.right);
+    const ends = [...words, ...spots.map((e) => e.getBoundingClientRect()), ...carets, ...boxes].filter((r) => row(r) === row(end)).map((r) => r.right);
     return {
       ...t,
       asked: window.__timers?.asked ?? {},
@@ -488,8 +509,12 @@ const typedOf = (page) =>
       line,
       em: parseFloat(getComputedStyle(p).fontSize),
       high: p.getBoundingClientRect().height,
-      gap: words[1] && carets[0] ? words[1].left - carets[0].right : NaN,
-      space: end && carets[1] ? end.left - carets[1].right : NaN,
+      boxes,
+      tokens,
+      boxed: t.boxed.map(list),
+      held: boxes.length === 2 && carets.length === 2 && boxes.every((r, i) => carets[i].left >= r.left && carets[i].right <= r.right && carets[i].top + carets[i].height / 2 > r.top && carets[i].top + carets[i].height / 2 < r.bottom),
+      gap: words[1] && boxes[0] ? words[1].left - boxes[0].right : NaN,
+      space: end && boxes[1] ? end.left - boxes[1].right : NaN,
       low: !!end && !!rows[1] && (end.top + end.bottom) / 2 > rows[1].top && (end.top + end.bottom) / 2 < rows[1].bottom,
       last: !!end && end.right >= Math.max(...ends) - 0.5,
     };
@@ -698,9 +723,25 @@ async function walk(b, site, w, h, scheme) {
     const stacked = `rows ${typed.stack.map((v) => v + 1).join(' ')} for "${OPEN}", "${LEADS[0]}", the first name, "${LEADS[1]}", the second name and the full stop, ${Math.round(typed.high)} px tall with a line height of ${typed.line} px`;
     if (wide) {
       check(`${tag} the typed sentence is one line`, typed.carets === 2 && level && Math.abs(typed.high - typed.line) < 1, `${Math.round(typed.high)} px tall with a line height of ${typed.line} px`);
-      check(`${tag} the first cursor stands between the first name and "to" with one word space`, level && typed.rows[0].on && typed.rows[0].after && spaced(typed.gap), `${typed.gap.toFixed(1)} px from the first cursor to the next word`);
+      check(`${tag} the first box stands before "to" with one word space`, level && typed.rows[0].on && typed.rows[0].after && spaced(typed.gap), `${typed.gap.toFixed(1)} px from the first box to the next word`);
     } else check(`${tag} the typed block has three rows, "${OPEN}" on row one, "${LEADS[0]}" with the first name on row two and "${LEADS[1]}" with the second name on row three`, typed.carets === 2 && typed.rows.length === 2 && typed.rows.every((r) => r.on && r.after) && typed.stack.join(' ') === '0 1 1 2 2 2' && Math.abs(typed.high - 3 * typed.line) < 1, stacked);
-    check(`${tag} the full stop follows the second cursor with no space and ends the row of the second name`, typed.rows.length === 2 && typed.rows[1].on && typed.rows[1].after && tight(typed.space) && typed.low && typed.last, `${typed.space.toFixed(1)} px from the second cursor to the full stop`);
+    check(`${tag} the full stop stands outside the second box, right after that box, and ends the row of the second name`, typed.rows.length === 2 && typed.rows[1].on && typed.rows[1].after && tight(typed.space) && typed.low && typed.last, `${typed.space.toFixed(1)} px from the second box to the full stop`);
+    const [one, two] = typed.boxes;
+    const lum = (text) => {
+      const [r, g, b] = text.match(/[\d.]+/g).slice(0, 3).map((v) => Number(v) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const against = (a, z) => (Math.max(lum(a), lum(z)) + 0.05) / (Math.min(lum(a), lum(z)) + 0.05);
+    const both = typed.boxes.length === 2;
+    check(`${tag} the ground of both boxes is the muted token and the border is a hairline in the border token, and both differ from the ground of the page`, both && typed.boxes.every((v) => v.ground === typed.tokens.muted && v.ground !== typed.tokens.page && v.image === 'none' && v.shadow === 'none' && v.edges.every((e) => e === `1px solid ${typed.tokens.border}`)) && typed.tokens.border !== typed.tokens.page, both ? `ground ${one.ground} with the token ${typed.tokens.muted}, border ${one.edges[0]} with the token ${typed.tokens.border}, page ${typed.tokens.page}` : `${typed.boxes.length} boxes`);
+    check(`${tag} each box has a corner radius of about a third of an em`, both && typed.boxes.every((v) => v.radius.every((r) => r > 0.28 * typed.em && r < 0.4 * typed.em)), both ? `${one.radius.join(' ')} px at ${typed.em} px` : `${typed.boxes.length} boxes`);
+    check(`${tag} each cursor stands inside the box of that name after the last letter`, typed.held && typed.rows.every((r) => r.on && r.after), `${typed.boxes.length} boxes and ${typed.carets} cursors`);
+    check(`${tag} an empty box keeps a small width that holds the cursor`, typed.bare.every((v) => v.length > 0 && v.every((w) => w > 0.5 * typed.em && w < 1.6 * typed.em)), typed.bare.map((v) => (v.length ? `${Math.min(...v).toFixed(1)} px in ${v.length} looks` : 'never seen empty')).join(' and '));
+    const play = typed.pad.map((v) => (v.length ? Math.max(...v) - Math.min(...v) : NaN));
+    check(`${tag} the width of each box follows the letters in the same step with no transition`, typed.pad.every((v) => v.length > 20) && play.every((v) => v < 0.3) && typed.eased === 0, `${typed.pad.map((v, i) => `${v.length} looks with ${play[i].toFixed(2)} px of play`).join(' and ')}, ${typed.eased} looks with a transition`);
+    check(`${tag} no box changes height or top while the names change`, typed.boxed.every((v) => v.length === 1) && typed.tall.length === 1, typed.boxed.map((v) => v.join(' or ') || 'no box').join(' and '));
+    if (!wide) check(`${tag} the boxes of row two and row three keep a gap of at least 4 px`, both && two.top - one.bottom >= 4, both ? `${(two.top - one.bottom).toFixed(1)} px` : `${typed.boxes.length} boxes`);
+    check(`${tag} the text in each box has a contrast of at least 4.5 to 1 against the box`, both && typed.boxes.every((v) => against(v.ink, v.ground) >= 4.5), both ? `${against(one.ink, one.ground).toFixed(1)} to 1` : `${typed.boxes.length} boxes`);
     check(`${tag} each spot of the typed block shows at least two agent names over time`, typed.shown.every((v) => new Set(v).size >= 2), typed.shown.map((v) => v.join(', ')).join(' and '));
     check(`${tag} the two spots never show the same complete name at one moment`, typed.pairs > 0 && typed.same === 0, `${typed.same} of ${typed.pairs} moments with two complete names`);
     if (wide) check(`${tag} the typed line keeps one height, "${OPEN} ${LEADS[0]}" never moves and the words after the first name move sideways`, steady(typed) && typed.lead[1].length > 1 && typed.tail.length > 1, placed(typed));
@@ -936,7 +977,7 @@ async function fit(b, site) {
           }
           const line = parseFloat(getComputedStyle(p).lineHeight);
           const out = { room: p.getBoundingClientRect().width, pairs: 0, fits: [0, 0, 0, 0], wide: 0, pair: '' };
-          if (spots.length !== 2 || carets.length !== 2 || !end || !first) return out;
+          if (spots.length !== 2 || carets.length !== 2 || !end || !first || p.querySelectorAll('[data-site=box]').length !== 2) return out;
           for (const a of names)
             for (const z of names) {
               if (a === z) continue;
@@ -947,7 +988,7 @@ async function fit(b, site) {
               range.selectNodeContents(end);
               const at = p.getBoundingClientRect();
               const last = range.getBoundingClientRect();
-              const size = Math.max(head.right, last.right, ...carets.map((c) => c.getBoundingClientRect().right)) - at.left;
+              const size = Math.max(head.right, last.right, ...[...carets, ...p.querySelectorAll('[data-site=box]')].map((c) => c.getBoundingClientRect().right)) - at.left;
               const rows = new Set([head.top, ...spots.map((e) => e.getBoundingClientRect().top), last.top].map((v) => Math.round((v - at.top) / line))).size;
               out.pairs++;
               if (size > out.wide) Object.assign(out, { wide: size, pair: `${a} and ${z}` });
