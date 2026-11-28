@@ -874,7 +874,7 @@ async function still(b, site) {
       io.observe(document, { subtree: true, childList: true });
     });
     await page.goto(site.url);
-    const drawn = () => page.evaluate(() => [...document.querySelectorAll('[data-site=logo] path')].map((e) => `${e.getAnimations().length} ${getComputedStyle(e).fillOpacity} ${getComputedStyle(e).stroke}`));
+    const drawn = () => page.evaluate(() => [...document.querySelectorAll('[data-site=logo] path')].map((e) => `${e.getAnimations().length} ${getComputedStyle(e).fillOpacity} ${getComputedStyle(e).stroke} ${getComputedStyle(e).animationName}`));
     const early = await drawn();
     await ready(page);
     await watch(page);
@@ -901,10 +901,9 @@ async function still(b, site) {
     check('with reduced motion a held button has no transform', down.shift === 'none' && Math.abs(scaled(down, calm) - 1) < 0.0005 && Math.abs(down.mid - calm.mid) < 0.01, `transform ${down.shift}, scale ${scaled(down, calm).toFixed(4)}, moved ${(down.mid - calm.mid).toFixed(2)} px`);
     const mark = await box(page, '[data-site=logo]');
     await page.mouse.move((mark?.x ?? 0) + (mark?.width ?? 0) / 2, (mark?.y ?? 0) + (mark?.height ?? 0) / 2);
-    await page.waitForTimeout(200);
     const over = await drawn();
     await page.mouse.move(4, 4);
-    check('reduced motion leaves the logo still and filled at the start and later', early.length === 27 && [...early, ...late, ...over].every((v) => v === '0 1 none'), [...new Set([...early, ...late, ...over])].join(' | ') || 'no logo');
+    check('reduced motion leaves the logo still and filled at the start and later', early.length === 27 && [...early, ...late, ...over].every((v) => v === '0 1 none none'), [...new Set([...early, ...late, ...over])].join(' | ') || 'no logo');
     const first = await page.evaluate(() => window.__first ?? null);
     check('with reduced motion the logo is at rest and the scene is asked for at the first sight of the page', first?.draw === 'done' && first.held === false, first ? `drawing state ${first.draw}, scene ${first.held ? 'held back' : 'asked for'}` : 'no logo');
     check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, cursor states ${carets.join(' and ')}`);
