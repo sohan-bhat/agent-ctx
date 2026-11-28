@@ -21,6 +21,22 @@ const entryIndex = ({ html, out }: { html: string; out: string }): Plugin => ({
   },
 });
 
+const FIRST = /^assets\/(?:atkinson-hyperlegible-next|jetbrains-mono)-latin-wght-normal-[\w-]+\.woff2$/;
+
+const early = (base: string): Plugin => ({
+  name: 'early',
+  apply: 'build',
+  transformIndexHtml: {
+    order: 'post',
+    handler(_html, ctx) {
+      const files = Object.values(ctx.bundle ?? {});
+      const fonts = files.filter((f) => FIRST.test(f.fileName)).map((f) => ({ rel: 'preload', as: 'font', type: 'font/woff2', crossorigin: true, href: `${base}${f.fileName}` }));
+      const scene = files.filter((f) => f.type === 'chunk' && f.isDynamicEntry && f.name === 'Scene').map((f) => ({ rel: 'modulepreload', crossorigin: true, fetchpriority: 'low', href: `${base}${f.fileName}` }));
+      return [...fonts, ...scene].map((attrs) => ({ tag: 'link', attrs, injectTo: 'head' as const }));
+    },
+  },
+});
+
 export default defineConfig(({ mode }) => {
   const site = mode === 'site';
   const entry = Object.hasOwn(ENTRY, mode) ? ENTRY[mode] : null;
@@ -28,7 +44,7 @@ export default defineConfig(({ mode }) => {
     root: here,
     base: site ? '/agent-ctx/' : mode === 'page' ? './' : '/',
     publicDir: site ? false : 'public',
-    plugins: [react(), tailwindcss(), ...(entry ? [entryIndex(entry)] : [])],
+    plugins: [react(), tailwindcss(), ...(site ? [early('/agent-ctx/')] : []), ...(entry ? [entryIndex(entry)] : [])],
     resolve: { alias: { '@core': path.join(here, '..', 'core', 'src'), '@': path.join(here, 'src') } },
     build: {
       outDir: entry ? entry.out : path.join(here, '..', 'service', 'public'),
