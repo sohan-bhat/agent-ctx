@@ -751,7 +751,7 @@ async function walk(b, site, w, h, scheme) {
       const p = document.querySelector('[data-site=typed]');
       return [p, ...p.querySelectorAll('*')].filter((e) => getComputedStyle(e).textDecorationLine !== 'none').length;
     });
-    const inked = await page.evaluate(() => ({ text: getComputedStyle(document.body).color, logo: [...new Set([...document.querySelectorAll('[data-site=logo] path')].map((e) => getComputedStyle(e).fill))] }));
+    const inked = await page.evaluate(() => ({ text: getComputedStyle(document.body).color, logo: [...new Set([...document.querySelectorAll('[data-site=logo] [data-part]')].map((e) => getComputedStyle(e).fill))] }));
     check(`${tag} the logo has the foreground colour of the page`, inked.logo.length === 1 && inked.logo[0] === inked.text, `logo ${inked.logo.join(' ') || 'missing'}, text ${inked.text}`);
     check(`${tag} no word of the typed sentence has an underline`, underlined === 0, `${underlined} underlined parts`);
     check(`${tag} screen readers get one still sentence and no live updates while names change`, s.spoken === SPOKEN && typed.said.length === 1 && !s.live, typed.said.join(' | '));
@@ -862,6 +862,16 @@ async function released(b, site, w, h) {
 async function still(b, site) {
   const { ctx, page, errors } = await context(b, { w: 1440, h: 900, scheme: 'dark', reduced: true });
   try {
+    await ctx.addInitScript(() => {
+      const io = new MutationObserver(() => {
+        const svg = document.querySelector('[data-site=logo]');
+        const demo = document.querySelector('[data-site=demo]');
+        if (!svg || !demo) return;
+        window.__first = { draw: svg.getAttribute('data-draw'), held: demo.hasAttribute('data-wait') };
+        io.disconnect();
+      });
+      io.observe(document, { subtree: true, childList: true });
+    });
     await page.goto(site.url);
     const drawn = () => page.evaluate(() => [...document.querySelectorAll('[data-site=logo] path')].map((e) => `${e.getAnimations().length} ${getComputedStyle(e).fillOpacity} ${getComputedStyle(e).stroke}`));
     const early = await drawn();
@@ -888,7 +898,9 @@ async function still(b, site) {
     await page.mouse.move(4, 4);
     await page.mouse.up();
     check('with reduced motion a held button has no transform', down.shift === 'none' && Math.abs(scaled(down, calm) - 1) < 0.0005 && Math.abs(down.mid - calm.mid) < 0.01, `transform ${down.shift}, scale ${scaled(down, calm).toFixed(4)}, moved ${(down.mid - calm.mid).toFixed(2)} px`);
-    check('reduced motion leaves the logo still and filled at the start and later', early.length === 12 && [...early, ...late].every((v) => v === '0 1 none'), [...new Set([...early, ...late])].join(' | ') || 'no logo');
+    check('reduced motion leaves the logo still and filled at the start and later', early.length === 27 && [...early, ...late].every((v) => v === '0 1 none'), [...new Set([...early, ...late])].join(' | ') || 'no logo');
+    const first = await page.evaluate(() => window.__first ?? null);
+    check('with reduced motion the logo is at rest and the scene is asked for at the first sight of the page', first?.draw === 'done' && first.held === false, first ? `drawing state ${first.draw}, scene ${first.held ? 'held back' : 'asked for'}` : 'no logo');
     check('reduced motion leaves the typed lines still with Claude Code and Cursor', n0 === NAMES.slice(0, 2).join(' and ') && n1 === n0 && carets.length === 2 && carets.every((v) => v === '0'), `${n0} then ${n1}, cursor states ${carets.join(' and ')}`);
   } finally {
     await ctx.close();
@@ -1009,79 +1021,262 @@ async function fit(b, site) {
   }
 }
 
-function frozen() {
-  const logo = (window.__logo = { held: [], tops: new Set(), frames: 0 });
-  const look = () => {
-    const paths = [...document.querySelectorAll('[data-site=logo] path')];
-    if (!paths.length || logo.held.length) return;
-    logo.held = paths.flatMap((e) => e.getAnimations());
-    for (const a of logo.held) {
-      a.pause();
-      a.currentTime = 0;
-    }
-    const tick = () => {
-      const typed = document.querySelector('[data-site=typed]');
-      if (typed) logo.tops.add(Math.round(typed.getBoundingClientRect().top * 100) / 100);
-      logo.frames++;
-      requestAnimationFrame(tick);
-    };
-    tick();
+function sampled() {
+  const logo = (window.__logo = { tops: new Set(), frames: 0, got: null, at: 0, done: 0 });
+  const tick = () => {
+    const typed = document.querySelector('[data-site=typed]');
+    if (typed) logo.tops.add(Math.round(typed.getBoundingClientRect().top * 100) / 100);
+    logo.frames++;
+    requestAnimationFrame(tick);
   };
-  new MutationObserver(look).observe(document, { subtree: true, childList: true });
+  const look = () => {
+    const svg = document.querySelector('[data-site=logo]');
+    if (!svg) return;
+    if (!logo.frames) tick();
+    if (logo.got && !logo.done && svg.getAttribute('data-draw') === 'done') logo.done = performance.now();
+    if (logo.got) return;
+    const paths = [...svg.querySelectorAll('path')];
+    const runs = paths.flatMap((e) => e.getAnimations());
+    if (!runs.length) return;
+    const num = (v) => parseFloat(v) || 0;
+    const timing = (a) => a.effect.getComputedTiming();
+    const end = Math.max(...runs.map((a) => Number(timing(a).endTime) || 0));
+    const seek = (t) => {
+      for (const a of runs) a.currentTime = t;
+    };
+    const shapes = [...svg.querySelectorAll('[data-part]')].map((fill) => {
+      const lines = fill.parentElement === svg ? [] : [...fill.parentElement.querySelectorAll('[data-line]')];
+      return { fill, lines, start: Math.min(...[fill, ...lines].flatMap((e) => e.getAnimations().map((a) => timing(a).delay))) };
+    });
+    const lines = shapes.flatMap((v) => v.lines);
+    const traces = lines.flatMap((e) => e.getAnimations().filter((a) => a.effect.getKeyframes().some((k) => 'strokeDashoffset' in k)));
+    const sizes = lines.map((e) => e.getTotalLength());
+    const whole = sizes.reduce((a, v) => a + v, 0);
+    const traced = (t) => {
+      seek(t);
+      return lines.reduce((a, e, i) => a + sizes[i] * (1 - Math.min(1, num(getComputedStyle(e).strokeDashoffset))), 0) / (whole || 1);
+    };
+    const shown = (e) => {
+      const c = getComputedStyle(e);
+      return c.stroke !== 'none' && num(c.strokeOpacity) > 0.02 && num(c.strokeDashoffset) < 0.999;
+    };
+    const filled = (e) => Number(getComputedStyle(e).fillOpacity);
+    const unit = svg.getScreenCTM()?.a ?? 0;
+    seek(300);
+    const early = { parts: shapes.filter((v) => v.lines.some((e) => shown(e) && num(getComputedStyle(e).strokeDashoffset) > 0)).length, fills: shapes.map((v) => filled(v.fill)), dash: lines.map((e) => num(getComputedStyle(e).strokeDashoffset)) };
+    seek(end / 2);
+    const ink = getComputedStyle(document.body).color;
+    const drawn = shapes.map((v) => ({
+      d: v.fill.getAttribute('d'),
+      part: v.fill.getAttribute('data-part'),
+      lines: v.lines.map((e) => e.getAttribute('d')),
+      unit: v.lines.every((e) => e.getAttribute('pathLength') === '1'),
+      wide: v.lines.map((e) => Math.round(num(getComputedStyle(e).strokeWidth) * unit * 1000) / 1000),
+      sharp: v.lines.every((e) => getComputedStyle(e).strokeLinejoin === 'miter'),
+      inked: v.lines.every((e) => getComputedStyle(e).stroke === ink),
+      starts: [...new Set([v.fill, ...v.lines].flatMap((e) => e.getAnimations().map((a) => timing(a).delay)))],
+    }));
+    const holes = [];
+    for (let k = 1; k <= 20; k++) {
+      const t = (end * k) / 20;
+      seek(t);
+      shapes.forEach((v, i) => {
+        if (t > v.start + 30 && !v.lines.some(shown) && filled(v.fill) <= 0.02) holes.push(`shape ${i + 1} at ${Math.round(t)} ms`);
+      });
+    }
+    let step = 0;
+    let last = shapes.map(() => 0);
+    for (let t = 0; t <= end + 16; t += 16) {
+      seek(t);
+      const now = shapes.map((v) => filled(v.fill));
+      step = Math.max(step, ...now.map((v, i) => Math.abs(v - last[i])));
+      last = now;
+    }
+    const from = Math.min(...traces.map((a) => timing(a).delay), end);
+    const stop = (a) => a.effect.getKeyframes().find((k) => 'strokeDashoffset' in k && num(k.strokeDashoffset) === 0)?.computedOffset ?? 1;
+    const to = Math.max(0, ...traces.map((a) => timing(a).delay + Number(timing(a).duration) * stop(a)));
+    const speeds = [];
+    for (let k = 0; k < 10; k++) speeds.push((traced(from + (to - from) * (0.64 + 0.04 * k)) - traced(from + (to - from) * (0.6 + 0.04 * k))) / (0.04 * (to - from)));
+    let low = from;
+    let high = to;
+    for (let k = 0; k < 30; k++) {
+      const mid = (low + high) / 2;
+      if (traced(mid) < 0.9) low = mid;
+      else high = mid;
+    }
+    logo.got = { end, runs: runs.length, early, drawn, holes, step, from, to, speeds, tail: to > from ? (to - high) / (to - from) : 0, lines: lines.length };
+    seek(0);
+    logo.at = performance.now();
+  };
+  new MutationObserver(look).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-draw'] });
+}
+
+async function drawing(b, site, w, h) {
+  const { ctx, page } = await context(b, { w, h, scheme: 'dark' });
+  await ctx.addInitScript(sampled);
+  await page.goto(site.url, { waitUntil: 'commit' });
+  await waitFor(() => page.evaluate(() => !!window.__logo?.got).catch(() => false), 8000);
+  return { ctx, page, got: await page.evaluate(() => window.__logo?.got ?? null).catch(() => null) };
 }
 
 async function logo(b, site) {
-  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+  const small = await drawing(b, site, 390, 664);
+  await small.ctx.close();
+  const { ctx, page, got } = await drawing(b, site, 1440, 900);
   try {
-    await ctx.addInitScript(frozen);
-    await page.goto(site.url, { waitUntil: 'commit' });
-    await waitFor(() => page.evaluate(() => (window.__logo?.held.length ?? 0) > 0).catch(() => false), 8000);
-    const read = (seek) =>
-      page.evaluate((to) => {
-        const paths = [...document.querySelectorAll('[data-site=logo] path')];
-        const held = window.__logo?.held ?? [];
-        if (to !== null)
-          for (const a of held) {
-            a.currentTime = to;
-            if (to === 0) a.play();
-          }
-        const runs = paths.flatMap((e) => e.getAnimations());
+    const read = () =>
+      page.evaluate(() => {
+        const svg = document.querySelector('[data-site=logo]');
+        const runs = [...(svg?.querySelectorAll('path') ?? [])].flatMap((e) => e.getAnimations());
         return {
-          held: held.length,
+          mode: svg?.getAttribute('data-draw') ?? '',
+          took: window.__logo?.done ? window.__logo.done - window.__logo.at : 0,
           end: Math.max(0, ...runs.map((a) => Number(a.effect.getComputedTiming().endTime) || 0)),
-          going: runs.filter((a) => a.playState === 'running').map((a) => a.animationName),
+          going: runs.filter((a) => a.playState === 'running').length,
+          left: runs.length,
           tops: [...(window.__logo?.tops ?? [])],
           frames: window.__logo?.frames ?? 0,
-          shapes: paths.map((e) => {
-            const c = getComputedStyle(e);
-            return { fill: Number(c.fillOpacity), line: c.stroke === 'none' ? 0 : Number(c.strokeOpacity), dash: parseFloat(c.strokeDashoffset) || 0 };
-          }),
+          fills: [...(svg?.querySelectorAll('[data-part]') ?? [])].map((e) => Number(getComputedStyle(e).fillOpacity)),
+          lines: [...(svg?.querySelectorAll('[data-line]') ?? [])].map((e) => getComputedStyle(e).stroke),
         };
-      }, seek ?? null);
-    const early = await read(300);
+      });
+    const calm = (v) => v.fills.length === 12 && v.fills.every((x) => x === 1) && v.lines.length === 15 && v.lines.every((x) => x === 'none') && !v.left;
     const held = await page.evaluate(() => {
       const h1 = document.querySelector('h1');
-      const parts = (name) => [...(h1?.querySelectorAll(`svg [data-part=${name}]`) ?? [])];
-      return { text: h1?.textContent.trim() ?? '', drawings: h1?.querySelectorAll('svg').length ?? 0, hidden: h1?.querySelector('svg')?.getAttribute('aria-hidden') ?? '', mark: parts('mark').map((e) => e.getAttribute('d')), word: parts('word').map((e) => e.getAttribute('d')), unit: [...parts('mark'), ...parts('word')].every((e) => e.getAttribute('pathLength') === '1') };
+      return { text: h1?.textContent.trim() ?? '', drawings: h1?.querySelectorAll('svg').length ?? 0, hidden: h1?.querySelector('svg')?.getAttribute('aria-hidden') ?? '' };
     });
-    const sum = crypto.createHash('sha256').update(`${held.mark.join('')}|${held.word.join('')}`).digest('hex').slice(0, 16);
-    check('the h1 holds one SVG with the three mark shapes and the nine wordmark shapes of the lockup and still reads agent-ctx', held.text === 'agent-ctx' && held.drawings === 1 && held.hidden === 'true' && held.mark.length === 3 && held.word.length === 9 && held.unit && sum === LOCKUP, `${held.drawings} drawings, ${held.mark.length} and ${held.word.length} shapes, sum ${sum}, text ${held.text}`);
-    check('a sample at 0.3 s of the drawing shows a shape with a part of the outline and no shape with a fill', early.held === 12 && early.shapes.some((v) => v.line > 0 && v.dash > 0 && v.dash < 1) && early.shapes.every((v) => v.fill === 0), early.shapes.map((v) => `${v.fill} ${v.dash.toFixed(2)}`).join(', '));
-    const start = await read(0);
-    await page.waitForTimeout(2150);
+    const shapes = got?.drawn ?? [];
+    const of = (name) => shapes.filter((v) => v.part === name);
+    const sum = (list) => crypto.createHash('sha256').update(`${of('mark').map(list).join('')}|${of('word').map(list).join('')}`).digest('hex').slice(0, 16);
+    const sums = [sum((v) => v.d), sum((v) => v.lines.join(''))];
+    const single = shapes.every((v) => v.unit && v.lines.length > 0 && v.lines.every((d) => /^M[^M]+$/.test(d)));
+    check('the h1 holds one SVG with the three mark shapes and the nine wordmark shapes of the lockup and still reads agent-ctx', held.text === 'agent-ctx' && held.drawings === 1 && held.hidden === 'true' && of('mark').length === 3 && of('word').length === 9 && single && sums.every((v) => v === LOCKUP), `${held.drawings} drawings, ${of('mark').length} and ${of('word').length} shapes, ${got?.lines ?? 0} contours, sums ${sums.join(' and ')}, text ${held.text}`);
+    const early = got?.early ?? { parts: 0, fills: [], dash: [] };
+    check('a sample at 0.3 s of the drawing shows a shape with a part of the outline and no shape with a fill', early.parts > 0 && early.dash.some((v) => v > 0 && v < 1) && early.fills.length === 12 && early.fills.every((v) => v === 0), `${early.parts} shapes with a part of the outline, fills ${[...new Set(early.fills)].join(' ') || 'missing'}`);
+    const wide = [small.got, got].map((v) => (v?.drawn ?? []).flatMap((x) => x.wide));
+    const starts = shapes.map((v) => (v.starts.length === 1 ? v.starts[0] : NaN));
+    const steps = starts.slice(1).map((v, i) => v - starts[i]);
+    check(
+      'every contour of the twelve shapes has a sharp line of 0.75 px in the colour of the text at 1440 and at 390 px wide, all contours of one shape start together and the steps between the shapes grow from left to right',
+      wide.every((v) => v.length === 15 && v.every((x) => Math.abs(x - 0.75) < 0.005)) && shapes.length === 12 && shapes.every((v) => v.sharp && v.inked) && steps.length === 11 && steps.every((v, i) => v > 0 && (!i || v > steps[i - 1])),
+      `${wide.map((v) => `${v.length} lines of ${[...new Set(v)].join(' or ') || 'no'} px`).join(' and ')}, steps ${steps.map((v) => Math.round(v)).join(' ')} ms`,
+    );
+    check('at twenty moments of the drawing every shape that the wave has reached shows a line or a fill', !!got && got.lines === 15 && !got.holes.length, got ? got.holes.slice(0, 4).join(', ') || `${got.lines} contours` : 'no drawing');
+    check('no fill opacity steps by more than 0.08 between two samples of the drawing that are 16 ms apart', !!got && got.lines === 15 && got.step > 0 && got.step <= 0.08, got ? `largest step ${got.step.toFixed(3)}` : 'no drawing');
+    const speeds = got?.speeds ?? [];
+    check(
+      'the traced length of all contours slows steadily over the last 40 percent of the tracing time and the last 10 percent of the length takes between 20 and 35 percent of that time',
+      speeds.length === 10 && speeds[0] > 0 && speeds.every((v, i) => !i || v < speeds[i - 1] * 0.999) && got.tail >= 0.2 && got.tail <= 0.35,
+      got ? `the last tenth takes ${(got.tail * 100).toFixed(1)} percent of ${Math.round(got.to - got.from)} ms, speeds ${speeds.map((v) => (v * 1000).toFixed(2)).join(' ')}` : 'no drawing',
+    );
+    await waitFor(() => page.evaluate(() => document.querySelector('[data-site=logo]')?.getAttribute('data-draw') === 'done'), 5000);
+    await page.waitForTimeout(400);
     const rest = await read();
-    check('about 2 s after the drawing starts every shape is filled, no stroke is left and the drawing ended within 1.6 s', rest.shapes.length === 12 && rest.shapes.every((v) => v.fill === 1 && v.line === 0) && !rest.going.length && start.going.length === 12 && start.end > 600 && start.end <= 1600, `the drawing ends at ${Math.round(start.end)} ms, ${rest.shapes.filter((v) => v.fill === 1 && v.line === 0).length} of ${rest.shapes.length} shapes at rest`);
+    check('after the drawing every shape is filled, no stroke and no animation is left and the drawing ended within 2.2 s', calm(rest) && rest.mode === 'done' && got?.runs === 27 && got.end > 1000 && got.end <= 2200, `the drawing ends at ${Math.round(got?.end ?? 0)} ms and took ${Math.round(rest.took)} ms on this run, ${rest.fills.filter((v) => v === 1).length} of ${rest.fills.length} shapes filled, ${rest.left} animations left`);
     check('the top of the typed sentence never moves from the first sight of the logo until 2 s after the drawing', rest.frames > 60 && rest.tops.length === 1, `${rest.tops.join(' and ')} px in ${rest.frames} frames`);
     const at = await box(page, '[data-site=logo]');
     await page.mouse.move((at?.x ?? 0) + (at?.width ?? 0) / 2, (at?.y ?? 0) + (at?.height ?? 0) / 2);
     await page.waitForTimeout(150);
     const over = await read();
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1100);
     const done = await read();
     await page.mouse.move(1400, 500);
     await page.waitForTimeout(300);
     const left = await read();
-    check('a pointer over the logo undraws and redraws the logo within about 0.8 s and the drawing on load is not played again', over.going.length === 12 && over.going.every((v) => v === 'site-logo-redraw') && over.end > 500 && over.end <= 850 && !done.going.length && !left.going.length && left.shapes.every((v) => v.fill === 1 && v.line === 0), `${over.going.length} shapes redraw until ${Math.round(over.end)} ms, ${left.going.length} animations after the pointer left`);
+    check('a pointer over the logo draws the logo again within about 1 s and the drawing on load is not played again', over.going === 27 && over.end > 500 && over.end <= 1000 && !done.going && !left.going && calm(left), `${over.going} animations draw until ${Math.round(over.end)} ms, ${left.left} animations after the pointer left`);
+  } finally {
+    await ctx.close();
+  }
+}
+
+function paced() {
+  const pace = (window.__pace = { frames: [], seen: 0, run: 0, done: 0, scene: 0, held: null, there: null, boxes: [] });
+  const place = () => {
+    const r = document.querySelector('[data-site=demo]').getBoundingClientRect();
+    const next = document.querySelector('[data-site=faq]')?.getBoundingClientRect().top ?? 0;
+    return [r.left, r.top + scrollY, r.width, r.height, next + scrollY].map((v) => Math.round(v * 100) / 100).join(' ');
+  };
+  new MutationObserver(() => {
+    const now = performance.now();
+    const svg = document.querySelector('[data-site=logo]');
+    const demo = document.querySelector('[data-site=demo]');
+    if (!svg || !demo) return;
+    const mode = svg.getAttribute('data-draw');
+    if (!pace.seen) {
+      pace.seen = now;
+      pace.held = demo.hasAttribute('data-wait');
+      pace.boxes.push(place());
+    }
+    if (!pace.run && mode === 'run') pace.run = now;
+    if (!pace.done && mode === 'done') {
+      pace.done = now;
+      pace.there = !!document.querySelector('[aria-roledescription=space]');
+    }
+    if (!pace.scene && document.querySelector('[aria-roledescription=space]')) {
+      pace.scene = now;
+      pace.boxes.push(place());
+    }
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-draw'] });
+  const tick = () => {
+    pace.frames.push(performance.now());
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  window.__place = place;
+}
+
+async function slowed(b, site) {
+  const loads = [];
+  const smooth = (v) => v.ok && v.frames > 40 && v.worst <= 50 && v.whole <= 100;
+  for (let i = 0; i < 5 && !loads.some(smooth); i++) {
+    const { ctx, page } = await context(b, { w: 390, h: 664, scheme: 'dark' });
+    try {
+      await ctx.addInitScript(paced);
+      await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await page.goto(site.url, { waitUntil: 'commit' });
+      await ready(page).catch(() => {});
+      loads.push(
+        await page.evaluate(() => {
+          const p = window.__pace;
+          const gaps = (from) => {
+            const inside = p.frames.filter((t) => t >= from && t <= p.done);
+            return inside.length > 1 ? Math.max(...inside.slice(1).map((t, k) => t - inside[k])) : Infinity;
+          };
+          const seen = p.frames.find((t) => t >= p.seen) ?? 0;
+          return { ok: p.run > 0 && p.done > p.run, worst: p.run && p.done ? gaps(p.run) : Infinity, whole: p.run && p.done ? gaps(seen) : Infinity, frames: p.frames.filter((t) => t >= p.run && t <= p.done).length, took: p.done - p.run, held: p.held, there: p.there, scene: p.scene - p.done, ready: performance.now() - p.done, boxes: [...p.boxes, document.querySelector('[data-site=demo]') ? window.__place() : ''] };
+        }),
+      );
+    } finally {
+      await ctx.close();
+    }
+  }
+  const best = loads.find(smooth) ?? loads.reduce((a, v) => (v.worst < a.worst ? v : a), loads[0]);
+  const ms = (v) => (Number.isFinite(v) ? `${Math.round(v)}` : 'no');
+  check('with the processor slowed four times at 390x664 no gap between two frames is longer than 50 ms while the logo draws and none is longer than 100 ms from the first sight of the logo', smooth(best), `${loads.length === 1 ? 'one load' : `${loads.length} loads`} with a worst gap of ${loads.map((v) => `${ms(v.worst)} ms in the drawing and ${ms(v.whole)} ms from the first sight`).join(', ')}, ${best.frames} frames in the ${ms(best.took)} ms of the drawing`);
+  check(
+    'the scene is held back while the logo draws and arrives after the end of the drawing in a frame of one size and one place',
+    loads.every((v) => v.ok && v.held === true && v.there === false && v.scene >= 0 && v.boxes.length === 3 && new Set(v.boxes).size === 1),
+    `${loads.map((v) => (v.ok ? `scene ${v.there ? 'present at' : `${ms(v.scene)} ms after`} the end of the drawing` : 'no drawing')).join(', ')}, frame at ${[...new Set(loads.flatMap((v) => v.boxes))].join(' | ')}`,
+  );
+}
+
+async function lost(b, site) {
+  const { ctx, page } = await context(b, { w: 1440, h: 900, scheme: 'dark' });
+  try {
+    await ctx.addInitScript(() => {
+      const frame = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (f) => frame((t) => f(t - 500));
+      for (const name of ['animationend', 'animationcancel']) window.addEventListener(name, (e) => e.stopImmediatePropagation(), true);
+      const modes = (window.__modes = []);
+      new MutationObserver(() => {
+        const mode = document.querySelector('[data-site=logo]')?.getAttribute('data-draw');
+        if (mode && modes[modes.length - 1] !== mode) modes.push(mode);
+      }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-draw'] });
+    });
+    await page.goto(site.url, { waitUntil: 'commit' });
+    const there = await page.waitForSelector('[aria-roledescription=space][data-ready="1"]', { timeout: 12000 }).then(() => true, () => false);
+    const got = await page.evaluate(() => ({ modes: window.__modes ?? [], held: document.querySelector('[data-site=demo]')?.hasAttribute('data-wait') ?? true, left: [...document.querySelectorAll('[data-site=logo] path')].flatMap((e) => e.getAnimations()).length }));
+    check('the logo still draws and the scene still arrives when every frame stamp is old and the end event of the drawing is lost', there && got.modes.join(' ') === 'wait run done' && !got.held && !got.left, `drawing states ${got.modes.join(' then ') || 'missing'}, scene ${there ? 'ready' : 'absent'}`);
   } finally {
     await ctx.close();
   }
@@ -1118,6 +1313,9 @@ function built(dir) {
   const icon = /<link rel="icon"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? '';
   const file = path.join(dir, decodeURIComponent(icon.slice(BASE.length).split('?')[0]));
   const tile = icon.startsWith(BASE) && fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file, 'utf8') : '';
+  const asks = (rel) => [...html.matchAll(/<link ([^>]+)>/g)].map((m) => m[1]).filter((v) => v.includes(`rel="${rel}"`) && /\scrossorigin[\s=>]|\scrossorigin$/.test(v)).map((v) => /href="([^"]+)"/.exec(v)?.[1] ?? '');
+  const head = [...asks('preload').filter((v) => /-latin-wght-normal-[\w-]+\.woff2$/.test(v)), ...asks('modulepreload').filter((v) => /\/Scene-[\w-]+\.js$/.test(v))];
+  check('the head of the built page asks early for the two fonts of the first screen and for the scene chunk', head.length === 3 && head.every((v) => v.startsWith(BASE) && fs.existsSync(path.join(dir, v.slice(BASE.length)))), head.map((v) => path.basename(v)).join(' ') || 'no early request');
   check('the favicon link ends in a versioned SVG that holds the mark for a light and a dark tab', /favicon-[\w-]{6,}\.svg$|\.svg\?v=\w+$/.test(icon) && tile.includes(`d="${MARK}"`) && /prefers-color-scheme:\s*dark/.test(tile), icon);
   check('the built page holds no setup prompt without VITE_RELEASED', !holds.length, holds.map((f) => path.basename(f)).join(' '));
   const bytes = all.reduce((a, f) => a + fs.statSync(f).size, 0);
@@ -1150,6 +1348,9 @@ try {
   await run('random typing walk', () => random(b, plain));
   await run('switch point walk', () => fit(b, plain));
   await run('logo walk', () => logo(b, plain));
+  await run('lost event walk', () => lost(b, plain));
+  if (engine === 'chromium') await run('slowed walk', () => slowed(b, plain));
+  else console.log('NOTE the slowed walk needs the processor switch of Chrome and was left out');
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });
     for (const scheme of schemes) for (const [w, h] of sizes) await shoot(b, plain, w, h, scheme);
