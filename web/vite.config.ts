@@ -40,11 +40,12 @@ const early = (base: string): Plugin => ({
 export default defineConfig(({ mode }) => {
   const site = mode === 'site';
   const entry = Object.hasOwn(ENTRY, mode) ? ENTRY[mode] : null;
+  const base = site ? '/agent-ctx/' : mode === 'page' ? './' : '/';
   return {
     root: here,
-    base: site ? '/agent-ctx/' : mode === 'page' ? './' : '/',
+    base,
     publicDir: site ? false : 'public',
-    plugins: [react(), tailwindcss(), ...(site ? [early('/agent-ctx/')] : []), ...(entry ? [entryIndex(entry)] : [])],
+    plugins: [react(), tailwindcss(), ...(site ? [early(base)] : []), ...(entry ? [entryIndex(entry)] : [])],
     resolve: { alias: { '@core': path.join(here, '..', 'core', 'src'), '@': path.join(here, 'src') } },
     build: {
       outDir: entry ? entry.out : path.join(here, '..', 'service', 'public'),
