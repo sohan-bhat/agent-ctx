@@ -11,7 +11,7 @@ import { browser, context, drag, engine, labels, overflow, press, ready, touchDr
 const BASE = '/agent-ctx/';
 const REPO = /REPO = '([^']+)'/.exec(fs.readFileSync(path.join(web, 'src', 'agents.ts'), 'utf8'))[1];
 const GUIDE = 'https://sohanbhat.me/agent-ctx/setup.md';
-const LINE = `Set up agent-ctx on this computer. Read ${GUIDE} and follow the steps.`;
+const LINE = `Follow ${GUIDE}`;
 const HOME = `https://github.com/${REPO}`;
 const DIST = path.join(web, 'dist-site');
 const START = 8 * 60;
@@ -724,7 +724,21 @@ async function released(b, site, w, h) {
       for (const x of said.querySelectorAll('[aria-hidden]')) x.remove();
       e.scrollLeft = 80;
       const part = [...e.querySelectorAll('*')].find((x) => getComputedStyle(x).textOverflow === 'ellipsis') ?? e;
-      return { text: e.textContent, said: said.textContent.trim(), title: e.getAttribute('title') ?? '', room: e.clientWidth, need: e.scrollWidth, moved: e.scrollLeft, over: e.getBoundingClientRect().right - (document.querySelector('[data-site=column]')?.getBoundingClientRect().right ?? 0), flow: getComputedStyle(e).overflowX, cut: `${getComputedStyle(part).textOverflow} ${getComputedStyle(part).whiteSpace}`, high: e.getBoundingClientRect().height, mono: /mono/i.test(getComputedStyle(e).fontFamily) };
+      const range = document.createRange();
+      range.selectNodeContents(e.querySelector('.select-all') ?? e);
+      const rects = [...range.getClientRects()];
+      const edge = e.getBoundingClientRect();
+      const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+      let parts = -1;
+      for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+        const at = node.textContent.indexOf('agent-ctx');
+        if (at < 0) continue;
+        const name = document.createRange();
+        name.setStart(node, at);
+        name.setEnd(node, at + 9);
+        parts = name.getClientRects().length;
+      }
+      return { text: e.textContent, said: said.textContent.trim(), title: e.getAttribute('title') ?? '', room: e.clientWidth, need: e.scrollWidth, moved: e.scrollLeft, over: e.getBoundingClientRect().right - (document.querySelector('[data-site=column]')?.getBoundingClientRect().right ?? 0), flow: getComputedStyle(e).overflowX, cut: `${getComputedStyle(part).textOverflow} ${getComputedStyle(part).whiteSpace}`, high: e.getBoundingClientRect().height, rows: new Set(rects.map((r) => Math.round(r.top))).size, parts, held: rects.length > 0 && rects.every((r) => r.left >= edge.left - 0.5 && r.right <= edge.right + 0.5 && r.top >= edge.top - 0.5 && r.bottom <= edge.bottom + 0.5), mono: /mono/i.test(getComputedStyle(e).fontFamily) };
     });
     const s = await shape(page);
     check(
@@ -732,9 +746,24 @@ async function released(b, site, w, h) {
       inside(await box(page, '[data-site=install]'), w, h) && inside(await copy.boundingBox().catch(() => null), w, h) && s.pills.length === 1 && s.pills[0].join() === ['View on GitHub', HOME, 'outline'].join() && inside(await box(page, '[data-site=action] a'), w, h),
       `pill ${span(await box(page, '[data-site=install]'))}, Copy ${span(await copy.boundingBox().catch(() => null))}, link ${span(await box(page, '[data-site=action] a'))}`,
     );
-    check(`${tag} the pill shows the start of the prompt in the console font behind a sign that is hidden from a screen reader`, /^>\s*Set up agent-ctx/.test(pill.text) && pill.said === LINE && pill.title === LINE && pill.mono, pill.text);
+    check(`${tag} the pill shows the prompt in the console font behind a sign that is hidden from a screen reader`, /^>\s*Follow https/.test(pill.text) && pill.said === LINE && pill.title === LINE && pill.mono, pill.text);
     check(`${tag} the link inside the prompt is ${GUIDE}`, (pill.said.match(/https?:\/\/\S+/g) ?? []).join() === GUIDE, (pill.said.match(/https?:\/\/\S+/g) ?? []).join(' '));
-    check(`${tag} the pill never scrolls, never wraps, ends inside the text column and has no scroll width beyond the pill`, pill.room > 100 && pill.need <= pill.room && pill.over <= 0.5 && pill.moved === 0 && pill.flow !== 'auto' && pill.flow !== 'scroll' && pill.cut === 'ellipsis nowrap' && pill.high < 50, `${pill.need} px of content in ${pill.room} px, ${pill.cut}, ${Math.round(pill.high ?? 0)} px tall`);
+    check(`${tag} the whole prompt is visible in the pill, on one row from 640 px and on two rows at most below, with no cut and no scroll, and the pill ends inside the text column`, pill.room > 100 && pill.need <= pill.room && pill.over <= 0.5 && pill.moved === 0 && pill.flow !== 'auto' && pill.flow !== 'scroll' && !/ellipsis/.test(pill.cut) && pill.held && pill.rows >= 1 && pill.rows <= (w >= 640 ? 1 : 2) && pill.high < (w >= 640 ? 50 : 80), `${pill.need} px of content in ${pill.room} px, ${pill.cut}, ${pill.rows} rows, ${Math.round(pill.high ?? 0)} px tall, ${pill.held ? 'all inside' : 'text outside the pill'}`);
+    const readme = fs.readFileSync(path.join(web, '..', 'README.md'), 'utf8');
+    const lines = [/\n {4}(curl -fsSL \S+ \| sh)\n/.exec(readme)?.[1] ?? 'no curl line', /\n {4}(npx -y \S+)\n/.exec(readme)?.[1] ?? 'no npx line'];
+    const hand = s.items.find((i) => /without an agent/.test(i.q));
+    check(`${tag} the FAQ has nine rows and one of them holds the two install lines of the README for a setup without an agent`, s.items.length === 9 && !!hand && lines.every((l) => hand.a.includes(l)), hand ? hand.a : `${s.items.length} rows and no such row`);
+    const boxes = await page.evaluate(() => {
+      const ground = getComputedStyle(document.body).backgroundColor;
+      const edge = document.querySelector('[data-site=faq]')?.getBoundingClientRect();
+      return [...document.querySelectorAll('[data-site=faq] code')].map((c) => {
+        const cs = getComputedStyle(c);
+        const rects = [...c.getClientRects()];
+        return { text: c.textContent, mono: /mono/i.test(cs.fontFamily), ground: cs.backgroundColor !== ground && cs.backgroundColor !== 'rgba(0, 0, 0, 0)', line: cs.borderTopWidth === '1px', held: !!edge && rects.every((r) => r.left >= edge.left - 0.5 && r.right <= edge.right + 0.5) };
+      });
+    });
+    check(`${tag} each command of the FAQ stands in a box in the console font with a hairline and a ground that differs from the page, inside the column`, boxes.length === 3 && boxes.every((x) => x.mono && x.ground && x.line && x.held) && lines.every((l) => boxes.some((x) => x.text === l)) && boxes.some((x) => /agent-ctx uninstall$/.test(x.text)), boxes.map((x) => `${x.text} ${x.mono ? 'mono' : 'not mono'} ${x.ground ? 'ground' : 'no ground'} ${x.held ? 'inside' : 'outside'}`).join(' | ') || 'no box');
+    check(`${tag} the name agent-ctx inside the prompt is never broken across two rows`, pill.parts === 1, `${pill.parts} parts`);
     const button = page.locator('[data-site=action] button');
     const spot = await button.boundingBox().catch(() => null);
     const calm = await sized(button).catch(() => ({ width: 0, mid: 0, wide: 0 }));

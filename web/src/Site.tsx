@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  Fragment,
   StrictMode,
   useCallback,
   useEffect,
@@ -31,7 +32,7 @@ import "./site.css";
 const RELEASED = import.meta.env.VITE_RELEASED === "1";
 const HOME = `https://github.com/${REPO}`;
 const INSTALL =
-  "Set up agent-ctx on this computer. Read https://sohanbhat.me/agent-ctx/setup.md and follow the steps.";
+  "Follow https://sohanbhat.me/agent-ctx/setup.md";
 const RATE = (DEMO_END - DEMO_START) / 30_000;
 const AGENTS = DEMO_AGENTS.map((a) => a.label);
 const NONE = new Set<string>();
@@ -94,13 +95,24 @@ const FAQ = [
   ],
   [
     "How do I remove agent-ctx?",
-    "Every entry that was added is taken out with the command ~/.agent-ctx/app/agent-ctx uninstall, and the memory file stays until you delete the folder.",
+    "Every entry that was added is taken out with the command `~/.agent-ctx/app/agent-ctx uninstall`, and the memory file stays until you delete the folder.",
   ],
   [
     "What does agent-ctx cost?",
     "agent-ctx is free and open source under the MIT licence.",
   ],
 ];
+
+const ROWS = RELEASED
+  ? [
+      ...FAQ.slice(0, 2),
+      [
+        "Can I install without an agent?",
+        "Run `curl -fsSL https://sohanbhat.me/agent-ctx/install.sh | sh` in a terminal on macOS or Linux. On another system run `npx -y github:sohan-bhat/agent-ctx` with Node 22.16 or newer.",
+      ],
+      ...FAQ.slice(2),
+    ]
+  : FAQ;
 
 const whole = (text: string) =>
   text.split(/(\S*agent-ctx\S*)/).map((part, i) =>
@@ -363,6 +375,7 @@ function Action() {
       setCopied(false);
     }
   };
+  const host = INSTALL.indexOf("/", INSTALL.indexOf("//") + 2) + 1;
   const word = copied ? "Copied" : "Copy";
   const label = (
     <>
@@ -386,7 +399,11 @@ function Action() {
           <span aria-hidden className="select-none">
             &gt;
           </span>
-          <span className="select-all">{INSTALL}</span>
+          <span className="select-all">
+            {INSTALL.slice(0, host)}
+            <wbr />
+            <span className="whitespace-nowrap">{INSTALL.slice(host)}</span>
+          </span>
         </code>
         <Button
           className="h-11 w-[6.75rem] rounded-full text-[0.9375rem]"
@@ -519,10 +536,20 @@ function Site() {
         <Demo />
         <section className="site-column site-faq" data-site="faq">
           <h2 id="faq">FAQ</h2>
-          {FAQ.map(([question, answer]) => (
+          {ROWS.map(([question, answer]) => (
             <div key={question}>
               <h3>{whole(question)}</h3>
-              <p>{whole(answer)}</p>
+              <p>
+                {answer.split("`").map((part, i) =>
+                  i % 2 ? (
+                    <code key={i} translate="no" className="site-code num">
+                      {whole(part)}
+                    </code>
+                  ) : (
+                    <Fragment key={i}>{whole(part)}</Fragment>
+                  ),
+                )}
+              </p>
             </div>
           ))}
         </section>

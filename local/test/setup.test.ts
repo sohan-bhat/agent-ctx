@@ -180,5 +180,5 @@ test('the pages workflow publishes the setup document and starts on a change to 
   const readme = read('README.md');
   const site = /\n {4}curl -fsSL (\S+)\/install\.sh \| sh\n/.exec(readme)?.[1] ?? '';
   assert.ok(site, 'the README has the curl line');
-  assert.ok(readme.includes(`\n    Set up agent-ctx on this computer. Read ${site}/setup.md and follow the steps.\n`), `${site}/setup.md`);
+  assert.ok(readme.includes(`\n    Follow ${site}/setup.md\n`), `${site}/setup.md`);
 });
