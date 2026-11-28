@@ -474,11 +474,11 @@ function Mark({ of, dark }: { of: typeof SPARK; dark: boolean }) {
 
 function Typed() {
   const dark = useSyncExternalStore(watch, isDark);
-  const done = useSyncExternalStore(watchDrawn, isDrawn);
+  const rested = useSyncExternalStore(watchDrawn, isRested);
   const [, setFaces] = useState(0);
   const reduced = useReduced();
   const hidden = useSyncExternalStore(watchHidden, isHidden);
-  const still = reduced || hidden;
+  const still = reduced || hidden || !rested;
   const [spots, setSpots] = useState(START);
   const now = useRef(spots);
   useEffect(() => {
@@ -497,17 +497,15 @@ function Typed() {
     return () => ids.forEach((id) => clearTimeout(id));
   }, [still]);
   useEffect(() => {
+    if (!rested) return;
     for (const agent of TYPED)
       for (const file of agent.mark?.files ?? []) {
         const image = new Image();
         image.onload = () => LOADED.set(file, image);
         image.src = file;
       }
-  }, []);
-  useEffect(() => {
-    if (!done) return;
     let live = true;
-    const page = getComputedStyle(document.body);
+    const text = getComputedStyle(document.body);
     const faces = () => {
       for (const { family, weight, file } of new Set(
         TYPED.map((agent) => agent.face),
@@ -527,11 +525,11 @@ function Typed() {
     };
     const later = () =>
       requestAnimationFrame(() => requestAnimationFrame(faces));
-    document.fonts.load(`${page.fontSize} ${page.fontFamily}`).then(later, later);
+    document.fonts.load(`${text.fontSize} ${text.fontFamily}`).then(later, later);
     return () => {
       live = false;
     };
-  }, [done]);
+  }, [rested]);
   return (
     <p className="site-typed" data-site="typed">
       <span className="sr-only">
